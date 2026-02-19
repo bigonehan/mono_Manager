@@ -407,13 +407,28 @@ fn resolve_task_blueprint_file_name(project_name: &str) -> Result<String> {
             return Ok(file_name.to_string());
         }
     }
+    initialize_empty_todos_blueprint(project_name)?;
+    Ok("todos.yaml".to_string())
+}
+
+fn initialize_empty_todos_blueprint(project_name: &str) -> Result<()> {
     let project_dir = resolve_project_dir(project_name);
-    bail!(
-        "failed to find task blueprint file: expected one of {}/todos.yaml, {}/tasks.yaml, or {}/tasks.ymal",
-        project_dir.display(),
-        project_dir.display(),
-        project_dir.display()
-    );
+    std::fs::create_dir_all(&project_dir).with_context(|| {
+        format!(
+            "failed to create blueprint directory: {}",
+            project_dir.display()
+        )
+    })?;
+    let todos_path = project_dir.join("todos.yaml");
+    if !todos_path.exists() {
+        std::fs::write(&todos_path, "tasks: []\n").with_context(|| {
+            format!(
+                "failed to initialize empty todos blueprint: {}",
+                todos_path.display()
+            )
+        })?;
+    }
+    Ok(())
 }
 
 fn load_task_messages(project_name: &str, file_name: &str) -> Result<Vec<String>> {

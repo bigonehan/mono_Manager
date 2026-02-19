@@ -262,3 +262,7 @@
 - `get_root_dir`/`find_git_root_dir` 추가: 기본은 CWD, 상위에 `.git`이 있으면 git root를 루트로 사용
 - 실행 시작 시 git 저장소가 없으면 기존 `input_ask_question`(YesNo)으로 `jj git init --colocate` 실행 여부를 질문하도록 구현
 - project base 경로 해석을 config.path 의존 대신 루트 디렉터리 기반으로 단순화
+
+## 2026-02-19 - 작업한일
+- blueprint yaml 파일을 찾지 못하면 `root/.project/<project>/todos.yaml`을 자동 생성하도록 변경
+- 초기 파일은 실행 가능한 빈 템플릿(`tasks: []`)으로 생성
