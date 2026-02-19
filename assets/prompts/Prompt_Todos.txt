@@ -16,7 +16,41 @@
 - todo 작성 규칙:
   - todo는 "대상 + 동작" 형태의 작업 리스트로 작성
   - todo 항목 수량 제한 없음
+  - todo step 설계 사고 절차:
+    - 1) 더이상 나눌 수 없는 작은 단위의 도메인을 떠올린다
+    - 2) 도메인이 하는 행동과 그에 따른 대상의 상태 변화를 고려한다
+    - 3) 조건이나 검증 규칙이 있을 경우 조건식을 건다
+    - 4) 도메인과 변화되는 변수들을 생각한다
+    - 5) 한번에 하나의 작업으로 사용되는 변수가 어떻게 변하는지 작성한다
+  - 입력이 간단해도 결과 todo는 구체화할 것(검증/대기/직렬화/저장/전송/후처리 단계 포함)
+  - rule은 단순 반복이 아니라 실행 가능한 제약으로 확장할 것(권한, 길이 제한, 상태 조건, 취소/수정 가능 여부, 완료 후 저장)
+  - step은 UI/도메인 이벤트 순서를 따라 세분화할 것(선택 -> 검증 -> 입력대기 -> 확인/취소 분기 -> 저장/전송 -> 완료 반영)
+  - 상태 전이 관점을 반영할 것(예: 선택됨, 입력중, 검증중, 전송대기, 완료)과 각 전이 조건을 step/rule에 드러낼 것
+  - scope가 추상 키워드여도 실제 파일 후보로 구체화할 것(예: send message -> message.ts, friend.ts)
   - 각 task의 `rule`, `step`을 반드시 반영해 todo를 작성할 것
+  - task의 `scope`가 비어 있으면 rule/step/name을 바탕으로 적절한 파일 경로를 추론해 `scope`를 채울 것
+  - 추론한 scope는 프로젝트 루트 기준 상대 경로로 작성할 것(예: src/task2/task2.rs)
   - 어떤 function이 다른 function의 결과/완료를 필요로 하면 해당 function의 `depends_on`에 의존 function 이름을 추가할 것
+  - domain은 spec.yaml의 features.domain 목록 중에서 선택해 `domain` 필드(string[])에 기록할 것
+  - domain 후보가 여러 개면 현재 기능에 직접 영향 주는 도메인만 최소 집합으로 선택할 것
+  - todos 항목의 키 이름은 `name,type,domain,depends_on,scope,state,rule,step`를 사용할 것
+  - 속성 역할 정의:
+    - name: 작업의 목적이 드러나는 기능명(사람이 읽고 이해 가능한 이름)
+    - type: 작업 성격(`action`=외부상태 변경/입출력, `calc`=순수 계산)
+    - domain: 기능이 영향을 받는 도메인 목록(spec.features.domain 후보 중 선택)
+    - depends_on: 선행 완료가 필요한 다른 task의 name 목록(없으면 빈 배열)
+    - scope: 수정/생성 대상 파일 경로 목록(프로젝트 루트 기준 상대 경로)
+    - state: 기능이 거치는 주요 상태 목록(예: 선택됨, 검증중, 전송대기, 완료)
+    - rule: 반드시 지켜야 하는 검증/제약/정책 목록
+    - step: 실제 수행 순서대로 쪼갠 작업 단계 목록
+  - todos item 스키마:
+    - name: string
+    - type: action|calc
+    - domain: string[]
+    - depends_on: string[]
+    - scope: string[]
+    - state: string[]
+    - rule: string[]
+    - step: string[]
   - 완료 `todos.yaml` 파일에는 덧붙일 것(기존 항목 유지)
 - 최종 결과는 간결하게 정리하고 핵심 산출물만 보고할 것

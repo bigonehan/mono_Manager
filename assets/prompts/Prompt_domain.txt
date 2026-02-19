@@ -1,0 +1,26 @@
+현재 spec.yaml의 tasks/feature를 전체적으로 검토하고 domain 구성을 보강해줘.
+
+스킬 사용:
+- /home/tree/ai/skills/domain_create/SKILL.md
+
+목표:
+- 모든 기능 추가를 먼저 훑어본 뒤 spec.yaml의 features.domain을 보강
+- 각 task의 type/scope/depends_on을 보강
+
+규칙:
+- 단일 codex 호출로 전체를 처리(병렬 금지)
+- features.domain은 문자열 배열로 유지
+- 도메인은 중복 없이 정규화
+- type은 action|calc만 허용
+- scope는 루트 상대 경로
+- domain 목록을 먼저 확인한 뒤 scope를 작성
+- 적합한 domain이 있으면 `도메인/파일이름.ts` 형태로 scope를 추가
+- 적합한 domain이 없으면 `utilts/기능이름(snake_case).ts` 형태로 scope를 추가
+- depends_on은 선행 task의 name 배열
+- 기존 값은 가능한 유지하고 부족한 부분만 채움
+
+domain_candidates:
+{{domain_candidates}}
+
+spec.yaml:
+{{spec_yaml}}

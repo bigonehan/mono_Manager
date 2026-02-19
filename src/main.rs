@@ -34,8 +34,17 @@ struct InputCli {
 #[derive(Subcommand, Debug)]
 enum InputCommand {
     Serve(InputServeArgs),
-    RunParallel(InputRunParallelArgs),
-    RunTest(InputRunTestArgs),
+    #[command(name = "run-paralles", alias = "run-parallel")]
+    RunParalles(InputRunParallelArgs),
+    #[command(name = "show-ui", alias = "run-test")]
+    ShowUi(InputRunTestArgs),
+    #[command(name = "make-spec")]
+    MakeSpec(InputBuildSpecArgs),
+    #[command(name = "fill-spec")]
+    FillSpec(InputFillSpecFromInputArgs),
+    #[command(name = "make-todos")]
+    MakeTodos(InputMakeTodosArgs),
+    CheckLast(InputCheckLastArgs),
 }
 
 #[derive(Args, Debug)]
@@ -76,6 +85,32 @@ struct InputRunTestArgs {
     send_only: bool,
     #[arg(long = "add-msg")]
     add_msgs: Vec<String>,
+}
+
+#[derive(Args, Debug)]
+struct InputBuildSpecArgs {
+    #[arg(long, default_value = "test")]
+    project: String,
+}
+
+#[derive(Args, Debug)]
+struct InputFillSpecFromInputArgs {
+    #[arg(long, default_value = "test")]
+    project: String,
+    #[arg(long, default_value = "input.txt")]
+    input_path: String,
+}
+
+#[derive(Args, Debug)]
+struct InputMakeTodosArgs {
+    #[arg(long, default_value = "test")]
+    project: String,
+}
+
+#[derive(Args, Debug)]
+struct InputCheckLastArgs {
+    #[arg(long, default_value = "test")]
+    project: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -160,8 +195,12 @@ async fn flow_main() -> Result<()> {
     let cli = input_parse_cli();
     match cli.command {
         Some(InputCommand::Serve(args)) => stage_open_server(args).await,
-        Some(InputCommand::RunParallel(args)) => stage_start_parallel(args, None).await,
-        Some(InputCommand::RunTest(args)) => stage_run_test(args, currentProject.clone()).await,
+        Some(InputCommand::RunParalles(args)) => stage_start_parallel(args, None).await,
+        Some(InputCommand::ShowUi(args)) => stage_run_test(args, currentProject.clone()).await,
+        Some(InputCommand::MakeSpec(args)) => stage_build_spec(args).await,
+        Some(InputCommand::FillSpec(args)) => stage_fill_spec_from_input(args),
+        Some(InputCommand::MakeTodos(args)) => stage_make_todos(args).await,
+        Some(InputCommand::CheckLast(args)) => stage_check_last(args).await,
         None => {
             stage_run_test(InputRunTestArgs {
                 host: "127.0.0.1".to_string(),
@@ -316,7 +355,8 @@ async fn stage_run_test(args: InputRunTestArgs, current_project: String) -> Resu
 
     ensure_project_yaml_location(&current_project)?;
     let task_file_name = resolve_task_blueprint_file_name(&current_project)?;
-    let task_spec_path = resolve_blueprint_file_path(&current_project, &task_file_name);
+    let task_spec_path = resolve_project_dir(&current_project).join("spec.yaml");
+    let task_spec_path_for_post = task_spec_path.clone();
     let request_messages = load_task_messages(&current_project, &task_file_name)?;
     let worker_requests = request_messages.clone();
     let (ui_tx, ui_rx) = tokio::sync::mpsc::unbounded_channel::<WorkingPaneEvent>();
@@ -347,6 +387,11 @@ async fn stage_run_test(args: InputRunTestArgs, current_project: String) -> Resu
         args.add_msgs,
     )
     .await;
+    if result.is_ok() {
+        if let Err(err) = run_post_parallel_review_and_update_spec(&task_spec_path_for_post).await {
+            eprintln!("post-review failed: {err:#}");
+        }
+    }
     let _ = ui_tx.send(WorkingPaneEvent::Finish);
     let _ = ui_handle.await?;
 
@@ -378,6 +423,306 @@ async fn stage_run_test(args: InputRunTestArgs, current_project: String) -> Resu
         }
     }
     result
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct SpecYamlDoc {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    framework: String,
+    #[serde(default)]
+    rule: Vec<String>,
+    #[serde(default)]
+    features: SpecFeatures,
+    #[serde(default)]
+    tasks: Vec<SpecTask>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct SpecFeatures {
+    #[serde(default, deserialize_with = "deserialize_string_or_vec_main")]
+    domain: Vec<String>,
+    #[serde(default)]
+    feature: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct SpecTask {
+    #[serde(default)]
+    name: String,
+    #[serde(default, rename = "type")]
+    task_type: String,
+    #[serde(default)]
+    domain: Vec<String>,
+    #[serde(default)]
+    depends_on: Vec<String>,
+    #[serde(default)]
+    scope: Vec<String>,
+    #[serde(default)]
+    state: Vec<String>,
+    #[serde(default)]
+    rule: Vec<String>,
+    #[serde(default)]
+    step: Vec<String>,
+}
+
+async fn stage_build_spec(args: InputBuildSpecArgs) -> Result<()> {
+    ensure_project_yaml_location(&args.project)?;
+    let project_name = input_ask_question("프로젝트 이름:".to_string(), InputAnswerKind::Text, None)?;
+    let description = input_ask_question("설명:".to_string(), InputAnswerKind::Text, None)?;
+    let framework = input_ask_question("사용 언어/프레임워크:".to_string(), InputAnswerKind::Text, None)?;
+    let libraries = input_ask_question("라이브러리(쉼표 구분):".to_string(), InputAnswerKind::Text, None)?;
+    let wanted_feature = input_ask_question("원하는 기능:".to_string(), InputAnswerKind::Text, None)?;
+
+    let template = load_embedded_template_text("templates/spec.yaml")
+        .unwrap_or_else(|| "name: \"\"\nframework: \"\"\nrule: []\nfeatures:\n  domain: []\n  feature: []\ntasks: []\n".to_string());
+    let prompt = format!(
+        "다음 입력을 기반으로 spec.yaml을 작성해줘.\n\
+규칙:\n\
+- templates/spec.yaml 형식을 반드시 따를 것\n\
+- tasks는 최소 3개 이상 채울 것\n\
+- tasks 각 항목은 name,type,domain,depends_on,scope,state,rule,step 키를 포함할 것\n\
+- 순수 YAML만 출력\n\n\
+입력:\n\
+- name: {project_name}\n\
+- description: {description}\n\
+- framework: {framework}\n\
+- libraries: {libraries}\n\
+- wanted_feature: {wanted_feature}\n\n\
+template:\n{template}"
+    );
+    let raw_output = execute_codex_prompt_for_post_review(&prompt).await?;
+    let spec = parse_spec_yaml_from_codex(&raw_output)?;
+    let spec_path = resolve_project_dir(&args.project).join("spec.yaml");
+    std::fs::write(&spec_path, serde_yaml::to_string(&spec)?)
+        .with_context(|| format!("failed to write generated spec: {}", spec_path.display()))?;
+    println!("generated spec: {}", spec_path.display());
+    Ok(())
+}
+
+fn stage_fill_spec_from_input(args: InputFillSpecFromInputArgs) -> Result<()> {
+    ensure_project_yaml_location(&args.project)?;
+    let input_path = std::path::Path::new(&args.input_path);
+    let raw = std::fs::read_to_string(input_path)
+        .with_context(|| format!("failed to read input txt: {}", input_path.display()))?;
+    let parsed_tasks = parse_tasks_from_input_txt(&raw);
+    let spec_path = resolve_project_dir(&args.project).join("spec.yaml");
+    let mut spec = if spec_path.exists() {
+        let spec_raw = std::fs::read_to_string(&spec_path)
+            .with_context(|| format!("failed to read spec: {}", spec_path.display()))?;
+        serde_yaml::from_str::<SpecYamlDoc>(&spec_raw).unwrap_or_default()
+    } else {
+        SpecYamlDoc::default()
+    };
+    if parsed_tasks.is_empty() {
+        bail!("no task items parsed from input.txt");
+    }
+    spec.tasks = parsed_tasks;
+    std::fs::write(&spec_path, serde_yaml::to_string(&spec)?)
+        .with_context(|| format!("failed to write spec: {}", spec_path.display()))?;
+    println!("updated tasks from {} -> {}", input_path.display(), spec_path.display());
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct TodoDoc {
+    #[serde(default)]
+    tasks: Vec<TodoItem>,
+    #[serde(default)]
+    todos: Vec<TodoItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct TodoItem {
+    #[serde(default)]
+    name: String,
+    #[serde(default, rename = "type")]
+    task_type: String,
+    #[serde(default)]
+    domain: Vec<String>,
+    #[serde(default)]
+    depends_on: Vec<String>,
+    #[serde(default)]
+    scope: Vec<String>,
+    #[serde(default)]
+    state: Vec<String>,
+    #[serde(default)]
+    rule: Vec<String>,
+    #[serde(default)]
+    step: Vec<String>,
+}
+
+async fn stage_make_todos(args: InputMakeTodosArgs) -> Result<()> {
+    ensure_project_yaml_location(&args.project)?;
+    let project_dir = resolve_project_dir(&args.project);
+    let spec_path = project_dir.join("spec.yaml");
+    let todos_path = project_dir.join("todos.yaml");
+
+    let spec_text = std::fs::read_to_string(&spec_path)
+        .with_context(|| format!("failed to read spec: {}", spec_path.display()))?;
+    let template = load_embedded_template_text("templates/todos.yaml")
+        .unwrap_or_else(|| "tasks: []\n".to_string());
+    let domains = extract_domains_from_spec_yaml(&spec_text);
+    let domain_text = if domains.is_empty() {
+        "(none)".to_string()
+    } else {
+        domains.join(", ")
+    };
+    let prompt = format!(
+        "spec.yaml을 기준으로 todos.yaml에 append할 tasks를 작성해줘.\n\
+규칙:\n\
+- 순수 YAML만 출력\n\
+- 최상위 키는 tasks만 사용\n\
+- todos item 키는 name,type,domain,depends_on,scope,state,rule,step\n\
+- domain은 allowed_domains에서 선택\n\
+- 기존 todos 전체를 재작성하지 말고 append 대상 tasks만 출력\n\n\
+allowed_domains: [{domain_text}]\n\n\
+todos template:\n{template}\n\n\
+spec.yaml:\n{spec_text}"
+    );
+    let raw_output = execute_codex_prompt_for_post_review(&prompt).await?;
+    let generated = parse_todo_output_from_codex(&raw_output)?;
+    if generated.is_empty() {
+        bail!("make-todos returned empty tasks");
+    }
+
+    let mut existing = load_existing_todos(&todos_path)?;
+    existing.extend(generated);
+    let out = TodoDoc {
+        tasks: existing,
+        todos: Vec::new(),
+    };
+    let yaml = serde_yaml::to_string(&out).context("failed to serialize todos")?;
+    let _: serde_yaml::Value = serde_yaml::from_str(&yaml).context("generated todos yaml invalid")?;
+    std::fs::write(&todos_path, yaml)
+        .with_context(|| format!("failed to write todos: {}", todos_path.display()))?;
+    println!("updated todos: {}", todos_path.display());
+    Ok(())
+}
+
+fn parse_todo_output_from_codex(raw: &str) -> Result<Vec<TodoItem>> {
+    let candidate = extract_yaml_candidate(raw);
+    let parsed = serde_yaml::from_str::<TodoDoc>(&candidate)
+        .map_err(|e| anyhow::anyhow!("failed to parse generated todos yaml: {e}"))?;
+    if parsed.tasks.is_empty() {
+        Ok(parsed.todos)
+    } else {
+        Ok(parsed.tasks)
+    }
+}
+
+fn load_existing_todos(path: &std::path::Path) -> Result<Vec<TodoItem>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read todos: {}", path.display()))?;
+    let parsed = serde_yaml::from_str::<TodoDoc>(&raw)
+        .with_context(|| format!("failed to parse todos: {}", path.display()))?;
+    if parsed.tasks.is_empty() {
+        Ok(parsed.todos)
+    } else {
+        Ok(parsed.tasks)
+    }
+}
+
+async fn stage_check_last(args: InputCheckLastArgs) -> Result<()> {
+    ensure_project_yaml_location(&args.project)?;
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let jj_status = std::process::Command::new("jj")
+        .arg("new")
+        .arg("-m")
+        .arg("refactor: check_last")
+        .current_dir(&cwd)
+        .status()
+        .with_context(|| format!("failed to run jj new in {}", cwd.display()))?;
+    if !jj_status.success() {
+        bail!("jj new failed with status {}", jj_status);
+    }
+
+    let prompt_template = load_embedded_template_text("prompts/prompt_check_last.txt").unwrap_or_else(|| {
+        "스킬 사용:\n- /home/tree/ai/skills/functional-code-structure/SKILL.md\n요청:\n코드 개선점이 있으면 수정까지 진행해줘.".to_string()
+    });
+    let prompt = format!(
+        "{prompt_template}\n\n추가 규칙:\n- 현재 작업 트리는 refactor branch에서만 수정한다.\n- 수정 후 핵심 변경 사항을 간단히 요약한다."
+    );
+    let _ = execute_codex_prompt_for_post_review(&prompt).await?;
+    println!("check_last finished");
+    Ok(())
+}
+
+fn parse_spec_yaml_from_codex(raw: &str) -> Result<SpecYamlDoc> {
+    let candidate = extract_yaml_candidate(raw);
+    serde_yaml::from_str::<SpecYamlDoc>(&candidate)
+        .map_err(|e| anyhow::anyhow!("failed to parse generated spec yaml: {e}"))
+}
+
+fn parse_tasks_from_input_txt(raw: &str) -> Vec<SpecTask> {
+    let mut tasks = Vec::new();
+    let mut current: Option<SpecTask> = None;
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix('#') {
+            if let Some(item) = current.take() {
+                if !item.name.trim().is_empty() {
+                    tasks.push(item);
+                }
+            }
+            let name = rest.trim();
+            if name.is_empty() {
+                continue;
+            }
+            current = Some(SpecTask {
+                name: name.to_string(),
+                task_type: "action".to_string(),
+                ..SpecTask::default()
+            });
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix('>') {
+            if let Some(item) = current.as_mut() {
+                let step = rest.trim();
+                if !step.is_empty() {
+                    item.step.push(step.to_string());
+                }
+            }
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix('-') {
+            if let Some(item) = current.as_mut() {
+                let rule = rest.trim();
+                if !rule.is_empty() {
+                    item.rule.push(rule.to_string());
+                }
+            }
+        }
+    }
+    if let Some(item) = current {
+        if !item.name.trim().is_empty() {
+            tasks.push(item);
+        }
+    }
+    tasks
+}
+
+fn deserialize_string_or_vec_main<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrVec {
+        One(String),
+        Many(Vec<String>),
+    }
+    match StringOrVec::deserialize(deserializer)? {
+        StringOrVec::One(v) => Ok(if v.trim().is_empty() { Vec::new() } else { vec![v] }),
+        StringOrVec::Many(vs) => Ok(vs),
+    }
 }
 
 fn set_default_requset_messages() -> Vec<String> {
@@ -421,7 +766,8 @@ fn initialize_empty_todos_blueprint(project_name: &str) -> Result<()> {
     })?;
     let todos_path = project_dir.join("todos.yaml");
     if !todos_path.exists() {
-        std::fs::write(&todos_path, "tasks: []\n").with_context(|| {
+        let template = load_default_todos_template_text();
+        std::fs::write(&todos_path, template).with_context(|| {
             format!(
                 "failed to initialize empty todos blueprint: {}",
                 todos_path.display()
@@ -431,8 +777,178 @@ fn initialize_empty_todos_blueprint(project_name: &str) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+struct PostReviewOutput {
+    #[serde(default)]
+    review: String,
+    #[serde(default)]
+    feature: Vec<String>,
+}
+
+async fn run_post_parallel_review_and_update_spec(spec_path: &std::path::Path) -> Result<()> {
+    let spec_text = std::fs::read_to_string(spec_path)
+        .with_context(|| format!("failed to read spec for post-review: {}", spec_path.display()))?;
+    let domains = extract_domains_from_spec_yaml(&spec_text);
+    let prompt = build_post_parallel_review_prompt(&spec_text, &domains);
+    let raw_output = execute_codex_prompt_for_post_review(&prompt).await?;
+    let review = parse_post_review_output(&raw_output)?;
+    append_features_to_spec(spec_path, &review.feature)?;
+    println!("post-review: {}", review.review.trim());
+    Ok(())
+}
+
+fn build_post_parallel_review_prompt(spec_text: &str, domains: &[String]) -> String {
+    let domain_text = if domains.is_empty() {
+        "(none)".to_string()
+    } else {
+        domains.join(", ")
+    };
+    format!(
+        "병렬 기능 구현이 모두 끝났다. 전체 소스코드를 점검하고 리팩토링 가능성을 평가해줘.\n\
+그리고 spec.yaml의 features.feature에 추가할 기능 목록을 작성해줘.\n\
+규칙:\n\
+- 기능 문자열은 반드시 도메인 아래 기능 형태로 작성(예: message.send_note)\n\
+- domain은 spec.yaml의 features.domain 후보를 우선 사용\n\
+- 중복 기능은 제거\n\
+출력 형식:\n\
+- 순수 YAML만 출력\n\
+- review: string\n\
+- feature: string[]\n\n\
+allowed_domains: [{domain_text}]\n\n\
+spec.yaml:\n{spec_text}"
+    )
+}
+
+async fn execute_codex_prompt_for_post_review(prompt: &str) -> Result<String> {
+    let output_path = std::env::temp_dir().join(format!(
+        "orchestra_post_review_{}_{}.txt",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let output = Command::new("codex")
+        .arg("exec")
+        .arg("--color")
+        .arg("never")
+        .arg("-o")
+        .arg(&output_path)
+        .arg(prompt)
+        .output()
+        .await
+        .context("failed to execute post-review codex")?;
+    let fallback_stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let text = std::fs::read_to_string(&output_path).unwrap_or(fallback_stdout);
+    let _ = std::fs::remove_file(&output_path);
+    if !output.status.success() {
+        bail!(
+            "post-review codex exited with code {}",
+            output.status.code().unwrap_or(-1)
+        );
+    }
+    Ok(text)
+}
+
+fn parse_post_review_output(raw: &str) -> Result<PostReviewOutput> {
+    let candidate = extract_yaml_candidate(raw);
+    serde_yaml::from_str::<PostReviewOutput>(&candidate)
+        .map_err(|e| anyhow::anyhow!("failed to parse post-review yaml: {e}"))
+}
+
+fn extract_yaml_candidate(raw: &str) -> String {
+    if let Some(start) = raw.find("```yaml") {
+        let remain = &raw[start + "```yaml".len()..];
+        if let Some(end) = remain.find("```") {
+            return remain[..end].trim().to_string();
+        }
+    }
+    if let Some(start) = raw.find("```") {
+        let remain = &raw[start + 3..];
+        if let Some(end) = remain.find("```") {
+            return remain[..end].trim().to_string();
+        }
+    }
+    raw.trim().to_string()
+}
+
+fn extract_domains_from_spec_yaml(spec_text: &str) -> Vec<String> {
+    let parsed = serde_yaml::from_str::<serde_yaml::Value>(spec_text).ok();
+    let Some(root) = parsed else {
+        return Vec::new();
+    };
+    let Some(features) = root.get("features") else {
+        return Vec::new();
+    };
+    let Some(domain_value) = features.get("domain") else {
+        return Vec::new();
+    };
+    if let Some(list) = domain_value.as_sequence() {
+        return list
+            .iter()
+            .filter_map(|v| v.as_str().map(ToString::to_string))
+            .collect::<Vec<_>>();
+    }
+    if let Some(one) = domain_value.as_str() {
+        let trimmed = one.trim();
+        if trimmed.is_empty() {
+            return Vec::new();
+        }
+        return vec![trimmed.to_string()];
+    }
+    Vec::new()
+}
+
+fn append_features_to_spec(spec_path: &std::path::Path, new_features: &[String]) -> Result<()> {
+    let raw = std::fs::read_to_string(spec_path)
+        .with_context(|| format!("failed to read spec for feature append: {}", spec_path.display()))?;
+    let mut root = serde_yaml::from_str::<serde_yaml::Value>(&raw)
+        .with_context(|| format!("failed to parse spec yaml: {}", spec_path.display()))?;
+
+    let root_map = root
+        .as_mapping_mut()
+        .ok_or_else(|| anyhow::anyhow!("spec root must be mapping"))?;
+    let features_key = serde_yaml::Value::from("features");
+    if !root_map.contains_key(&features_key) {
+        root_map.insert(features_key.clone(), serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+    }
+    let features_map = root_map
+        .get_mut(&features_key)
+        .and_then(serde_yaml::Value::as_mapping_mut)
+        .ok_or_else(|| anyhow::anyhow!("features must be mapping"))?;
+    let feature_key = serde_yaml::Value::from("feature");
+    if !features_map.contains_key(&feature_key) {
+        features_map.insert(feature_key.clone(), serde_yaml::Value::Sequence(Vec::new()));
+    }
+    let feature_seq = features_map
+        .get_mut(&feature_key)
+        .and_then(serde_yaml::Value::as_sequence_mut)
+        .ok_or_else(|| anyhow::anyhow!("features.feature must be sequence"))?;
+
+    for item in new_features {
+        let trimmed = item.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let already = feature_seq
+            .iter()
+            .any(|v| v.as_str().map(|s| s == trimmed).unwrap_or(false));
+        if !already {
+            feature_seq.push(serde_yaml::Value::from(trimmed));
+        }
+    }
+
+    let output = serde_yaml::to_string(&root).context("failed to serialize updated spec")?;
+    std::fs::write(spec_path, output)
+        .with_context(|| format!("failed to write updated spec: {}", spec_path.display()))?;
+    Ok(())
+}
+
 fn load_task_messages(project_name: &str, file_name: &str) -> Result<Vec<String>> {
     let yaml = read_blueprint(project_name, file_name)?;
+    if yaml.trim().is_empty() {
+        return Ok(Vec::new());
+    }
     let parsed: BlueprintFile = serde_yaml::from_str(&yaml)
         .with_context(|| {
             format!(
@@ -440,13 +956,7 @@ fn load_task_messages(project_name: &str, file_name: &str) -> Result<Vec<String>
                 resolve_blueprint_file_path(project_name, file_name).display()
             )
         })?;
-    let tasks = parsed
-        .tasks
-        .or(parsed.todos)
-        .ok_or_else(|| anyhow::anyhow!("blueprint yaml must have 'tasks' or 'todos' list"))?;
-    if tasks.is_empty() {
-        bail!("blueprint yaml list is empty");
-    }
+    let tasks = parsed.tasks.or(parsed.todos).unwrap_or_default();
     Ok(tasks.iter().map(task_to_message).collect())
 }
 
@@ -489,6 +999,12 @@ async fn run_tasks_parallel(
     let mut messages = load_task_messages(project_name, file_name)?;
     for msg in extra_messages {
         add_request_message(&mut messages, msg);
+    }
+    if messages.is_empty() {
+        bail!(
+            "no todo tasks found. add items to {}/todos.yaml and retry",
+            resolve_project_dir(project_name).display()
+        );
     }
     stage_send_request_messages_parallel(
         server_url,
@@ -844,18 +1360,38 @@ fn resolve_project_base_path() -> std::path::PathBuf {
 
 fn get_root_dir() -> std::path::PathBuf {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    find_git_root_dir(&cwd).unwrap_or(cwd)
+    let root = find_git_root_dir(&cwd).unwrap_or(cwd);
+    normalize_root_dir(root)
 }
 
 fn find_git_root_dir(start: &std::path::Path) -> Option<std::path::PathBuf> {
+    let search_limit = std::path::Path::new("/home/tree");
     let mut current = Some(start.to_path_buf());
     while let Some(path) = current {
+        if path == search_limit {
+            break;
+        }
         if path.join(".git").exists() {
             return Some(path);
         }
         current = path.parent().map(std::path::Path::to_path_buf);
     }
     None
+}
+
+fn normalize_root_dir(path: std::path::PathBuf) -> std::path::PathBuf {
+    let is_dot_project = path
+        .file_name()
+        .and_then(|v| v.to_str())
+        .map(|v| v == ".project")
+        .unwrap_or(false);
+    if is_dot_project {
+        return path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or(path);
+    }
+    path
 }
 
 fn ensure_git_repository_for_root() -> Result<()> {
@@ -898,6 +1434,12 @@ fn load_app_config_text() -> Option<String> {
     std::fs::read_to_string(std::path::Path::new("configs/app.yaml")).ok()
 }
 
+fn load_default_todos_template_text() -> String {
+    load_embedded_template_text("templates/todos.yaml")
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "tasks: []\n".to_string())
+}
+
 fn ensure_project_yaml_location(project_name: &str) -> Result<()> {
     let base = resolve_project_base_path();
     let current_dir = base.join(".project").join(project_name);
@@ -934,7 +1476,26 @@ fn ensure_project_yaml_location(project_name: &str) -> Result<()> {
                     target_todos.display()
                 )
             })?;
+        } else {
+            let template = load_default_todos_template_text();
+            std::fs::write(&target_todos, template).with_context(|| {
+                format!(
+                    "failed to initialize todos.yaml from template: {}",
+                    target_todos.display()
+                )
+            })?;
         }
+    } else if std::fs::read_to_string(&target_todos)
+        .map(|v| v.trim().is_empty())
+        .unwrap_or(false)
+    {
+        let template = load_default_todos_template_text();
+        std::fs::write(&target_todos, template).with_context(|| {
+            format!(
+                "failed to normalize empty todos blueprint: {}",
+                target_todos.display()
+            )
+        })?;
     }
 
     let target_spec = current_dir.join("spec.yaml");
@@ -1010,6 +1571,7 @@ mod tests {
         add_request_message,
         set_default_requset_messages,
         extrac_postpix_lines, extract_result_value_for_ui, load_embedded_template_text,
+        find_git_root_dir,
         load_postpix_prompt, load_todos_prompt,
         normalize_server_url, parse_todos_prompt_template, resolve_ai_options,
         stage_start_parallel,
@@ -1097,6 +1659,36 @@ mod tests {
         let prompt = "A\n{{body}}\nB";
         let parsed = parse_todos_prompt_template(prompt, "TODO-BODY");
         assert_eq!(parsed, "A\nTODO-BODY\nB");
+    }
+
+    #[test]
+    fn find_git_root_dir_uses_nearest_repository() {
+        let unique = format!(
+            "orchestra_git_root_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time should be valid")
+                .as_nanos()
+        );
+        let base = std::env::temp_dir().join(unique);
+        let outer = base.join("outer");
+        let inner = outer.join("inner");
+        let deep = inner.join("nested").join("src");
+        fs::create_dir_all(&deep).expect("test directories should be created");
+        fs::create_dir_all(outer.join(".git")).expect("outer git dir should exist");
+        fs::create_dir_all(inner.join(".git")).expect("inner git dir should exist");
+
+        let resolved = find_git_root_dir(&deep).expect("git root should be found");
+        assert_eq!(resolved, inner);
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn find_git_root_dir_does_not_return_home_tree_root() {
+        let resolved = find_git_root_dir(std::path::Path::new("/home/tree/project/orchestra"));
+        assert_ne!(resolved.as_deref(), Some(std::path::Path::new("/home/tree")));
     }
 
     #[test]
