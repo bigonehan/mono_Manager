@@ -1,5 +1,7 @@
 use std::time::Duration;
 use std::process::Command;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::thread;
 
 use anyhow::Result;
 use crossterm::event::DisableMouseCapture;
@@ -9,10 +11,10 @@ use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Cell, Clear, Padding, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -107,6 +109,22 @@ struct RequestInputPane {
     selected_button: RequestButton,
 }
 
+#[derive(Debug, Clone)]
+struct MakeTodosProgressPane {
+    open: bool,
+    running: bool,
+    lines: Vec<String>,
+}
+
+struct MakeTodosJob {
+    rx: Receiver<MakeTodosEvent>,
+}
+
+enum MakeTodosEvent {
+    Progress(String),
+    Finished(Result<Vec<TaskSpecItem>, String>),
+}
+
 #[derive(Debug, Clone, Copy)]
 enum TaskSpecMode {
     List,
@@ -196,6 +214,12 @@ pub async fn stage_run_working_pane(
         focus: RequestPaneFocus::Input,
         selected_button: RequestButton::Confirm,
     };
+    let mut make_todos_progress_pane = MakeTodosProgressPane {
+        open: false,
+        running: false,
+        lines: Vec::new(),
+    };
+    let mut make_todos_job: Option<MakeTodosJob> = None;
     let mut tick = tokio::time::interval(Duration::from_millis(80));
     loop {
         stage_handle_pane_key_events(
@@ -206,7 +230,15 @@ pub async fn stage_run_working_pane(
             &mut request_input_pane,
             &mut rows,
             &mut quit_requested,
+            &mut make_todos_progress_pane,
+            &mut make_todos_job,
         )?;
+        poll_make_todos_job(
+            &mut make_todos_job,
+            &mut make_todos_progress_pane,
+            &mut pane_task_spec,
+            &mut rows,
+        );
         if quit_requested {
             break;
         }
@@ -220,6 +252,10 @@ pub async fn stage_run_working_pane(
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Length(9), Constraint::Min(8)])
                 .split(chunks[0]);
+            let right_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(8), Constraint::Length(5)])
+                .split(chunks[1]);
 
             let task_active = matches!(focus, PaneFocus::TaskSpec);
             let working_active = matches!(focus, PaneFocus::Working);
@@ -274,50 +310,31 @@ pub async fn stage_run_working_pane(
                 TaskSpecMode::Form => render_task_spec_form(frame, task_inner, &pane_task_spec, &theme),
             }
 
-            let header = Row::new(vec!["요청 기능", "결과값", "상태"])
-                .style(Style::default().fg(theme.primary))
-                .height(1);
+            let todos_block = Block::default()
+                .title(Line::from("todos").style(working_title_style))
+                .borders(Borders::ALL)
+                .border_style(working_border_style)
+                .padding(Padding::uniform(theme.padding))
+                .style(Style::default().fg(theme.primary));
+            let todos_inner = todos_block.inner(right_chunks[0]);
+            frame.render_widget(todos_block, right_chunks[0]);
+            render_todos_pane(frame, todos_inner, &pane_task_spec, &theme);
 
-            let ui_rows = rows
-                .iter()
-                .enumerate()
-                .map(|(index, row)| {
-                    let row_style = if index % 2 == 0 {
-                        Style::default().fg(theme.primary)
-                    } else {
-                        Style::default().bg(theme.background).fg(theme.primary)
-                    };
-                    Row::new(vec![
-                        Cell::from(row.request.clone()),
-                        Cell::from(row.result.clone()),
-                        Cell::from(Line::from(status_text(row.status, &theme)).alignment(Alignment::Right)),
-                    ])
-                    .style(row_style)
-                    .height(1)
-                })
-                .collect::<Vec<_>>();
-
-            let table = Table::new(
-                ui_rows,
-                [
-                    Constraint::Percentage(40),
-                    Constraint::Percentage(48),
-                    Constraint::Percentage(12),
-                ],
-            )
-            .header(header)
-            .block(
-                Block::default()
-                    .title(Line::from("working").style(working_title_style))
-                    .borders(Borders::ALL)
-                    .border_style(working_border_style)
-                    .padding(Padding::uniform(theme.padding))
-                    .style(Style::default().fg(theme.primary)),
-            );
-            frame.render_widget(table, chunks[1]);
+            let working_block = Block::default()
+                .title(Line::from("working (collapsed)").style(working_title_style))
+                .borders(Borders::ALL)
+                .border_style(working_border_style)
+                .padding(Padding::uniform(theme.padding))
+                .style(Style::default().fg(theme.primary));
+            let working_inner = working_block.inner(right_chunks[1]);
+            frame.render_widget(working_block, right_chunks[1]);
+            render_working_compact(frame, working_inner, rows.as_slice(), &theme);
 
             if request_input_pane.open {
                 render_request_input_pane(frame, area, &request_input_pane, &theme);
+            }
+            if make_todos_progress_pane.open {
+                render_make_todos_progress_pane(frame, area, &make_todos_progress_pane, &theme);
             }
         })?;
 
@@ -567,6 +584,47 @@ fn render_request_input_pane(
     );
 }
 
+fn render_make_todos_progress_pane(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    pane: &MakeTodosProgressPane,
+    theme: &WorkingTheme,
+) {
+    let width = area.width.saturating_mul(64) / 100;
+    let height = area.height.saturating_mul(45) / 100;
+    let x = area
+        .x
+        .saturating_add((area.width.saturating_sub(width)) / 2);
+    let y = area
+        .y
+        .saturating_add((area.height.saturating_sub(height)) / 2);
+    let popup = Rect::new(x, y, width.max(26), height.max(8));
+
+    frame.render_widget(Clear, popup);
+    let title = if pane.running {
+        "make_todos_spec (running)"
+    } else {
+        "make_todos_spec (done)"
+    };
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.secondary).bg(theme.background))
+        .padding(Padding::new(1, 1, 1, 1));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let mut lines = pane
+        .lines
+        .iter()
+        .rev()
+        .take(12)
+        .cloned()
+        .collect::<Vec<_>>();
+    lines.reverse();
+    frame.render_widget(Paragraph::new(lines.join("\n")), inner);
+}
+
 fn set_requset_function(
     request_input_pane: &mut RequestInputPane,
     key: KeyCode,
@@ -651,6 +709,8 @@ fn stage_handle_pane_key_events(
     request_input_pane: &mut RequestInputPane,
     rows: &mut Vec<WorkingRow>,
     quit_requested: &mut bool,
+    make_todos_progress_pane: &mut MakeTodosProgressPane,
+    make_todos_job: &mut Option<MakeTodosJob>,
 ) -> Result<()> {
     while crossterm::event::poll(Duration::from_millis(0))? {
         let event = crossterm::event::read()?;
@@ -659,6 +719,18 @@ fn stage_handle_pane_key_events(
         };
         if key.kind != KeyEventKind::Press {
             continue;
+        }
+
+        if make_todos_progress_pane.open {
+            if !make_todos_progress_pane.running
+                && matches!(key.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char('Q'))
+            {
+                make_todos_progress_pane.open = false;
+                continue;
+            }
+            if make_todos_progress_pane.running {
+                continue;
+            }
         }
         if matches!(key.code, KeyCode::Char('q') | KeyCode::Char('Q')) {
             *quit_requested = true;
@@ -721,13 +793,11 @@ fn stage_handle_pane_key_events(
                     }
                 }
                 KeyCode::Char('p') | KeyCode::Char('P') => {
-                    match make_todos_spec(pane_task_spec, rows) {
-                        Ok(appended) => {
-                            pane_task_spec.status = format!("make_todos_spec appended: {appended}");
-                        }
-                        Err(err) => {
-                            pane_task_spec.status = format!("make_todos_spec failed: {err}");
-                        }
+                    if make_todos_job.is_none() {
+                        let (pane, job) = start_make_todos_job(&pane_task_spec.path);
+                        *make_todos_progress_pane = pane;
+                        *make_todos_job = Some(job);
+                        pane_task_spec.status = "make_todos_spec started".to_string();
                     }
                 }
                 KeyCode::Enter => {
@@ -877,6 +947,79 @@ fn show_or_dash(value: &str) -> &str {
     if value.trim().is_empty() { "-" } else { value }
 }
 
+fn render_todos_pane(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    pane_task_spec: &PaneTaskSpec,
+    theme: &WorkingTheme,
+) {
+    if pane_task_spec.spec.tasks.is_empty() {
+        frame.render_widget(Paragraph::new("todo item이 없습니다."), area);
+        return;
+    }
+    let Some((matched_index, task)) =
+        find_task_item_by_selected_name(&pane_task_spec.spec, pane_task_spec.selected_task)
+    else {
+        frame.render_widget(Paragraph::new("선택된 todo item을 찾을 수 없습니다."), area);
+        return;
+    };
+
+    let mut lines = vec![
+        Line::from(format!(
+            "item: {}/{} (match: {})",
+            pane_task_spec.selected_task + 1,
+            pane_task_spec.spec.tasks.len(),
+            matched_index + 1
+        ))
+        .style(Style::default().fg(theme.secondary)),
+        Line::from(format!("name: {}", task.name)),
+        Line::from("todos:"),
+    ];
+
+    if task.step.is_empty() {
+        lines.push(Line::from("  - (none)"));
+    } else {
+        for todo in &task.step {
+            lines.push(Line::from(format!("  - {todo}")));
+        }
+    }
+    if !task.rule.is_empty() {
+        lines.push(Line::from("rules:"));
+        for rule in &task.rule {
+            lines.push(Line::from(format!("  - {rule}")));
+        }
+    }
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+fn render_working_compact(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    rows: &[WorkingRow],
+    theme: &WorkingTheme,
+) {
+    let mut ready = 0usize;
+    let mut running = 0usize;
+    let mut done = 0usize;
+    for row in rows {
+        match row.status {
+            WorkingStatus::Ready => ready += 1,
+            WorkingStatus::Running => running += 1,
+            WorkingStatus::Done => done += 1,
+        }
+    }
+    let mut lines = vec![
+        Line::from(format!("{} {}", theme.state_ready, ready)),
+        Line::from(format!("{} {}", theme.state_running, running)),
+        Line::from(format!("{} {}", theme.state_done, done)),
+    ];
+    if let Some(first) = rows.first() {
+        let preview = first.request.lines().next().unwrap_or("-");
+        lines.push(Line::from(format!("first: {preview}")));
+    }
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
 fn get_selected_field_value(pane_task_spec: &PaneTaskSpec) -> String {
     let Some(task) = pane_task_spec.spec.tasks.get(pane_task_spec.selected_task) else {
         return String::new();
@@ -930,23 +1073,112 @@ fn stage_save_task_spec(pane_task_spec: &mut PaneTaskSpec) {
     }
 }
 
-fn make_todos_spec(pane_task_spec: &mut PaneTaskSpec, rows: &mut Vec<WorkingRow>) -> Result<usize> {
-    let spec_path = resolve_spec_yaml_path(&pane_task_spec.path)?;
+fn start_make_todos_job(todos_path: &std::path::Path) -> (MakeTodosProgressPane, MakeTodosJob) {
+    let (tx, rx) = mpsc::channel::<MakeTodosEvent>();
+    let todos_path = todos_path.to_path_buf();
+    thread::spawn(move || {
+        let send_progress = |message: &str| {
+            let _ = tx.send(MakeTodosEvent::Progress(message.to_string()));
+        };
+        let result = run_make_todos_spec_with_progress(&todos_path, send_progress)
+            .map_err(|err| err.to_string());
+        let _ = tx.send(MakeTodosEvent::Finished(result));
+    });
+
+    (
+        MakeTodosProgressPane {
+            open: true,
+            running: true,
+            lines: vec!["make_todos_spec started".to_string()],
+        },
+        MakeTodosJob { rx },
+    )
+}
+
+fn poll_make_todos_job(
+    make_todos_job: &mut Option<MakeTodosJob>,
+    make_todos_progress_pane: &mut MakeTodosProgressPane,
+    pane_task_spec: &mut PaneTaskSpec,
+    rows: &mut Vec<WorkingRow>,
+) {
+    let Some(job) = make_todos_job.as_mut() else {
+        return;
+    };
+
+    loop {
+        match job.rx.try_recv() {
+            Ok(MakeTodosEvent::Progress(message)) => {
+                make_todos_progress_pane.lines.push(message);
+            }
+            Ok(MakeTodosEvent::Finished(result)) => {
+                make_todos_progress_pane.running = false;
+                match result {
+                    Ok(tasks) => {
+                        let appended = tasks.len();
+                        if appended == 0 {
+                            pane_task_spec.status = "make_todos_spec failed: generated todos is empty".to_string();
+                            make_todos_progress_pane
+                                .lines
+                                .push("failed: generated todos is empty".to_string());
+                        } else {
+                            pane_task_spec.spec.tasks.extend(tasks);
+                            rows.clear();
+                            rows.extend(build_working_rows_from_tasks(&pane_task_spec.spec.tasks));
+                            stage_save_task_spec(pane_task_spec);
+                            pane_task_spec.status =
+                                format!("make_todos_spec appended: {appended}");
+                            make_todos_progress_pane
+                                .lines
+                                .push(format!("done: appended {appended} items"));
+                        }
+                    }
+                    Err(err) => {
+                        pane_task_spec.status = format!("make_todos_spec failed: {err}");
+                        make_todos_progress_pane.lines.push(format!("failed: {err}"));
+                    }
+                }
+                make_todos_progress_pane
+                    .lines
+                    .push("Esc/Enter: close".to_string());
+                *make_todos_job = None;
+                break;
+            }
+            Err(TryRecvError::Empty) => break,
+            Err(TryRecvError::Disconnected) => {
+                make_todos_progress_pane.running = false;
+                make_todos_progress_pane
+                    .lines
+                    .push("failed: progress channel disconnected".to_string());
+                make_todos_progress_pane
+                    .lines
+                    .push("Esc/Enter: close".to_string());
+                pane_task_spec.status = "make_todos_spec failed: channel disconnected".to_string();
+                *make_todos_job = None;
+                break;
+            }
+        }
+    }
+}
+
+fn run_make_todos_spec_with_progress<F>(
+    todos_path: &std::path::Path,
+    mut send_progress: F,
+) -> Result<Vec<TaskSpecItem>>
+where
+    F: FnMut(&str),
+{
+    send_progress("resolving spec.yaml path");
+    let spec_path = resolve_spec_yaml_path(todos_path)?;
+    send_progress("reading spec.yaml");
     let spec_text = std::fs::read_to_string(&spec_path)
         .map_err(|e| anyhow::anyhow!("failed to read spec.yaml ({}): {e}", spec_path.display()))?;
+    send_progress("building prompt");
     let prompt = build_make_todos_prompt(&spec_text);
+    send_progress("running codex");
     let raw_output = execute_codex_prompt(&prompt)?;
+    send_progress("parsing generated yaml");
     let generated = parse_todos_from_codex_output(&raw_output)?;
-    if generated.tasks.is_empty() {
-        return Err(anyhow::anyhow!("generated todos is empty"));
-    }
-
-    let appended = generated.tasks.len();
-    pane_task_spec.spec.tasks.extend(generated.tasks);
-    rows.clear();
-    rows.extend(build_working_rows_from_tasks(&pane_task_spec.spec.tasks));
-    stage_save_task_spec(pane_task_spec);
-    Ok(appended)
+    Ok(generated.tasks)
 }
 
 fn resolve_spec_yaml_path(todos_path: &std::path::Path) -> Result<std::path::PathBuf> {
@@ -1042,14 +1274,6 @@ fn join_items_with_bar(values: &[String]) -> String {
         "-".to_string()
     } else {
         values.join(" | ")
-    }
-}
-
-fn status_text<'a>(status: WorkingStatus, theme: &'a WorkingTheme) -> &'a str {
-    match status {
-        WorkingStatus::Ready => &theme.state_ready,
-        WorkingStatus::Running => &theme.state_running,
-        WorkingStatus::Done => &theme.state_done,
     }
 }
 

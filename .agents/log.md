@@ -237,3 +237,13 @@
 
 ## 2026-02-19 - 작업한일
 - Prompt_Todos에 Codex 실행 지시어 추가: functional-code-structure 스킬 적용, todo 작성 규칙(rule/step 반영, depends_on 명시), todos.yaml append 원칙 반영
+
+## 2026-02-19 - 작업한일
+- 오른쪽 영역을 세로 2분할로 변경: 상단 `todos` pane, 하단 축약 `working` pane
+- `todos` pane은 선택 item(name 매칭)의 todo 객체를 표시하도록 구성(이전 패턴 참고)
+- `working` pane은 목록 대신 상태 요약(ready/running/done) 중심으로 축약 렌더
+
+## 2026-02-19 - 작업한일
+- `p` 키(make_todos_spec) 실행을 백그라운드 job으로 전환하고 진행 상태/오류를 표시하는 소형 팝업 pane 추가
+- 진행 단계(resolving spec/read/build prompt/run codex/parse) 실시간 표시 및 실패 시 에러 메시지 표시
+- 완료 시 append 결과를 todos에 반영하고 팝업에서 Esc/Enter로 닫을 수 있도록 처리
