@@ -11,7 +11,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Cell, Padding, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Cell, Clear, Padding, Paragraph, Row, Table};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -87,6 +87,26 @@ enum PaneFocus {
 }
 
 #[derive(Debug, Clone, Copy)]
+enum RequestButton {
+    Cancel,
+    Confirm,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RequestPaneFocus {
+    Input,
+    Buttons,
+}
+
+#[derive(Debug, Clone)]
+struct RequestInputPane {
+    open: bool,
+    text: String,
+    focus: RequestPaneFocus,
+    selected_button: RequestButton,
+}
+
+#[derive(Debug, Clone, Copy)]
 enum TaskSpecMode {
     List,
     Form,
@@ -157,6 +177,12 @@ pub async fn stage_run_working_pane(
 
     let mut should_finish = false;
     let mut run_requested = false;
+    let mut request_input_pane = RequestInputPane {
+        open: true,
+        text: String::new(),
+        focus: RequestPaneFocus::Input,
+        selected_button: RequestButton::Confirm,
+    };
     let mut tick = tokio::time::interval(Duration::from_millis(80));
     loop {
         stage_handle_pane_key_events(
@@ -164,6 +190,8 @@ pub async fn stage_run_working_pane(
             &mut pane_task_spec,
             &run_start_tx,
             &mut run_requested,
+            &mut request_input_pane,
+            &mut rows,
         )?;
         terminal.draw(|frame| {
             let area = working_area(frame.area(), &theme);
@@ -256,6 +284,10 @@ pub async fn stage_run_working_pane(
                     .style(Style::default().fg(theme.primary)),
             );
             frame.render_widget(table, chunks[1]);
+
+            if request_input_pane.open {
+                render_request_input_pane(frame, area, &request_input_pane, &theme);
+            }
         })?;
 
         if should_finish && rows.iter().all(|r| matches!(r.status, WorkingStatus::Done)) {
@@ -329,7 +361,7 @@ fn render_task_spec_cards(
 ) {
     if pane_task_spec.spec.tasks.is_empty() {
         frame.render_widget(
-            Paragraph::new("tasks.yaml에 task가 없습니다."),
+            Paragraph::new("todos.yaml에 task가 없습니다."),
             area,
         );
         return;
@@ -429,11 +461,152 @@ fn render_task_spec_form(
     frame.render_widget(Paragraph::new(lines), area);
 }
 
+fn render_request_input_pane(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    request_input_pane: &RequestInputPane,
+    theme: &WorkingTheme,
+) {
+    let width = area.width.saturating_mul(70) / 100;
+    let height = area.height.saturating_mul(60) / 100;
+    let x = area
+        .x
+        .saturating_add((area.width.saturating_sub(width)) / 2);
+    let y = area
+        .y
+        .saturating_add((area.height.saturating_sub(height)) / 2);
+    let popup = Rect::new(x, y, width.max(20), height.max(10));
+
+    frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .title("set_requset_function")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.secondary).bg(theme.background))
+        .padding(Padding::new(1, 1, 1, 1));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(3)])
+        .split(inner);
+
+    let input_title = if matches!(request_input_pane.focus, RequestPaneFocus::Input) {
+        "input (multiline, Tab to buttons)"
+    } else {
+        "input"
+    };
+    frame.render_widget(
+        Paragraph::new(request_input_pane.text.clone()).block(Block::default().title(input_title).borders(Borders::ALL)),
+        chunks[0],
+    );
+
+    let cancel_label = if matches!(request_input_pane.focus, RequestPaneFocus::Buttons)
+        && matches!(request_input_pane.selected_button, RequestButton::Cancel)
+    {
+        "> [취소] <"
+    } else {
+        "[취소]"
+    };
+    let confirm_label = if matches!(request_input_pane.focus, RequestPaneFocus::Buttons)
+        && matches!(request_input_pane.selected_button, RequestButton::Confirm)
+    {
+        "> [확인] <"
+    } else {
+        "[확인]"
+    };
+    let button_line = Line::from(format!("  {cancel_label}   {confirm_label}"));
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::from("Tab: focus change, Left/Right: button, Enter: action"),
+            button_line,
+        ]),
+        chunks[1],
+    );
+}
+
+fn set_requset_function(
+    request_input_pane: &mut RequestInputPane,
+    key: KeyCode,
+    pane_task_spec: &mut PaneTaskSpec,
+    rows: &mut Vec<WorkingRow>,
+) -> bool {
+    if !request_input_pane.open {
+        return false;
+    }
+
+    match key {
+        KeyCode::Tab => {
+            request_input_pane.focus = match request_input_pane.focus {
+                RequestPaneFocus::Input => RequestPaneFocus::Buttons,
+                RequestPaneFocus::Buttons => RequestPaneFocus::Input,
+            };
+            return true;
+        }
+        KeyCode::Esc => {
+            request_input_pane.open = false;
+            pane_task_spec.status = "request input canceled".to_string();
+            return true;
+        }
+        _ => {}
+    }
+
+    match request_input_pane.focus {
+        RequestPaneFocus::Input => {
+            match key {
+                KeyCode::Enter => request_input_pane.text.push('\n'),
+                KeyCode::Backspace => {
+                    let _ = request_input_pane.text.pop();
+                }
+                KeyCode::Char(c) => request_input_pane.text.push(c),
+                KeyCode::Down => request_input_pane.focus = RequestPaneFocus::Buttons,
+                _ => {}
+            }
+            true
+        }
+        RequestPaneFocus::Buttons => {
+            match key {
+                KeyCode::Left => request_input_pane.selected_button = RequestButton::Cancel,
+                KeyCode::Right => request_input_pane.selected_button = RequestButton::Confirm,
+                KeyCode::Up => request_input_pane.focus = RequestPaneFocus::Input,
+                KeyCode::Enter => match request_input_pane.selected_button {
+                    RequestButton::Cancel => {
+                        request_input_pane.open = false;
+                        pane_task_spec.status = "request input canceled".to_string();
+                    }
+                    RequestButton::Confirm => {
+                        let parsed_tasks = parsing_request_function(&request_input_pane.text);
+                        if !parsed_tasks.is_empty() {
+                            pane_task_spec.spec.tasks = parsed_tasks;
+                            pane_task_spec.selected_task = 0;
+                            pane_task_spec.mode = TaskSpecMode::List;
+                            pane_task_spec.selected_field = 0;
+                            pane_task_spec.input_mode = false;
+                            rows.clear();
+                            rows.extend(build_working_rows_from_tasks(&pane_task_spec.spec.tasks));
+                            stage_save_task_spec(pane_task_spec);
+                            pane_task_spec.status = "request parsed and saved".to_string();
+                        } else {
+                            pane_task_spec.status = "parse failed: '# name' is required".to_string();
+                            return true;
+                        }
+                        request_input_pane.open = false;
+                    }
+                },
+                _ => {}
+            }
+            true
+        }
+    }
+}
+
 fn stage_handle_pane_key_events(
     focus: &mut PaneFocus,
     pane_task_spec: &mut PaneTaskSpec,
     run_start_tx: &tokio::sync::mpsc::UnboundedSender<()>,
     run_requested: &mut bool,
+    request_input_pane: &mut RequestInputPane,
+    rows: &mut Vec<WorkingRow>,
 ) -> Result<()> {
     while crossterm::event::poll(Duration::from_millis(0))? {
         let event = crossterm::event::read()?;
@@ -441,6 +614,10 @@ fn stage_handle_pane_key_events(
             continue;
         };
         if key.kind != KeyEventKind::Press {
+            continue;
+        }
+
+        if set_requset_function(request_input_pane, key.code, pane_task_spec, rows) {
             continue;
         }
 
@@ -530,6 +707,89 @@ fn stage_handle_pane_key_events(
         }
     }
     Ok(())
+}
+
+fn parsing_request_function(raw: &str) -> Vec<TaskSpecItem> {
+    let mut tasks = Vec::new();
+    let mut current: Option<TaskSpecItem> = None;
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix('#') {
+            if let Some(item) = current.take() {
+                if !item.name.trim().is_empty() {
+                    tasks.push(item);
+                }
+            }
+            let name = rest.trim();
+            if name.is_empty() {
+                continue;
+            }
+            current = Some(TaskSpecItem {
+                name: name.to_string(),
+                task_type: "action".to_string(),
+                scope: Vec::new(),
+                rule: Vec::new(),
+                step: Vec::new(),
+            });
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix('>') {
+            if let Some(item) = current.as_mut() {
+                let step = rest.trim();
+                if !step.is_empty() {
+                    item.step.push(step.to_string());
+                }
+            }
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix('-') {
+            if let Some(item) = current.as_mut() {
+                let rule = rest.trim();
+                if !rule.is_empty() {
+                    item.rule.push(rule.to_string());
+                }
+            }
+        }
+    }
+
+    if let Some(item) = current {
+        if !item.name.trim().is_empty() {
+            tasks.push(item);
+        }
+    }
+
+    tasks
+}
+
+fn build_working_rows_from_tasks(tasks: &[TaskSpecItem]) -> Vec<WorkingRow> {
+    tasks
+        .iter()
+        .map(|task| WorkingRow {
+            request: format!(
+                "# {}\n> {}\n- {}",
+                task.name,
+                if task.step.is_empty() {
+                    "-".to_string()
+                } else {
+                    task.step.join(" | ")
+                },
+                if task.rule.is_empty() {
+                    "-".to_string()
+                } else {
+                    task.rule.join(" | ")
+                }
+            ),
+            result: String::new(),
+            status: WorkingStatus::Ready,
+        })
+        .collect::<Vec<_>>()
 }
 
 fn get_selected_field_value(pane_task_spec: &PaneTaskSpec) -> String {

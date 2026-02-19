@@ -202,3 +202,13 @@
 - assets/templates/spec.yaml 문법 오류 수정(feature:[]/tasks[]/depends on 등)
 - tasks/features 구조를 유효한 YAML 키/리스트/들여쓰기로 정규화
 - 템플릿 설명은 주석으로 유지하고 실제 파싱 가능한 기본값("", [])으로 정리
+
+## 2026-02-19 - 작업한일
+- run-test 시작 시 request 입력 모달 pane 추가(멀티라인 텍스트 입력 + 취소/확인 버튼)
+- 사용자 입력 처리 함수 `set_request_function` 구현(Tab/Enter/Esc/방향키)
+- 확인 시 입력 라인을 메시지 목록으로 전송하고, run-test 실행 전 해당 입력이 add-msg로 반영되도록 메인 흐름 연동
+
+## 2026-02-19 - 작업한일
+- `set_requset_function` 동작을 요구사항 기준으로 재구성: 입력창 표시 + 확인 버튼 대기 + 확인 시 파싱 함수 호출
+- `parsing_request_function` 추가: `#`->name(필수), `>`->step(선택), `-`->rule(선택) 규칙으로 멀티 아이템 입력을 tasks 배열로 파싱
+- 확인 시 파싱된 tasks를 pane spec에 반영하고 todos.yaml에 즉시 저장, 작업 목록 pane도 새 task 개수에 맞춰 갱신
