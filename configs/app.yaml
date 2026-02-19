@@ -1,0 +1,5 @@
+ai:
+  model: "codex"
+  auto: true
+project:
+  path: "."

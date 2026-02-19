@@ -1,0 +1,175 @@
+## 2026-02-19 - 작업한일
+- Rust 기반 HTTP+JSON 콜백 서버/병렬 워커(codex exec) 오케스트레이터 구현
+- run-parallel(n, msgs[]) 명령과 client 결과 전송 함수 추가
+
+## 2026-02-19 - 작업한일
+- 병렬 codex exec 통합 테스트 추가: 각 워커 5초 대기 후 apple 출력, HTTP JSON 콜백 전송 검증
+
+## 2026-02-19 - 작업한일
+- main 기본 실행에서 서버와 병렬 워커를 동시에 수행하도록 오케스트레이션 경로 추가
+- request_messages 기본값 4개(숫자이름/한국 관광도시/현재 일본 시각/내일 서울 행사) 반영
+
+## 2026-02-19 - 작업한일
+- run-test 명령 추가: 서버 실행 + 기본 request_messages 병렬 전송 + 수신 결과 출력
+- request_messages 추가 함수(flow_add_request_message)와 병렬 전달 함수(stage_send_request_messages_parallel) 분리
+
+## 2026-02-19 - 작업한일
+- codex exec stdout을 서버 수신 로그/최종 요약 출력(response)으로 표시하도록 보강
+
+## 2026-02-19 - 작업한일
+- codex exec 인자 오류 수정(--prompt 제거, positional prompt 사용)
+- 응답 로그에 stderr/exit_code 출력 추가로 codex 실행 실패 원인 가시화
+
+## 2026-02-19 - 작업한일
+- 메시지 전송+응답수집 함수(stage_send_message_and_receive_response)와 전송만 후 종료 함수(stage_send_message_only_and_exit) 분리
+- run-parallel/run-test에 --send-only 모드 추가
+
+## 2026-02-19 - 작업한일
+- send-only 모드도 codex exec를 실제 실행 후 종료 신호(codex_finished, exit_code) 전송하도록 수정
+- codex 실행 공통 함수(stage_execute_codex) 도입 및 send-only 종료 신호 테스트 추가
+
+## 2026-02-19 - 작업한일
+- 생성 함수 목록을 functions.txt에 기능설명 : 함수 이름 형식으로 기록
+
+## 2026-02-19 - 작업한일
+- template/prompt/run_task_with_msg_postpix.txt 추가 및 stage_send_message_and_receive_response에서 postpix 프롬프트 결합 적용
+- postpix 로드/결합 함수 추가(flow_load_run_task_with_msg_postpix_prompt, flow_build_prompt_with_postpix) 및 functions.txt 갱신
+
+## 2026-02-19 - 작업한일
+- postpix 템플릿을 3줄 고정 포맷(SUMMARY/RESULT/REPORT)으로 강화
+- codex exec에서 --output-last-message(-o) 파일을 사용해 최종 메시지만 수집하도록 수정
+
+## 2026-02-19 - 작업한일
+- codex가 네트워크 호출을 수행하지 않도록 prompt/postpix 지시를 수정하고 서버 전송은 worker 함수(stage_send_worker_result_to_server)로 일원화
+- codex 응답에서 SUMMARY/RESULT/REPORT만 추출(flow_extract_postpix_lines), 성공 로그에서 stderr 숨김 처리
+
+## 2026-02-19 - 작업한일
+- ratatui/crossterm 기반 working pane UI 추가(src/compoents): 요청 기능/결과값/상태 3컬럼 실시간 표시
+- index % 2 행 배경색 교차 적용, 상태 이모지(준비/진행중/완료) 적용, run-test에서 UI 이벤트 연동
+
+## 2026-02-19 - 작업한일
+- functions.yaml 추가: file 객체 아래 items(name, description) 리스트 구조로 함수 목록 정리
+
+## 2026-02-19 - 작업한일
+- template/function.yaml 스키마 템플릿 추가(name/description 키 기반 인식 규칙 포함)
+
+## 2026-02-19 - 작업한일
+- functions.yaml/items 포맷을 "name, description" 단일 문자열 리스트로 전환
+- template/function.yaml 파싱 규칙(첫 번째 콤마 분리)으로 스키마 갱신
+
+## 2026-02-19 - 작업한일
+- functions.yaml/items 포맷을 "description : name" 문자열 리스트로 전환
+- template/function.yaml 파싱 규칙을 첫 번째 콜론(:) 분리 기준으로 갱신
+
+## 2026-02-19 - 작업한일
+- template/function.yaml 하단 샘플을 주석 블록으로 전환하고 "출력 예시" 라벨 추가
+
+## 2026-02-19 - 작업한일
+- postpix 프롬프트 로더를 경로 탐색+환경변수(ORCHESTRA_POSTPIX_PROMPT_PATH)+내장 기본값 fallback 구조로 보강
+- 실행 위치가 달라도 run_task_with_msg_postpix.txt 미발견 에러로 중단되지 않도록 수정
+
+## 2026-02-19 - 작업한일
+- template/ 디렉터리를 include_dir로 바이너리에 내장하고 postpix 로더가 내장 템플릿을 기본 사용하도록 변경
+
+## 2026-02-19 - 작업한일
+- configs/style.yaml 생성: basic.primary=#121010, secondary=#695656, background=#FAE3DE
+- AGENTS.md 생성: UI 작업 시 색상은 configs/style.yaml 참조 규칙 추가
+
+## 2026-02-19 - 작업한일
+- configs/style.yaml에 layout(margin/padding/pane_width_percent) 추가
+- working pane이 style.yaml을 읽어 색상/패딩/마진을 적용하고 가로 50% 영역만 차지하도록 변경
+
+## 2026-02-19 - 작업한일
+- working pane 상태 표시를 enum 기반 문자열(⬤ 준비/⬤ 진행/⬤ 완료)로 변경
+- 배경색 적용 행의 텍스트를 흰색(Color::White)으로 고정
+
+## 2026-02-19 - 작업한일
+- working pane 상태 표시를 텍스트 없이 심볼만 사용(준비=⯈, 진행=⯀, 완료=⬤)하도록 변경
+
+## 2026-02-19 - 작업한일
+- 입력 질문 함수 모듈(src/input/question.rs) 추가: question 문자열 입력, y/n/숫자 검증, auto/time(기본 false/0) 처리
+- auto=true 시 입력 대기 없이 yes/1/나비 자동 응답, time은 0 또는 1~60 범위 검증
+
+## 2026-02-19 - 작업한일
+- configs/style.yaml에 symbol.state(ready/running/done) 추가
+- working pane 상태 심볼을 코드 하드코딩 대신 style.yaml(symbol.state) 로드값으로 표시하도록 변경
+
+## 2026-02-19 - 작업한일
+- working pane 전체 배경 스타일 제거
+- 리스트 행은 index % 2 조건으로만 background 적용(해당 행 흰색 글자), 기본 행은 primary 글자색 적용
+
+## 2026-02-19 - 작업한일
+- configs/style.yaml background 색상 값을 #E6E6E6으로 변경
+
+## 2026-02-19 - 작업한일
+- working pane의 모든 텍스트 색상을 primary로 통일(교차 배경 유지)
+
+## 2026-02-19 - 작업한일
+- working pane 상태 컬럼 폭 축소(12%) 및 상태 심볼 오른쪽 정렬 적용
+
+## 2026-02-19 - 작업한일
+- working pane 결과 컬럼은 SUMMARY/RESULT 문구 대신 값만 표시하도록 파싱 로직 추가(flow_extract_result_value_for_ui)
+- REPORT answer 값을 우선 사용하고 없으면 RESULT 값을 사용하는 규칙 적용
+
+## 2026-02-19 - 작업한일
+- template/ 디렉터리를 assets/로 재구성: assets/templates/function.yaml, assets/prompts/run_task_with_msg_postpix.txt
+- 코드 경로 및 내장 리소스(include_dir) 경로를 assets 기준으로 갱신
+
+## 2026-02-19 - 작업한일
+- 병렬 워커 실행 바이너리를 config 기반으로 전환: CLI(--codex-bin) 미지정 시 configs/app.yaml의 ai 사용, 최종 fallback은 codex
+- configs/app.yaml 추가(ai: codex), 관련 해석 함수(flow_resolve_ai_bin, flow_load_ai_bin_from_config) 구현
+
+## 2026-02-19 - 작업한일
+- 병렬 codex exec 호출에 --dangerously-bypass-approvals-and-sandbox 옵션 추가(대화형 승인 자동 처리)
+
+## 2026-02-19 - 작업한일
+- configs/app.yaml의 ai를 model/auto 구조로 전환하고(auto bool), auto=true일 때 codex exec에 승인 자동처리 인수 추가
+- AI 실행 옵션 해석을 flow_resolve_ai_options로 재구성(CLI model > config model > codex)
+
+## 2026-02-19 - 작업한일
+- assets/templates/todos.yaml 및 assets/prompts/run_todos.txt 추가
+- 병렬 codex 프롬프트 생성 시 run_todos.txt에 todos.yaml 템플릿 내용을 삽입해 함께 전달하도록 구현
+
+## 2026-02-19 - 작업한일
+- AGENTS.md에 YAML 처리 규칙 추가(문서/예시 주석 처리, 실행용 YAML 순수 데이터 유지, 템플릿/실행 파일 분리)
+
+## 2026-02-19 - 작업한일
+- run_todos 전용 파싱 함수(flow_parse_todos_prompt_template) 추가: {{...}} 플레이스홀더를 todos.yaml 본문으로 치환
+
+## 2026-02-19 - 작업한일
+- run_todos 플레이스홀더를 긴 문구에서 {{body}}로 단축
+- 프롬프트 파일/상수/테스트 치환 기준을 동일하게 갱신
+
+## 2026-02-19 - 작업한일
+- 루트 todos.yaml 생성: 테스트용 todo 5개 항목(name/type/scope/rule/step) 추가
+
+## 2026-02-19 - 작업한일
+- AGENTS.md에 함수 네이밍 기준 추가(flow_는 오케스트레이션 전용, 메시지 동작은 send_ 우선)
+
+## 2026-02-19 - 작업한일
+- send_add_request_message를 add_request_message로 리네이밍하고 참조/문서 목록 갱신
+
+## 2026-02-19 - 작업한일
+- currentProject=test 기준으로 run-test가 ./project/test/tasks.yaml blueprint를 읽어 run_tasks_parallel로 항목별 병렬 처리하도록 연결
+- read_blueprint/project/test/tasks.yaml 경로 구조 반영 및 tasks.yaml 키 일치(tasks:)로 정리
+
+## 2026-02-19 - 작업한일
+- run_todos {{body}} 치환 대상을 todos 템플릿 전체가 아닌 현재 병렬 task item 1개로 변경
+- flow_build_prompt_with_postpix에 task item 본문 전달 인수 추가 및 관련 테스트 갱신
+
+## 2026-02-19 - 작업한일
+- 로컬/전역 AGENTS 및 AGENTS.override 분석으로 flow_ 접두사 확산 원인 확인
+- /home/tree/ai/codex/AGENTS.override.md Function Naming Rule을 오케스트레이션 전용으로 명확화
+- 프로젝트 /home/tree/project/orchestra/AGENTS.md 네이밍 규칙을 강화해 flow_ 사용 범위를 명시
+
+## 2026-02-19 - 작업한일
+- 외부 실행용 바이너리를 `orc`로 고정(Cargo autobins 비활성화 + bin 엔트리 설정)
+- `run-test`에서 `project/test/tasks.yaml` 우선, 없으면 `project/test/tasks.ymal`까지 자동 탐색하도록 보강
+
+## 2026-02-19 - 작업한일
+- configs/app.yaml에 project.path 설정 추가(기본값 ".")
+- blueprint 경로 해석을 resolve_project_base_path/resolve_project_dir/resolve_blueprint_file_path 공통 함수로 통일
+- tasks.yaml 조회 기준을 project.path 기반으로 변경(기존 ./project/<name> 하위 유지)
+
+## 2026-02-19 - 작업한일
+- test용 blueprint 파일 project/test/tasks.yaml을 사용자 지정 항목으로 교체

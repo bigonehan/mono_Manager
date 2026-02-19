@@ -1,0 +1,28 @@
+메시지 전송 + 응답 수집 : stage_send_message_and_receive_response
+메시지 전송만 후 종료 : stage_send_message_only_and_exit
+worker 결과를 서버로 전송 : stage_send_worker_result_to_server
+요청 메시지 병렬 전송 시작 : stage_send_request_messages_parallel
+프로젝트 blueprint(yaml) 파일 읽기 : read_blueprint
+blueprint에서 task 메시지 리스트 생성 : load_task_messages
+task 항목을 codex 전달 메시지로 변환 : task_to_message
+task.yaml 항목을 병렬 처리 실행 : run_tasks_parallel
+요청 메시지 추가 : add_request_message
+codex 응답에서 SUMMARY/RESULT/REPORT 3줄 추출 : extrac_postpix_lines
+working pane 표시용 결과값 추출 : extract_result_value_for_ui
+바이너리 내장 assets 텍스트 로드 : load_embedded_template_text
+실행 AI 바이너리 결정(CLI > config > default) : resolve_ai_options
+configs/app.yaml에서 ai 설정(model/auto) 로드 : load_ai_config_from_config
+run_todos 프롬프트와 todos 템플릿을 결합 : build_run_todos_prompt
+run_todos 프롬프트 플레이스홀더 치환 : parse_todos_prompt_template
+assets/prompts/Prompt_Todos.txt 로드 : load_todos_prompt
+postpix+단일 task item 결합 프롬프트 생성 : build_prompt_with_postpix
+working pane 실시간 UI 실행 : stage_run_working_pane
+working pane 상태 심볼 매핑 : status_text
+style.yaml 기반 working theme 로드 : load_working_theme
+hex 색상 문자열을 ratatui Color로 변환 : parse_hex_color
+margin/폭 비율 기반 working pane 영역 계산 : working_area
+질문을 받고 입력 타입 검증 후 응답 반환(auto/time 지원) : input_ask_question
+auto 모드 기본 응답값 생성(yes/1/나비) : auto_answer
+time 입력 범위 검증(0 또는 1~60) : input_validate_time
+y/n 입력 형식 검증 : input_validate_yes_no
+숫자 입력 형식 검증 : input_validate_number

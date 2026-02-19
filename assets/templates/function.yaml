@@ -1,0 +1,21 @@
+# function.yaml template
+# rules:
+# - files: list
+# - each file item must have:
+#   - file: string
+#   - items: list
+# - each items entry must be a single string:
+#   - "<description> : <name>"
+# - parser must split by the first colon only
+#   - left side => description (required, non-empty)
+#   - right side => name (required, non-empty)
+#
+# 출력 예시:
+# files:
+#   - file: src/main.rs
+#     items:
+#       - "메시지 전송 + 응답 수집 : stage_send_message_and_receive_response"
+#       - "메시지 전송만 후 종료 : stage_send_message_only_and_exit"
+#   - file: src/compoents/working_pane.rs
+#     items:
+#       - "working pane 실시간 UI 실행 : stage_run_working_pane"

@@ -1,0 +1,22 @@
+## tasks.yaml
+name: 작업 이름
+type: action | calc
+scope:
+  - 수정하거나 생성할 파일 경로를 루트 기준으로 표시
+rule:
+  - 구현 시 명시해야 하는 규칙
+step:
+  - 리스트 형태로 작업 처리
+
+출력예시:
+
+  name: dday계산
+  type: calc
+  scope: main.ts
+  rule:
+    - 숫자 입력은 받지 말것
+    - 입력은 5 미만으로 잡을것
+  step:
+    - 사용자에게 숫자 입력을 받는다
+    - 사용자의 나이를 계산
+    - 다음달 생일까지 d-day출력

@@ -1,0 +1,13 @@
+basic:
+  primary: "#121010"
+  secondary: "#695656"
+  background: "#E6E6E6"
+layout:
+  margin: 2
+  padding: 1
+  pane_width_percent: 50
+symbol:
+  state:
+    ready: "⯈"
+    running: "⯀"
+    done: "⬤"
