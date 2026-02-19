@@ -173,3 +173,27 @@
 
 ## 2026-02-19 - 작업한일
 - test용 blueprint 파일 project/test/tasks.yaml을 사용자 지정 항목으로 교체
+
+## 2026-02-19 - 작업한일
+- run-test UI를 menu_function으로 래핑하고 작업 목록 pane + pane_task_spec( tasks.yaml ) 2패널 구조로 확장
+- 좌/우 화살표로 pane 포커스 전환 기능 추가
+- pane_task_spec 포커스에서 Enter로 편집 모드 진입, 입력/백스페이스/엔터 반영 시 실제 tasks.yaml 파일에 즉시 저장되도록 구현(Esc로 저장 후 편집 종료)
+
+## 2026-02-19 - 작업한일
+- 2패널 UI 활성/비활성 대비를 강화: 활성 pane 제목/테두리에 강조 배경색 적용, 비활성 pane은 단색 테두리로 구분
+- working 영역 레이아웃을 중앙 고정 폭에서 전체 가로폭(작은 margin만 유지) 사용으로 변경
+- pane_width_percent 미사용 필드 정리
+
+## 2026-02-19 - 작업한일
+- pane_task_spec를 원문 텍스트 편집에서 task 카드 리스트 UI로 전환
+- 카드 선택(Up/Down) 후 Enter로 Form 모드 진입, name/type/scope/rule/step 필드 단위 편집 지원
+- Form 모드에서 Enter로 필드 편집 시작/완료, Esc로 리스트 복귀, 저장 시 실제 tasks.yaml에 즉시 반영
+
+## 2026-02-19 - 작업한일
+- run-test blueprint 기본 파일명을 `tasks.yaml`에서 `todos.yaml`로 전환
+- 탐색 순서를 `todos.yaml` 우선으로 변경하고 기존 `tasks.yaml/tasks.ymal`은 fallback 호환 유지
+- test blueprint 파일을 `project/test/todos.yaml`로 리네임
+
+## 2026-02-19 - 작업한일
+- run-test 자동 실행을 제거하고 working pane 포커스 상태에서 Enter 입력 시에만 run_tasks_parallel이 시작되도록 제어 채널 추가
+- UI(menu_function -> stage_run_working_pane)에서 run start 신호를 main으로 전달하도록 시그니처/흐름 갱신

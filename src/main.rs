@@ -57,7 +57,7 @@ struct InputRunParallelArgs {
     codex_bin: Option<String>,
     #[arg(long, default_value_t = false)]
     dry_run: bool,
-    #[arg(long, default_value_t = false)]
+    #[arg(long, default_value_t = true)]
     send_only: bool,
 }
 
@@ -166,7 +166,7 @@ async fn flow_main() -> Result<()> {
                 port: 7878,
                 codex_bin: None,
                 dry_run: false,
-                send_only: false,
+                send_only: true,
                 add_msgs: vec![],
             }, currentProject)
             .await
@@ -313,15 +313,23 @@ async fn stage_run_test(args: InputRunTestArgs, current_project: String) -> Resu
     let server_task = tokio::spawn(async move { axum::serve(listener, app).await });
 
     let task_file_name = resolve_task_blueprint_file_name(&current_project)?;
+    let task_spec_path = resolve_blueprint_file_path(&current_project, &task_file_name);
     let request_messages = load_task_messages(&current_project, &task_file_name)?;
     let worker_requests = request_messages.clone();
     let (ui_tx, ui_rx) = tokio::sync::mpsc::unbounded_channel::<WorkingPaneEvent>();
-    let ui_handle = tokio::spawn(compoents::working_pane::stage_run_working_pane(
+    let (run_start_tx, mut run_start_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let ui_handle = tokio::spawn(menu_function(
         worker_requests,
+        task_spec_path,
         ui_rx,
+        run_start_tx,
     ));
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    run_start_rx
+        .recv()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("working pane closed before run start"))?;
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
     let result = run_tasks_parallel(
         format!("http://{}:{}", args.host, args.port),
         current_project.as_str(),
@@ -386,7 +394,7 @@ fn read_blueprint(project_name: &str, file_name: &str) -> Result<String> {
 }
 
 fn resolve_task_blueprint_file_name(project_name: &str) -> Result<String> {
-    let candidates = ["tasks.yaml", "tasks.ymal"];
+    let candidates = ["todos.yaml", "tasks.yaml", "tasks.ymal"];
     for file_name in candidates {
         let path = resolve_blueprint_file_path(project_name, file_name);
         if path.exists() {
@@ -395,7 +403,8 @@ fn resolve_task_blueprint_file_name(project_name: &str) -> Result<String> {
     }
     let project_dir = resolve_project_dir(project_name);
     bail!(
-        "failed to find task blueprint file: expected one of {}/tasks.yaml or {}/tasks.ymal",
+        "failed to find task blueprint file: expected one of {}/todos.yaml, {}/tasks.yaml, or {}/tasks.ymal",
+        project_dir.display(),
         project_dir.display(),
         project_dir.display()
     );
@@ -765,9 +774,9 @@ fn codex_last_message_output_path(worker_id: usize) -> std::path::PathBuf {
     ))
 }
 
-fn build_prompt(server: &ServerInfo, worker_id: usize, message: &str) -> String {
+fn build_prompt(server: &ServerInfo, _worker_id: usize, message: &str) -> String {
     format!(
-        "You are worker #{worker_id}. Server protocol is {protocol}. Callback URL is {url}. Do not perform network calls yourself; only return the requested formatted output. Task: {message}",
+        "Server protocol is {protocol}. Callback URL is {url}. Do not perform network calls yourself; only return the requested formatted output. Task: {message}",
         protocol = server.protocol,
         url = server.callback_url
     )
@@ -862,6 +871,21 @@ async fn client_send_completion(callback_url: &str, payload: &WorkerEnvelope) ->
     Ok(())
 }
 
+async fn menu_function(
+    worker_requests: Vec<String>,
+    task_spec_path: std::path::PathBuf,
+    ui_rx: tokio::sync::mpsc::UnboundedReceiver<WorkingPaneEvent>,
+    run_start_tx: tokio::sync::mpsc::UnboundedSender<()>,
+) -> Result<()> {
+    compoents::working_pane::stage_run_working_pane(
+        worker_requests,
+        task_spec_path,
+        ui_rx,
+        run_start_tx,
+    )
+    .await
+}
+
 async fn stage_send_worker_result_to_server(
     callback_url: &str,
     payload: &WorkerEnvelope,
@@ -910,7 +934,7 @@ mod tests {
         };
         let prompt = build_prompt(&server, 1, "run test");
         assert!(prompt.contains("http+json"));
-        assert!(prompt.contains("worker #1"));
+        assert!(!prompt.contains("worker #1"));
     }
 
     #[test]
