@@ -11,4 +11,12 @@
 - step은 반드시 순서대로 수행할 것
 - rule 위반 가능성이 있으면 즉시 수정해서 규칙을 만족할 것
 - 불필요한 파일 생성, 과도한 리팩토링, scope 외 파일 수정을 금지할 것
+- 스킬 사용:
+  - `/home/tree/ai/skills/functional-code-structure/SKILL.md`를 적용해 todo를 세부적으로 작성할 것
+- todo 작성 규칙:
+  - todo는 "대상 + 동작" 형태의 작업 리스트로 작성
+  - todo 항목 수량 제한 없음
+  - 각 task의 `rule`, `step`을 반드시 반영해 todo를 작성할 것
+  - 어떤 function이 다른 function의 결과/완료를 필요로 하면 해당 function의 `depends_on`에 의존 function 이름을 추가할 것
+  - 완료 `todos.yaml` 파일에는 덧붙일 것(기존 항목 유지)
 - 최종 결과는 간결하게 정리하고 핵심 산출물만 보고할 것

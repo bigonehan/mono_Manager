@@ -1,4 +1,5 @@
 use std::time::Duration;
+use std::process::Command;
 
 use anyhow::Result;
 use crossterm::event::DisableMouseCapture;
@@ -719,6 +720,16 @@ fn stage_handle_pane_key_events(
                         pane_task_spec.selected_task += 1;
                     }
                 }
+                KeyCode::Char('p') | KeyCode::Char('P') => {
+                    match make_todos_spec(pane_task_spec, rows) {
+                        Ok(appended) => {
+                            pane_task_spec.status = format!("make_todos_spec appended: {appended}");
+                        }
+                        Err(err) => {
+                            pane_task_spec.status = format!("make_todos_spec failed: {err}");
+                        }
+                    }
+                }
                 KeyCode::Enter => {
                     if pane_task_spec.spec.tasks.is_empty() {
                         pane_task_spec.status = "수정할 task가 없습니다.".to_string();
@@ -917,6 +928,113 @@ fn stage_save_task_spec(pane_task_spec: &mut PaneTaskSpec) {
     } else {
         pane_task_spec.status = "saved".to_string();
     }
+}
+
+fn make_todos_spec(pane_task_spec: &mut PaneTaskSpec, rows: &mut Vec<WorkingRow>) -> Result<usize> {
+    let spec_path = resolve_spec_yaml_path(&pane_task_spec.path)?;
+    let spec_text = std::fs::read_to_string(&spec_path)
+        .map_err(|e| anyhow::anyhow!("failed to read spec.yaml ({}): {e}", spec_path.display()))?;
+    let prompt = build_make_todos_prompt(&spec_text);
+    let raw_output = execute_codex_prompt(&prompt)?;
+    let generated = parse_todos_from_codex_output(&raw_output)?;
+    if generated.tasks.is_empty() {
+        return Err(anyhow::anyhow!("generated todos is empty"));
+    }
+
+    let appended = generated.tasks.len();
+    pane_task_spec.spec.tasks.extend(generated.tasks);
+    rows.clear();
+    rows.extend(build_working_rows_from_tasks(&pane_task_spec.spec.tasks));
+    stage_save_task_spec(pane_task_spec);
+    Ok(appended)
+}
+
+fn resolve_spec_yaml_path(todos_path: &std::path::Path) -> Result<std::path::PathBuf> {
+    if let Some(parent) = todos_path.parent() {
+        let sibling = parent.join("spec.yaml");
+        if sibling.exists() {
+            return Ok(sibling);
+        }
+    }
+    let fallback = std::path::PathBuf::from("assets/templates/spec.yaml");
+    if fallback.exists() {
+        return Ok(fallback);
+    }
+    Err(anyhow::anyhow!("spec.yaml not found near todos.yaml or assets/templates/spec.yaml"))
+}
+
+fn build_make_todos_prompt(spec_text: &str) -> String {
+    format!(
+        "현재 spec.yaml을 보고 각 tasks의 item을 바탕으로 todos.yaml 형식에 따른 todos.yaml 작성해줘.\n\
+스킬 사용:\n\
+- /home/tree/ai/skills/functional-code-structure/SKILL.md를 적용해 todo를 세부적으로 작성할것\n\
+규칙:\n\
+- todo는 \"대상 + 동작\" 형태의 작업 리스트로 작성\n\
+- todo 항목 수량 제한 없음\n\
+- 각 task의 `rule`, `step`을 반드시 반영해 todo를 작성할 것\n\
+- 어떤 function이 다른 function의 결과/완료를 필요로 하면 해당 function의 `depends_on`에 의존 function 이름을 추가\n\
+- 완료 todos.yaml 파일에 덧붙것일것\n\
+출력 형식:\n\
+- 순수 YAML만 출력\n\
+- 최상위 키는 tasks만 사용\n\
+- 기존 파일 전체를 다시 쓰지 말고 append할 tasks 항목들만 작성\n\n\
+spec.yaml:\n{spec_text}"
+    )
+}
+
+fn execute_codex_prompt(prompt: &str) -> Result<String> {
+    let output_path = std::env::temp_dir().join(format!(
+        "orchestra_make_todos_spec_{}_{}.txt",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    ));
+
+    let output = Command::new("codex")
+        .arg("exec")
+        .arg("--color")
+        .arg("never")
+        .arg("-o")
+        .arg(&output_path)
+        .arg(prompt)
+        .output()
+        .map_err(|e| anyhow::anyhow!("failed to execute codex: {e}"))?;
+
+    let fallback_stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let text = std::fs::read_to_string(&output_path).unwrap_or(fallback_stdout);
+    let _ = std::fs::remove_file(&output_path);
+
+    if !output.status.success() {
+        return Err(anyhow::anyhow!(
+            "codex exited with code {}",
+            output.status.code().unwrap_or(-1)
+        ));
+    }
+    Ok(text)
+}
+
+fn parse_todos_from_codex_output(raw: &str) -> Result<TaskSpecYaml> {
+    let candidate = extract_yaml_candidate(raw);
+    serde_yaml::from_str::<TaskSpecYaml>(&candidate)
+        .map_err(|e| anyhow::anyhow!("failed to parse generated yaml: {e}"))
+}
+
+fn extract_yaml_candidate(raw: &str) -> String {
+    if let Some(start) = raw.find("```yaml") {
+        let remain = &raw[start + "```yaml".len()..];
+        if let Some(end) = remain.find("```") {
+            return remain[..end].trim().to_string();
+        }
+    }
+    if let Some(start) = raw.find("```") {
+        let remain = &raw[start + 3..];
+        if let Some(end) = remain.find("```") {
+            return remain[..end].trim().to_string();
+        }
+    }
+    raw.trim().to_string()
 }
 
 fn join_items_with_bar(values: &[String]) -> String {

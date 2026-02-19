@@ -234,3 +234,6 @@
 - pane_task_spec 리스트 렌더를 다중 카드에서 단일 선택 객체 뷰로 변경
 - Up/Down 선택 인덱스의 name을 기준으로 todos 전체에서 일치 task를 조회해 표시하도록 구현
 - 표시 포맷을 todos.yaml 객체 형태(name/type/scope/rule/step)로 맞춤
+
+## 2026-02-19 - 작업한일
+- Prompt_Todos에 Codex 실행 지시어 추가: functional-code-structure 스킬 적용, todo 작성 규칙(rule/step 반영, depends_on 명시), todos.yaml append 원칙 반영
