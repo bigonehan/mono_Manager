@@ -395,54 +395,62 @@ fn render_task_spec_cards(
         return;
     }
 
-    let card_height: u16 = 6;
-    let max_cards = std::cmp::max(1, usize::from((area.height / card_height).max(1)));
-    let end = std::cmp::min(pane_task_spec.spec.tasks.len(), pane_task_spec.selected_task + 1);
-    let start = end.saturating_sub(max_cards);
-    let visible_end = std::cmp::min(pane_task_spec.spec.tasks.len(), start + max_cards);
+    let Some((matched_index, task)) = find_task_item_by_selected_name(&pane_task_spec.spec, pane_task_spec.selected_task) else {
+        frame.render_widget(Paragraph::new("선택된 task를 찾을 수 없습니다."), area);
+        return;
+    };
 
-    let mut constraints = Vec::new();
-    for _ in start..visible_end {
-        constraints.push(Constraint::Length(card_height));
-    }
-    if constraints.is_empty() {
-        constraints.push(Constraint::Length(card_height));
-    }
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(area);
+    let scope_lines = if task.scope.is_empty() {
+        vec!["  -".to_string()]
+    } else {
+        task.scope.iter().map(|v| format!("  - {v}")).collect::<Vec<_>>()
+    };
+    let rule_lines = if task.rule.is_empty() {
+        vec!["  -".to_string()]
+    } else {
+        task.rule.iter().map(|v| format!("  - {v}")).collect::<Vec<_>>()
+    };
+    let step_lines = if task.step.is_empty() {
+        vec!["  -".to_string()]
+    } else {
+        task.step.iter().map(|v| format!("  - {v}")).collect::<Vec<_>>()
+    };
 
-    for (card_slot, task_index) in (start..visible_end).enumerate() {
-        let task = &pane_task_spec.spec.tasks[task_index];
-        let selected = task_index == pane_task_spec.selected_task;
-        let border_style = if selected {
-            Style::default().fg(theme.secondary).bg(theme.background)
-        } else {
-            Style::default().fg(theme.primary)
-        };
-        let title_style = if selected {
-            Style::default().fg(theme.background).bg(theme.secondary)
-        } else {
-            Style::default().fg(theme.primary)
-        };
+    let mut lines = vec![
+        Line::from(format!(
+            "selected: {}/{} (match index: {})",
+            pane_task_spec.selected_task + 1,
+            pane_task_spec.spec.tasks.len(),
+            matched_index + 1
+        ))
+        .style(Style::default().fg(theme.secondary)),
+        Line::from("name: ".to_string() + &task.name),
+        Line::from("type: ".to_string() + &task.task_type),
+        Line::from("scope:"),
+    ];
+    lines.extend(scope_lines.into_iter().map(Line::from));
+    lines.push(Line::from("rule:"));
+    lines.extend(rule_lines.into_iter().map(Line::from));
+    lines.push(Line::from("step:"));
+    lines.extend(step_lines.into_iter().map(Line::from));
 
-        let content = format!(
-            "name: {}\ntype: {}\nscope: {}\nrule: {}",
-            task.name,
-            task.task_type,
-            join_items(&task.scope),
-            join_items(&task.rule),
-        );
-        let card = Paragraph::new(content).block(
-            Block::default()
-                .title(Line::from(format!("task {}", task_index + 1)).style(title_style))
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .padding(Padding::new(1, 1, 0, 0)),
-        );
-        frame.render_widget(card, chunks[card_slot]);
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+fn find_task_item_by_selected_name(
+    spec: &TaskSpecYaml,
+    selected_index: usize,
+) -> Option<(usize, &TaskSpecItem)> {
+    let selected = spec.tasks.get(selected_index)?;
+    if let Some((idx, task)) = spec
+        .tasks
+        .iter()
+        .enumerate()
+        .find(|(_, item)| item.name == selected.name)
+    {
+        return Some((idx, task));
     }
+    Some((selected_index, selected))
 }
 
 fn render_task_spec_form(
@@ -908,14 +916,6 @@ fn stage_save_task_spec(pane_task_spec: &mut PaneTaskSpec) {
         pane_task_spec.status = format!("save failed: {err}");
     } else {
         pane_task_spec.status = "saved".to_string();
-    }
-}
-
-fn join_items(values: &[String]) -> String {
-    if values.is_empty() {
-        "-".to_string()
-    } else {
-        values.join(", ")
     }
 }
 

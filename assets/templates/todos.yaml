@@ -1,4 +1,4 @@
-## tasks.yaml
+## todos.yaml
 name: 작업 이름
 type: action | calc
 scope:
