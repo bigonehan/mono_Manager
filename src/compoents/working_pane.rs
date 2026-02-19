@@ -10,7 +10,7 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Padding, Paragraph, Row, Table};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -127,13 +127,24 @@ struct PaneTaskSpec {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct TaskSpecYaml {
     #[serde(default)]
+    name: String,
+    #[serde(default)]
+    framework: String,
+    #[serde(default)]
+    rule: Vec<String>,
+    #[serde(default)]
+    features: ProjectFeatures,
+    #[serde(default)]
+    #[serde(alias = "todos")]
     tasks: Vec<TaskSpecItem>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
-struct TaskSpecYamlCompat {
-    tasks: Option<Vec<TaskSpecItem>>,
-    todos: Option<Vec<TaskSpecItem>>,
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct ProjectFeatures {
+    #[serde(default)]
+    domain: String,
+    #[serde(default)]
+    feature: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -176,6 +187,7 @@ pub async fn stage_run_working_pane(
     terminal.clear()?;
 
     let mut should_finish = false;
+    let mut quit_requested = false;
     let mut run_requested = false;
     let mut request_input_pane = RequestInputPane {
         open: true,
@@ -192,13 +204,21 @@ pub async fn stage_run_working_pane(
             &mut run_requested,
             &mut request_input_pane,
             &mut rows,
+            &mut quit_requested,
         )?;
+        if quit_requested {
+            break;
+        }
         terminal.draw(|frame| {
             let area = working_area(frame.area(), &theme);
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
+            let left_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(9), Constraint::Min(8)])
+                .split(chunks[0]);
 
             let task_active = matches!(focus, PaneFocus::TaskSpec);
             let working_active = matches!(focus, PaneFocus::Working);
@@ -227,6 +247,16 @@ pub async fn stage_run_working_pane(
                 TaskSpecMode::List => "card-list",
                 TaskSpecMode::Form => "form",
             };
+            let project_block = Block::default()
+                .title(Line::from("project_spec").style(task_title_style))
+                .borders(Borders::ALL)
+                .border_style(task_border_style)
+                .padding(Padding::uniform(theme.padding))
+                .style(Style::default().fg(theme.primary));
+            let project_inner = project_block.inner(left_chunks[0]);
+            frame.render_widget(project_block, left_chunks[0]);
+            render_project_spec(frame, project_inner, &pane_task_spec);
+
             let task_block = Block::default()
                 .title(
                     Line::from(format!("pane_task_spec ({mode_text}) | {}", pane_task_spec.status))
@@ -236,8 +266,8 @@ pub async fn stage_run_working_pane(
                 .border_style(task_border_style)
                 .padding(Padding::uniform(theme.padding))
                 .style(Style::default().fg(theme.primary));
-            let task_inner = task_block.inner(chunks[0]);
-            frame.render_widget(task_block, chunks[0]);
+            let task_inner = task_block.inner(left_chunks[1]);
+            frame.render_widget(task_block, left_chunks[1]);
             match pane_task_spec.mode {
                 TaskSpecMode::List => render_task_spec_cards(frame, task_inner, &pane_task_spec, &theme),
                 TaskSpecMode::Form => render_task_spec_form(frame, task_inner, &pane_task_spec, &theme),
@@ -326,10 +356,8 @@ pub async fn stage_run_working_pane(
 fn load_pane_task_spec(path: std::path::PathBuf) -> PaneTaskSpec {
     let mut status = "Working pane focus + Enter: run | Up/Down: select task | Enter(on task): open form".to_string();
     let spec = match std::fs::read_to_string(&path) {
-        Ok(raw) => match serde_yaml::from_str::<TaskSpecYamlCompat>(&raw) {
-            Ok(parsed) => TaskSpecYaml {
-                tasks: parsed.tasks.or(parsed.todos).unwrap_or_default(),
-            },
+        Ok(raw) => match serde_yaml::from_str::<TaskSpecYaml>(&raw) {
+            Ok(parsed) => parsed,
             Err(err) => {
                 status = format!("yaml parse failed: {err}");
                 TaskSpecYaml::default()
@@ -501,21 +529,26 @@ fn render_request_input_pane(
         chunks[0],
     );
 
-    let cancel_label = if matches!(request_input_pane.focus, RequestPaneFocus::Buttons)
-        && matches!(request_input_pane.selected_button, RequestButton::Cancel)
-    {
-        "> [취소] <"
+    let cancel_selected = matches!(request_input_pane.focus, RequestPaneFocus::Buttons)
+        && matches!(request_input_pane.selected_button, RequestButton::Cancel);
+    let confirm_selected = matches!(request_input_pane.focus, RequestPaneFocus::Buttons)
+        && matches!(request_input_pane.selected_button, RequestButton::Confirm);
+    let cancel_style = if cancel_selected {
+        Style::default().bg(theme.secondary).fg(Color::White)
     } else {
-        "[취소]"
+        Style::default().fg(theme.primary)
     };
-    let confirm_label = if matches!(request_input_pane.focus, RequestPaneFocus::Buttons)
-        && matches!(request_input_pane.selected_button, RequestButton::Confirm)
-    {
-        "> [확인] <"
+    let confirm_style = if confirm_selected {
+        Style::default().bg(theme.secondary).fg(Color::White)
     } else {
-        "[확인]"
+        Style::default().fg(theme.primary)
     };
-    let button_line = Line::from(format!("  {cancel_label}   {confirm_label}"));
+    let button_line = Line::from(vec![
+        Span::raw("  "),
+        Span::styled(" 취소 ", cancel_style),
+        Span::raw("   "),
+        Span::styled(" 확인 ", confirm_style),
+    ]);
     frame.render_widget(
         Paragraph::new(vec![
             Line::from("Tab: focus change, Left/Right: button, Enter: action"),
@@ -577,15 +610,16 @@ fn set_requset_function(
                     RequestButton::Confirm => {
                         let parsed_tasks = parsing_request_function(&request_input_pane.text);
                         if !parsed_tasks.is_empty() {
-                            pane_task_spec.spec.tasks = parsed_tasks;
-                            pane_task_spec.selected_task = 0;
+                            let added_count = parsed_tasks.len();
+                            pane_task_spec.spec.tasks.extend(parsed_tasks);
+                            pane_task_spec.selected_task = pane_task_spec.spec.tasks.len().saturating_sub(1);
                             pane_task_spec.mode = TaskSpecMode::List;
                             pane_task_spec.selected_field = 0;
                             pane_task_spec.input_mode = false;
                             rows.clear();
                             rows.extend(build_working_rows_from_tasks(&pane_task_spec.spec.tasks));
                             stage_save_task_spec(pane_task_spec);
-                            pane_task_spec.status = "request parsed and saved".to_string();
+                            pane_task_spec.status = format!("request parsed and appended: {added_count}");
                         } else {
                             pane_task_spec.status = "parse failed: '# name' is required".to_string();
                             return true;
@@ -607,6 +641,7 @@ fn stage_handle_pane_key_events(
     run_requested: &mut bool,
     request_input_pane: &mut RequestInputPane,
     rows: &mut Vec<WorkingRow>,
+    quit_requested: &mut bool,
 ) -> Result<()> {
     while crossterm::event::poll(Duration::from_millis(0))? {
         let event = crossterm::event::read()?;
@@ -614,6 +649,10 @@ fn stage_handle_pane_key_events(
             continue;
         };
         if key.kind != KeyEventKind::Press {
+            continue;
+        }
+        if matches!(key.code, KeyCode::Char('q') | KeyCode::Char('Q')) {
+            *quit_requested = true;
             continue;
         }
 
@@ -790,6 +829,33 @@ fn build_working_rows_from_tasks(tasks: &[TaskSpecItem]) -> Vec<WorkingRow> {
             status: WorkingStatus::Ready,
         })
         .collect::<Vec<_>>()
+}
+
+fn render_project_spec(frame: &mut ratatui::Frame, area: Rect, pane_task_spec: &PaneTaskSpec) {
+    let spec = &pane_task_spec.spec;
+    let rule = if spec.rule.is_empty() {
+        "-".to_string()
+    } else {
+        spec.rule.join(" | ")
+    };
+    let feature = if spec.features.feature.is_empty() {
+        "-".to_string()
+    } else {
+        spec.features.feature.join(" | ")
+    };
+
+    let lines = vec![
+        Line::from(format!("name: {}", show_or_dash(&spec.name))),
+        Line::from(format!("framework: {}", show_or_dash(&spec.framework))),
+        Line::from(format!("rule: {rule}")),
+        Line::from(format!("domain: {}", show_or_dash(&spec.features.domain))),
+        Line::from(format!("feature: {feature}")),
+    ];
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+fn show_or_dash(value: &str) -> &str {
+    if value.trim().is_empty() { "-" } else { value }
 }
 
 fn get_selected_field_value(pane_task_spec: &PaneTaskSpec) -> String {

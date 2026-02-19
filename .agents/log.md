@@ -212,3 +212,20 @@
 - `set_requset_function` 동작을 요구사항 기준으로 재구성: 입력창 표시 + 확인 버튼 대기 + 확인 시 파싱 함수 호출
 - `parsing_request_function` 추가: `#`->name(필수), `>`->step(선택), `-`->rule(선택) 규칙으로 멀티 아이템 입력을 tasks 배열로 파싱
 - 확인 시 파싱된 tasks를 pane spec에 반영하고 todos.yaml에 즉시 저장, 작업 목록 pane도 새 task 개수에 맞춰 갱신
+
+## 2026-02-19 - 작업한일
+- 왼쪽 영역을 세로 2분할로 확장: 상단 `project_spec`, 하단 `pane_task_spec`
+- `project_spec`에 name/framework/rule/domain/feature 표시 추가
+- task spec YAML 구조를 project 메타 필드(name/framework/rule/features) + tasks 형태로 확장하고 기존 `todos` 키는 alias 호환 유지
+
+## 2026-02-19 - 작업한일
+- UI 전역 키 처리에 `q/Q` 종료 단축키 추가
+- run-test 대기 구간에서 시작 신호 없이 UI가 종료되면 에러 대신 정상 종료하도록 보정
+
+## 2026-02-19 - 작업한일
+- request 입력 확인 시 tasks 전체 교체 대신 파싱된 item을 기존 tasks 뒤에 append하도록 수정
+- 저장 후 상태 메시지에 append된 item 수를 표시하도록 개선
+
+## 2026-02-19 - 작업한일
+- request 입력 모달의 취소/확인 버튼 상태 표현을 배경색 + 흰색 글자로 변경
+- 비선택 버튼은 기본 글자색 유지로 대비 강화

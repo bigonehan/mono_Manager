@@ -325,10 +325,13 @@ async fn stage_run_test(args: InputRunTestArgs, current_project: String) -> Resu
         run_start_tx,
     ));
 
-    run_start_rx
-        .recv()
-        .await
-        .ok_or_else(|| anyhow::anyhow!("working pane closed before run start"))?;
+    let started = run_start_rx.recv().await;
+    if started.is_none() {
+        let _ = ui_handle.await?;
+        server_task.abort();
+        let _ = server_task.await;
+        return Ok(());
+    }
     tokio::time::sleep(std::time::Duration::from_millis(120)).await;
     let result = run_tasks_parallel(
         format!("http://{}:{}", args.host, args.port),
