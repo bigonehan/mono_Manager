@@ -1188,11 +1188,13 @@ fn resolve_spec_yaml_path(todos_path: &std::path::Path) -> Result<std::path::Pat
             return Ok(sibling);
         }
     }
-    let fallback = std::path::PathBuf::from("assets/templates/spec.yaml");
-    if fallback.exists() {
-        return Ok(fallback);
-    }
-    Err(anyhow::anyhow!("spec.yaml not found near todos.yaml or assets/templates/spec.yaml"))
+    Err(anyhow::anyhow!(
+        "spec.yaml not found. expected: {}/spec.yaml (under .project)",
+        todos_path
+            .parent()
+            .map(|v| v.display().to_string())
+            .unwrap_or_else(|| ".project/<project>".to_string())
+    ))
 }
 
 fn build_make_todos_prompt(spec_text: &str) -> String {

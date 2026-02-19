@@ -1,0 +1,24 @@
+tasks:
+  - name: folder cretate
+    type: calc
+    scope:
+      - src/task1/task1.rs
+    rule:
+      - task1은 Helloworld를 출력한다
+    step: []
+
+  - name: get birth day
+    type: calc
+    scope:
+      - src/task2/task2.rs
+    rule:
+      - task2은 kim를 출력한다
+    step: []
+
+  - name: gew loweer
+    type: calc
+    scope:
+      - src/task3/task3.rs
+    rule:
+      - task1은 lumid를 출력한다
+    step: []

@@ -247,3 +247,18 @@
 - `p` 키(make_todos_spec) 실행을 백그라운드 job으로 전환하고 진행 상태/오류를 표시하는 소형 팝업 pane 추가
 - 진행 단계(resolving spec/read/build prompt/run codex/parse) 실시간 표시 및 실패 시 에러 메시지 표시
 - 완료 시 append 결과를 todos에 반영하고 팝업에서 Esc/Enter로 닫을 수 있도록 처리
+
+## 2026-02-19 - 작업한일
+- YAML 조회 경로를 CWD 기준 `./.project/<project>/`로 통일
+- run-test 시작 시 `.project/<project>` 자동 보정 로직 추가(legacy `project/<project>`의 todos/spec 마이그레이션)
+- make_todos_spec의 spec.yaml 탐색 fallback을 제거하고 `.project` 인접 경로만 사용하도록 고정
+- `.project/test/todos.yaml`, `.project/test/spec.yaml` 초기 파일 생성
+
+## 2026-02-19 - 작업한일
+- CWD가 `.project/<project>` 또는 `.project`일 때 base path를 workspace root로 정규화하는 로직 추가
+- `.project/test/.project/test/...`처럼 경로가 중복 붙는 버그 수정
+
+## 2026-02-19 - 작업한일
+- `get_root_dir`/`find_git_root_dir` 추가: 기본은 CWD, 상위에 `.git`이 있으면 git root를 루트로 사용
+- 실행 시작 시 git 저장소가 없으면 기존 `input_ask_question`(YesNo)으로 `jj git init --colocate` 실행 여부를 질문하도록 구현
+- project base 경로 해석을 config.path 의존 대신 루트 디렉터리 기반으로 단순화

@@ -12,6 +12,7 @@ use axum::{Json, Router};
 use clap::{Args, Parser, Subcommand};
 use compoents::working_pane::WorkingPaneEvent;
 use include_dir::{Dir, include_dir};
+use input::question::{InputAnswerKind, input_ask_question};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tokio::sync::Mutex;
@@ -153,6 +154,7 @@ async fn main() {
 }
 
 async fn flow_main() -> Result<()> {
+    ensure_git_repository_for_root()?;
     #[allow(non_snake_case)]
     let currentProject = "test".to_string();
     let cli = input_parse_cli();
@@ -312,6 +314,7 @@ async fn stage_run_test(args: InputRunTestArgs, current_project: String) -> Resu
     );
     let server_task = tokio::spawn(async move { axum::serve(listener, app).await });
 
+    ensure_project_yaml_location(&current_project)?;
     let task_file_name = resolve_task_blueprint_file_name(&current_project)?;
     let task_spec_path = resolve_blueprint_file_path(&current_project, &task_file_name);
     let request_messages = load_task_messages(&current_project, &task_file_name)?;
@@ -821,34 +824,54 @@ fn load_ai_config_from_config() -> Option<AiConfig> {
 }
 
 fn resolve_project_base_path() -> std::path::PathBuf {
+    get_root_dir()
+}
+
+fn get_root_dir() -> std::path::PathBuf {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let content = match load_app_config_text() {
-        Some(v) => v,
-        None => return cwd,
-    };
-    let parsed: AppConfigFile = match serde_yaml::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return cwd,
-    };
+    find_git_root_dir(&cwd).unwrap_or(cwd)
+}
 
-    let configured = parsed
-        .project
-        .and_then(|v| v.path)
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| ".".to_string());
-
-    let raw_path = std::path::PathBuf::from(configured);
-    if raw_path.is_absolute() {
-        raw_path
-    } else {
-        cwd.join(raw_path)
+fn find_git_root_dir(start: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut current = Some(start.to_path_buf());
+    while let Some(path) = current {
+        if path.join(".git").exists() {
+            return Some(path);
+        }
+        current = path.parent().map(std::path::Path::to_path_buf);
     }
+    None
+}
+
+fn ensure_git_repository_for_root() -> Result<()> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    if find_git_root_dir(&cwd).is_some() {
+        return Ok(());
+    }
+
+    let answer = input_ask_question(
+        "git 저장소가 없습니다. 현재 위치에 `jj git init --colocate`를 실행할까요? (y/n)".to_string(),
+        InputAnswerKind::YesNo,
+        None,
+    )?;
+    if answer == "yes" {
+        let status = std::process::Command::new("jj")
+            .arg("git")
+            .arg("init")
+            .arg("--colocate")
+            .current_dir(&cwd)
+            .status()
+            .with_context(|| format!("failed to run `jj git init --colocate` in {}", cwd.display()))?;
+        if !status.success() {
+            bail!("`jj git init --colocate` failed with status {}", status);
+        }
+    }
+    Ok(())
 }
 
 fn resolve_project_dir(project_name: &str) -> std::path::PathBuf {
     resolve_project_base_path()
-        .join("project")
+        .join(".project")
         .join(project_name)
 }
 
@@ -858,6 +881,70 @@ fn resolve_blueprint_file_path(project_name: &str, file_name: &str) -> std::path
 
 fn load_app_config_text() -> Option<String> {
     std::fs::read_to_string(std::path::Path::new("configs/app.yaml")).ok()
+}
+
+fn ensure_project_yaml_location(project_name: &str) -> Result<()> {
+    let base = resolve_project_base_path();
+    let current_dir = base.join(".project").join(project_name);
+    std::fs::create_dir_all(&current_dir)
+        .with_context(|| format!("failed to create .project dir: {}", current_dir.display()))?;
+
+    let legacy_dir = base.join("project").join(project_name);
+    let target_todos = current_dir.join("todos.yaml");
+    if !target_todos.exists() {
+        let legacy_todos = legacy_dir.join("todos.yaml");
+        let legacy_tasks_yaml = legacy_dir.join("tasks.yaml");
+        let legacy_tasks_ymal = legacy_dir.join("tasks.ymal");
+        if legacy_todos.exists() {
+            std::fs::copy(&legacy_todos, &target_todos).with_context(|| {
+                format!(
+                    "failed to migrate todos.yaml: {} -> {}",
+                    legacy_todos.display(),
+                    target_todos.display()
+                )
+            })?;
+        } else if legacy_tasks_yaml.exists() {
+            std::fs::copy(&legacy_tasks_yaml, &target_todos).with_context(|| {
+                format!(
+                    "failed to migrate tasks.yaml: {} -> {}",
+                    legacy_tasks_yaml.display(),
+                    target_todos.display()
+                )
+            })?;
+        } else if legacy_tasks_ymal.exists() {
+            std::fs::copy(&legacy_tasks_ymal, &target_todos).with_context(|| {
+                format!(
+                    "failed to migrate tasks.ymal: {} -> {}",
+                    legacy_tasks_ymal.display(),
+                    target_todos.display()
+                )
+            })?;
+        }
+    }
+
+    let target_spec = current_dir.join("spec.yaml");
+    if !target_spec.exists() {
+        let legacy_spec = legacy_dir.join("spec.yaml");
+        let template_spec = resolve_project_base_path().join("assets").join("templates").join("spec.yaml");
+        if legacy_spec.exists() {
+            std::fs::copy(&legacy_spec, &target_spec).with_context(|| {
+                format!(
+                    "failed to migrate spec.yaml: {} -> {}",
+                    legacy_spec.display(),
+                    target_spec.display()
+                )
+            })?;
+        } else if template_spec.exists() {
+            std::fs::copy(&template_spec, &target_spec).with_context(|| {
+                format!(
+                    "failed to initialize spec.yaml: {} -> {}",
+                    template_spec.display(),
+                    target_spec.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
 }
 
 async fn client_send_completion(callback_url: &str, payload: &WorkerEnvelope) -> Result<()> {
