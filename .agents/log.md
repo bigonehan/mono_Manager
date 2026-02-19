@@ -197,3 +197,8 @@
 ## 2026-02-19 - 작업한일
 - run-test 자동 실행을 제거하고 working pane 포커스 상태에서 Enter 입력 시에만 run_tasks_parallel이 시작되도록 제어 채널 추가
 - UI(menu_function -> stage_run_working_pane)에서 run start 신호를 main으로 전달하도록 시그니처/흐름 갱신
+
+## 2026-02-19 - 작업한일
+- assets/templates/spec.yaml 문법 오류 수정(feature:[]/tasks[]/depends on 등)
+- tasks/features 구조를 유효한 YAML 키/리스트/들여쓰기로 정규화
+- 템플릿 설명은 주석으로 유지하고 실제 파싱 가능한 기본값("", [])으로 정리
