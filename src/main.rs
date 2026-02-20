@@ -1,8 +1,14 @@
 mod compoents;
 mod input;
+<<<<<<< HEAD
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+=======
+mod server;
+mod tmux;
+mod yaml_util;
+>>>>>>> 5b2a204 (fix: seperate process)
 
 use anyhow::{Context, Result, bail};
 use axum::extract::State;
@@ -27,6 +33,8 @@ static DIR_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets");
 #[command(name = "orc")]
 #[command(about = "Parallel codex worker orchestrator with callback server")]
 struct InputCli {
+    #[arg(long = "ts", value_name = "MESSAGE")]
+    tmux_send: Option<String>,
     #[command(subcommand)]
     command: Option<InputCommand>,
 }
@@ -193,6 +201,9 @@ async fn flow_main() -> Result<()> {
     #[allow(non_snake_case)]
     let currentProject = "test".to_string();
     let cli = input_parse_cli();
+    if let Some(message) = cli.tmux_send {
+        return stage_send_message_to_tmux(message);
+    }
     match cli.command {
         Some(InputCommand::Serve(args)) => stage_open_server(args).await,
         Some(InputCommand::RunParalles(args)) => stage_start_parallel(args, None).await,
@@ -216,7 +227,26 @@ async fn flow_main() -> Result<()> {
 }
 
 fn input_parse_cli() -> InputCli {
-    InputCli::parse()
+    InputCli::parse_from(normalize_tmux_short_flag(std::env::args_os()))
+}
+
+fn normalize_tmux_short_flag<I>(args: I) -> Vec<std::ffi::OsString>
+where
+    I: IntoIterator<Item = std::ffi::OsString>,
+{
+    let mut normalized = Vec::new();
+    for arg in args {
+        if arg == "-ts" {
+            normalized.push(std::ffi::OsString::from("--ts"));
+        } else {
+            normalized.push(arg);
+        }
+    }
+    normalized
+}
+
+fn stage_send_message_to_tmux(message: String) -> Result<()> {
+    tmux::open_split_and_send_message(&message)
 }
 
 async fn stage_open_server(args: InputServeArgs) -> Result<()> {
@@ -421,6 +451,9 @@ async fn stage_run_test(args: InputRunTestArgs, current_project: String) -> Resu
                 item.result.exit_code
             );
         }
+    }
+    if result.is_ok() {
+        stage_prompt_cleanup_after_generation(&project_dir_for_post)?;
     }
     result
 }
@@ -745,7 +778,7 @@ fn read_blueprint(project_name: &str, file_name: &str) -> Result<String> {
 }
 
 fn resolve_task_blueprint_file_name(project_name: &str) -> Result<String> {
-    let candidates = ["todos.yaml", "tasks.yaml", "tasks.ymal"];
+    let candidates = ["todos.yaml", "tasks.yaml"];
     for file_name in candidates {
         let path = resolve_blueprint_file_path(project_name, file_name);
         if path.exists() {
@@ -942,6 +975,105 @@ fn append_features_to_spec(spec_path: &std::path::Path, new_features: &[String])
     std::fs::write(spec_path, output)
         .with_context(|| format!("failed to write updated spec: {}", spec_path.display()))?;
     Ok(())
+}
+
+fn stage_prompt_cleanup_after_generation(project_dir: &std::path::Path) -> Result<()> {
+    let answer = input_ask_question(
+        "모든 생성이 완료되었습니다. tasks.yaml을 비울까요? (y/n)".to_string(),
+        InputAnswerKind::YesNo,
+        None,
+    )?;
+    if answer != "yes" {
+        return Ok(());
+    }
+
+    let tasks_path = project_dir.join("tasks.yaml");
+    let todos_path = project_dir.join("todos.yaml");
+    let project_path = project_dir.join("project.yaml");
+    let feature_path = project_dir.join("feature.yaml");
+
+    let empty_tasks = serde_yaml::to_string(&TasksFile::default())
+        .context("failed to serialize empty tasks.yaml")?;
+    std::fs::write(&tasks_path, empty_tasks).with_context(|| {
+        format!(
+            "failed to clear tasks.yaml after generation: {}",
+            tasks_path.display()
+        )
+    })?;
+
+    if todos_path.exists() {
+        std::fs::remove_file(&todos_path).with_context(|| {
+            format!(
+                "failed to remove todos.yaml after generation: {}",
+                todos_path.display()
+            )
+        })?;
+    }
+
+    let ordered_features = collect_ordered_feature_entries(&project_path)?;
+    let feature_doc = FeatureRecordFile {
+        feature: ordered_features,
+    };
+    let feature_text =
+        serde_yaml::to_string(&feature_doc).context("failed to serialize feature.yaml")?;
+    std::fs::write(&feature_path, feature_text).with_context(|| {
+        format!(
+            "failed to write feature.yaml after generation: {}",
+            feature_path.display()
+        )
+    })?;
+
+    println!(
+        "cleanup done: tasks cleared, todos removed, feature recorded ({})",
+        feature_path.display()
+    );
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct FeatureRecordFile {
+    #[serde(default)]
+    feature: Vec<String>,
+}
+
+fn collect_ordered_feature_entries(project_path: &std::path::Path) -> Result<Vec<String>> {
+    let raw = std::fs::read_to_string(project_path).with_context(|| {
+        format!(
+            "failed to read project.yaml for feature record: {}",
+            project_path.display()
+        )
+    })?;
+    let doc = serde_yaml::from_str::<ProjectDefinitionFile>(&raw)
+        .with_context(|| format!("failed to parse project.yaml: {}", project_path.display()))?;
+
+    let mut unique = Vec::<String>::new();
+    for item in doc.features.feature {
+        let trimmed = item.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !unique.iter().any(|v| v == trimmed) {
+            unique.push(trimmed.to_string());
+        }
+    }
+
+    unique.sort_by(|a, b| {
+        let (a_domain, a_action) = split_domain_action(a);
+        let (b_domain, b_action) = split_domain_action(b);
+        a_domain
+            .cmp(b_domain)
+            .then(a_action.cmp(b_action))
+            .then(a.cmp(b))
+    });
+    Ok(unique)
+}
+
+fn split_domain_action(feature: &str) -> (&str, &str) {
+    if let Some((domain, action)) = feature.split_once('.') {
+        (domain.trim(), action.trim())
+    } else {
+        (feature.trim(), "")
+    }
 }
 
 fn load_task_messages(project_name: &str, file_name: &str) -> Result<Vec<String>> {
@@ -1451,7 +1583,6 @@ fn ensure_project_yaml_location(project_name: &str) -> Result<()> {
     if !target_todos.exists() {
         let legacy_todos = legacy_dir.join("todos.yaml");
         let legacy_tasks_yaml = legacy_dir.join("tasks.yaml");
-        let legacy_tasks_ymal = legacy_dir.join("tasks.ymal");
         if legacy_todos.exists() {
             std::fs::copy(&legacy_todos, &target_todos).with_context(|| {
                 format!(
@@ -1465,14 +1596,6 @@ fn ensure_project_yaml_location(project_name: &str) -> Result<()> {
                 format!(
                     "failed to migrate tasks.yaml: {} -> {}",
                     legacy_tasks_yaml.display(),
-                    target_todos.display()
-                )
-            })?;
-        } else if legacy_tasks_ymal.exists() {
-            std::fs::copy(&legacy_tasks_ymal, &target_todos).with_context(|| {
-                format!(
-                    "failed to migrate tasks.ymal: {} -> {}",
-                    legacy_tasks_ymal.display(),
                     target_todos.display()
                 )
             })?;
@@ -1566,6 +1689,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
+<<<<<<< HEAD
         AppState, InputRunParallelArgs, ServerInfo, build_prompt,
         build_prompt_with_postpix, build_run_todos_prompt, sever_router,
         add_request_message,
@@ -1575,6 +1699,17 @@ mod tests {
         load_postpix_prompt, load_todos_prompt,
         normalize_server_url, parse_todos_prompt_template, resolve_ai_options,
         stage_start_parallel,
+=======
+        InputRunParallelArgs, add_request_message, build_prompt, build_prompt_with_postpix,
+        build_run_todos_prompt, collect_ordered_feature_entries, extrac_postpix_lines,
+        extract_result_value_for_ui, find_git_root_dir, load_embedded_template_text,
+        load_postpix_prompt, load_todos_prompt, normalize_tmux_short_flag,
+        parse_spec_yaml_from_codex, parse_todo_output_from_codex, parse_todos_prompt_template,
+        resolve_ai_options, set_default_requset_messages, split_domain_action, stage_start_parallel,
+    };
+    use crate::server::{
+        AppState, ServerInfo, bind_listener_with_port_fallback, normalize_server_url, server_router,
+>>>>>>> 5b2a204 (fix: seperate process)
     };
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
@@ -1706,6 +1841,119 @@ mod tests {
         assert_eq!(extract_result_value_for_ui(raw), "부산");
     }
 
+<<<<<<< HEAD
+=======
+    #[test]
+    fn parse_spec_yaml_from_codex_accepts_framework_sequence_and_text_prefix() {
+        let raw = "설명\nname: demo\ndescription: sample\nframework:\n  - astrojs\nrule: []\nfeatures:\n  domain: []\n  feature: []\ntasks: []\n";
+        let parsed = parse_spec_yaml_from_codex(raw).expect("spec yaml parse should succeed");
+        assert_eq!(parsed.framework, "astrojs");
+        assert_eq!(parsed.name, "demo");
+    }
+
+    #[test]
+    fn parse_spec_yaml_from_codex_accepts_task_scalar_fields() {
+        let raw = "name: demo\ndescription: sample\nframework: astrojs\nrule: []\nfeatures:\n  domain: []\n  feature: []\ntasks:\n  - name: t1\n    type: action\n    domain: catalog\n    depends_on: prev\n    scope: src/a\n    state: todo\n    rule: r1\n    step: s1\n";
+        let parsed = parse_spec_yaml_from_codex(raw).expect("spec yaml parse should succeed");
+        let task = parsed.tasks.first().expect("task should exist");
+        assert_eq!(task.domain, vec!["catalog".to_string()]);
+        assert_eq!(task.depends_on, vec!["prev".to_string()]);
+        assert_eq!(task.scope, vec!["src/a".to_string()]);
+        assert_eq!(task.state, vec!["todo".to_string()]);
+        assert_eq!(task.rule, vec!["r1".to_string()]);
+        assert_eq!(task.step, vec!["s1".to_string()]);
+    }
+
+    #[test]
+    fn parse_spec_yaml_from_codex_accepts_features_with_nested_mapping_values() {
+        let raw = "name: demo\ndescription: sample\nframework: astrojs\nrule: []\nfeatures:\n  domain:\n    primary: catalog\n  feature:\n    - name: product.list\ntasks: []\n";
+        let parsed = parse_spec_yaml_from_codex(raw).expect("spec yaml parse should succeed");
+        assert_eq!(parsed.features.domain, vec!["catalog".to_string()]);
+        assert_eq!(parsed.features.feature, vec!["product.list".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn bind_listener_with_port_fallback_moves_to_next_port_when_in_use() {
+        let occupied = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind should succeed");
+        let occupied_port = occupied
+            .local_addr()
+            .expect("local addr should exist")
+            .port();
+
+        let (listener, bound_port) = bind_listener_with_port_fallback("127.0.0.1", occupied_port)
+            .await
+            .expect("port fallback should succeed");
+        assert_ne!(bound_port, occupied_port);
+        drop(listener);
+        drop(occupied);
+    }
+
+    #[test]
+    fn parse_todo_output_from_codex_accepts_scalar_list_fields() {
+        let raw = "tasks:\n  - name: t1\n    type: action\n    domain: catalog\n    depends_on: prev\n    scope: src/a\n    state: todo\n    rule: r1\n    step: s1\n";
+        let parsed = parse_todo_output_from_codex(raw).expect("todo yaml parse should succeed");
+        let item = parsed.first().expect("todo item should exist");
+        assert_eq!(item.domain, vec!["catalog".to_string()]);
+        assert_eq!(item.depends_on, vec!["prev".to_string()]);
+        assert_eq!(item.scope, vec!["src/a".to_string()]);
+        assert_eq!(item.state, vec!["todo".to_string()]);
+        assert_eq!(item.rule, vec!["r1".to_string()]);
+        assert_eq!(item.step, vec!["s1".to_string()]);
+    }
+
+    #[test]
+    fn normalize_tmux_short_flag_rewrites_ts_alias() {
+        let args = vec![
+            std::ffi::OsString::from("orc"),
+            std::ffi::OsString::from("-ts"),
+            std::ffi::OsString::from("hello"),
+        ];
+        let normalized = normalize_tmux_short_flag(args);
+        assert_eq!(
+            normalized,
+            vec![
+                std::ffi::OsString::from("orc"),
+                std::ffi::OsString::from("--ts"),
+                std::ffi::OsString::from("hello"),
+            ]
+        );
+    }
+
+    #[test]
+    fn split_domain_action_splits_dot_format() {
+        let (domain, action) = split_domain_action("message.send_note");
+        assert_eq!(domain, "message");
+        assert_eq!(action, "send_note");
+    }
+
+    #[test]
+    fn collect_ordered_feature_entries_sorts_domain_then_action() {
+        let path = std::env::temp_dir().join(format!(
+            "orchestra_feature_order_{}_{}.yaml",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time should be valid")
+                .as_nanos()
+        ));
+        let doc = "name: demo\ndescription: x\nframework: rust\nrule: []\nfeatures:\n  domain: []\n  feature:\n    - order.checkout\n    - auth.login\n    - order.cancel\nlib: []\n";
+        std::fs::write(&path, doc).expect("temp project yaml should be written");
+
+        let ordered = collect_ordered_feature_entries(&path).expect("feature sort should work");
+        assert_eq!(
+            ordered,
+            vec![
+                "auth.login".to_string(),
+                "order.cancel".to_string(),
+                "order.checkout".to_string(),
+            ]
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+>>>>>>> 5b2a204 (fix: seperate process)
     #[tokio::test]
     async fn parallel_workers_send_fruit_result_after_sleep() {
         let state = AppState::default();

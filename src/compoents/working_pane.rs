@@ -15,7 +15,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -51,6 +51,15 @@ struct StyleConfig {
 struct BasicStyle {
     primary: String,
     secondary: String,
+<<<<<<< HEAD
+=======
+    #[serde(default)]
+    active: String,
+    #[serde(default)]
+    inactive: String,
+    #[serde(default)]
+    focus: String,
+>>>>>>> 5b2a204 (fix: seperate process)
     background: String,
 }
 
@@ -76,6 +85,12 @@ struct StateSymbolStyle {
 struct WorkingTheme {
     primary: Color,
     secondary: Color,
+<<<<<<< HEAD
+=======
+    active: Color,
+    inactive: Color,
+    focus: Color,
+>>>>>>> 5b2a204 (fix: seperate process)
     background: Color,
     margin: u16,
     padding: u16,
@@ -117,11 +132,33 @@ struct RequestInputPane {
 struct MakeTodosProgressPane {
     open: bool,
     running: bool,
+    kind: BackgroundJobKind,
     lines: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PlanChatPane {
+    open: bool,
+    running: bool,
+    input_text: String,
+    output_scroll: u16,
+    lines: Vec<String>,
+    history: Vec<PlanChatTurn>,
+    project_path: std::path::PathBuf,
+    tasks_path: std::path::PathBuf,
+    plan_path: std::path::PathBuf,
 }
 
 struct MakeTodosJob {
     rx: Receiver<MakeTodosEvent>,
+}
+
+struct PlanChatJob {
+    rx: Receiver<PlanChatEvent>,
+}
+
+struct PlanWatchJob {
+    rx: Receiver<PlanWatchEvent>,
 }
 
 enum MakeTodosEvent {
@@ -129,6 +166,35 @@ enum MakeTodosEvent {
     Finished(Result<MakeTodosOutput, String>),
 }
 
+<<<<<<< HEAD
+=======
+enum PlanChatEvent {
+    Finished(Result<PlanChatTurnOutput, String>),
+}
+
+enum PlanWatchEvent {
+    Ready(Result<usize, String>),
+}
+
+#[derive(Debug, Clone)]
+struct PlanChatTurn {
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Clone)]
+struct PlanChatTurnOutput {
+    reply: String,
+    plan_md: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum BackgroundJobKind {
+    MakeTodos,
+    FillProjectTasks,
+}
+
+>>>>>>> 5b2a204 (fix: seperate process)
 static CODEX_OUTPUT_SEQ: AtomicU64 = AtomicU64::new(0);
 
 struct MakeTodosOutput {
@@ -243,9 +309,31 @@ pub async fn stage_run_working_pane(
     let mut make_todos_progress_pane = MakeTodosProgressPane {
         open: false,
         running: false,
+        kind: BackgroundJobKind::MakeTodos,
         lines: Vec::new(),
     };
+<<<<<<< HEAD
+=======
+    let mut plan_chat_pane = PlanChatPane {
+        open: false,
+        running: false,
+        input_text: String::new(),
+        output_scroll: 0,
+        lines: Vec::new(),
+        history: Vec::new(),
+        project_path: pane_task_spec.project_path.clone(),
+        tasks_path: pane_task_spec.tasks_path.clone(),
+        plan_path: pane_task_spec
+            .project_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("plan.md"),
+    };
+    let mut pane_detached = false;
+>>>>>>> 5b2a204 (fix: seperate process)
     let mut make_todos_job: Option<MakeTodosJob> = None;
+    let mut plan_chat_job: Option<PlanChatJob> = None;
+    let mut plan_watch_job: Option<PlanWatchJob> = None;
     let mut auto_run_after_todos = false;
     let mut tick = tokio::time::interval(Duration::from_millis(80));
     loop {
@@ -259,6 +347,9 @@ pub async fn stage_run_working_pane(
             &mut quit_requested,
             &mut make_todos_progress_pane,
             &mut make_todos_job,
+            &mut plan_chat_pane,
+            &mut plan_chat_job,
+            &mut plan_watch_job,
             &mut auto_run_after_todos,
         )?;
         poll_make_todos_job(
@@ -268,6 +359,13 @@ pub async fn stage_run_working_pane(
             &run_start_tx,
             &mut run_requested,
             &mut auto_run_after_todos,
+        );
+        poll_plan_chat_job(&mut plan_chat_job, &mut plan_chat_pane, &mut pane_task_spec);
+        poll_plan_watch_job(
+            &mut plan_watch_job,
+            &mut plan_chat_pane,
+            &mut pane_task_spec,
+            &mut rows,
         );
         if quit_requested {
             break;
@@ -299,13 +397,25 @@ pub async fn stage_run_working_pane(
             let task_active = matches!(focus, PaneFocus::TaskSpec);
             let todos_active = matches!(focus, PaneFocus::Todos);
             let working_active = matches!(focus, PaneFocus::Working);
+            let task_ready = pane_task_spec.tasks_path.exists() && !pane_task_spec.spec.tasks.is_empty();
             let project_border_style = if project_active {
+<<<<<<< HEAD
                 Style::default().fg(theme.secondary).bg(theme.background)
             } else {
                 Style::default().fg(theme.primary)
             };
             let task_border_style = if task_active {
                 Style::default().fg(theme.secondary).bg(theme.background)
+=======
+                Style::default().fg(theme.active)
+            } else {
+                Style::default().fg(theme.primary)
+            };
+            let task_border_style = if !task_ready {
+                Style::default().fg(theme.inactive)
+            } else if task_active {
+                Style::default().fg(theme.active)
+>>>>>>> 5b2a204 (fix: seperate process)
             } else {
                 Style::default().fg(theme.primary)
             };
@@ -314,6 +424,7 @@ pub async fn stage_run_working_pane(
             } else {
                 Style::default().fg(theme.primary)
             };
+<<<<<<< HEAD
             let task_title_style = if task_active {
                 Style::default().fg(theme.background).bg(theme.secondary)
             } else {
@@ -332,10 +443,61 @@ pub async fn stage_run_working_pane(
             let working_title_style = if working_active {
                 Style::default().fg(theme.background).bg(theme.secondary)
             } else {
+=======
+            let task_title_style = if !task_ready {
+                Style::default().fg(theme.inactive)
+            } else if task_active {
+                Style::default().fg(theme.secondary)
+            } else {
                 Style::default().fg(theme.primary)
             };
+            let todos_ready = pane_task_spec.tasks_path.exists();
+            let working_ready = pane_task_spec.tasks_path.exists()
+                && pane_task_spec.todos_path.exists()
+                && !pane_task_spec.todos.is_empty();
+            let any_running = rows.iter().any(|r| matches!(r.status, WorkingStatus::Running));
+            let all_done =
+                !rows.is_empty() && rows.iter().all(|r| matches!(r.status, WorkingStatus::Done));
+            let inactive_style = Style::default().fg(theme.inactive);
+            let working_border_style = if !working_ready {
+                inactive_style
+            } else if any_running {
+                Style::default().fg(theme.focus)
+            } else if all_done {
+                Style::default().fg(theme.primary)
+            } else if working_active {
+                Style::default().fg(theme.active)
+            } else {
+                inactive_style
+            };
+            let todos_border_style = if !todos_ready {
+                inactive_style
+            } else if todos_active {
+                Style::default().fg(theme.active)
+            } else {
+                Style::default().fg(theme.primary)
+            };
+            let working_title_style = if !working_ready {
+                inactive_style
+            } else if any_running {
+                Style::default().fg(theme.secondary)
+            } else if all_done {
+>>>>>>> 5b2a204 (fix: seperate process)
+                Style::default().fg(theme.primary)
+            } else if working_active {
+                Style::default().fg(theme.active)
+            } else {
+                inactive_style
+            };
+<<<<<<< HEAD
             let todos_title_style = if todos_active {
                 Style::default().fg(theme.background).bg(theme.secondary)
+=======
+            let todos_title_style = if !todos_ready {
+                inactive_style
+            } else if todos_active {
+                Style::default().fg(theme.active)
+>>>>>>> 5b2a204 (fix: seperate process)
             } else {
                 Style::default().fg(theme.primary)
             };
@@ -399,7 +561,23 @@ pub async fn stage_run_working_pane(
             if make_todos_progress_pane.open {
                 render_make_todos_progress_pane(frame, area, &make_todos_progress_pane, &theme);
             }
+<<<<<<< HEAD
             render_shortcut_bar(frame, outer_chunks[1], &focus);
+=======
+            if plan_chat_pane.open {
+                render_plan_chat_pane(frame, area, &plan_chat_pane, &theme);
+            }
+            render_shortcut_bar(
+                frame,
+                outer_chunks[1],
+                &focus,
+                pane_detached,
+                &request_input_pane,
+                &project_select_pane,
+                &make_todos_progress_pane,
+                &plan_chat_pane,
+            );
+>>>>>>> 5b2a204 (fix: seperate process)
         })?;
 
         if should_finish && rows.iter().all(|r| matches!(r.status, WorkingStatus::Done)) {
@@ -639,16 +817,31 @@ fn render_request_input_pane(
         .split(inner);
 
     let input_title = if matches!(request_input_pane.focus, RequestPaneFocus::Input) {
+<<<<<<< HEAD
         "input (multiline, PgUp/PgDn scroll, Tab to buttons)"
+=======
+        match request_input_pane.kind {
+            RequestInputKind::TaskAppend => "input",
+            RequestInputKind::ProjectValueEdit => {
+                if request_input_pane.project_field == 1 {
+                    "value (one rule per line)"
+                } else {
+                    "value"
+                }
+            }
+        }
+>>>>>>> 5b2a204 (fix: seperate process)
     } else {
         "input"
     };
     let viewport_height = chunks[0].height.saturating_sub(2);
-    let total_lines = count_request_input_lines(&request_input_pane.text);
+    let input_width = chunks[0].width.saturating_sub(2).max(1);
+    let total_lines = count_request_input_lines(&request_input_pane.text, input_width);
     let max_scroll = total_lines.saturating_sub(usize::from(viewport_height)) as u16;
     let scroll = request_input_pane.input_scroll.min(max_scroll);
     frame.render_widget(
         Paragraph::new(request_input_pane.text.clone())
+            .wrap(Wrap { trim: false })
             .scroll((scroll, 0))
             .block(Block::default().title(input_title).borders(Borders::ALL)),
         chunks[0],
@@ -700,10 +893,11 @@ fn render_make_todos_progress_pane(
     let popup = Rect::new(x, y, width.max(26), height.max(8));
 
     frame.render_widget(Clear, popup);
-    let title = if pane.running {
-        "make_todos_spec (running)"
-    } else {
-        "make_todos_spec (done)"
+    let title = match (pane.kind, pane.running) {
+        (BackgroundJobKind::MakeTodos, true) => "make_todos (running)",
+        (BackgroundJobKind::MakeTodos, false) => "make_todos (done)",
+        (BackgroundJobKind::FillProjectTasks, true) => "fill_tasks (running)",
+        (BackgroundJobKind::FillProjectTasks, false) => "fill_tasks (done)",
     };
     let block = Block::default()
         .title(title)
@@ -722,6 +916,65 @@ fn render_make_todos_progress_pane(
         .collect::<Vec<_>>();
     lines.reverse();
     frame.render_widget(Paragraph::new(lines.join("\n")), inner);
+}
+
+fn render_plan_chat_pane(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    pane: &PlanChatPane,
+    theme: &WorkingTheme,
+) {
+    let width = area.width.saturating_mul(80) / 100;
+    let height = area.height.saturating_mul(72) / 100;
+    let x = area
+        .x
+        .saturating_add((area.width.saturating_sub(width)) / 2);
+    let y = area
+        .y
+        .saturating_add((area.height.saturating_sub(height)) / 2);
+    let popup = Rect::new(x, y, width.max(40), height.max(12));
+
+    frame.render_widget(Clear, popup);
+    let title = if pane.running {
+        format!("plan-chat (running) | {}", pane.plan_path.display())
+    } else {
+        format!("plan-chat | {}", pane.plan_path.display())
+    };
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.focus))
+        .padding(Padding::new(1, 1, 1, 1));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(6), Constraint::Length(3), Constraint::Length(1)])
+        .split(inner);
+
+    let viewport_height = chunks[0].height.saturating_sub(2);
+    let max_scroll = pane
+        .lines
+        .len()
+        .saturating_sub(usize::from(viewport_height)) as u16;
+    let scroll = pane.output_scroll.min(max_scroll);
+    frame.render_widget(
+        Paragraph::new(pane.lines.join("\n"))
+            .wrap(Wrap { trim: false })
+            .scroll((scroll, 0))
+            .block(Block::default().title("chat log").borders(Borders::ALL)),
+        chunks[0],
+    );
+    frame.render_widget(
+        Paragraph::new(pane.input_text.clone())
+            .block(Block::default().title("input").borders(Borders::ALL)),
+        chunks[1],
+    );
+    frame.render_widget(
+        Paragraph::new("Enter: send | PgUp/PgDn: scroll | Esc: close"),
+        chunks[2],
+    );
 }
 
 fn set_requset_function(
@@ -825,11 +1078,610 @@ fn open_set_request_function(request_input_pane: &mut RequestInputPane, pane_tas
     pane_task_spec.status = "set_request_function opened".to_string();
 }
 
+<<<<<<< HEAD
 fn count_request_input_lines(text: &str) -> usize {
     let count = text.lines().count();
     if count == 0 { 1 } else { count }
 }
 
+=======
+fn get_project_field_name(field: usize) -> &'static str {
+    match field {
+        0 => "name",
+        1 => "rule",
+        2 => "framework",
+        3 => "description",
+        _ => "name",
+    }
+}
+
+fn get_project_field_value(spec: &TaskSpecYaml, field: usize) -> String {
+    match field {
+        0 => spec.name.clone(),
+        1 => spec.rule.join("\n"),
+        2 => spec.framework.clone(),
+        3 => spec.description.clone(),
+        _ => String::new(),
+    }
+}
+
+fn apply_project_field_value(spec: &mut TaskSpecYaml, field: usize, value: &str) {
+    match field {
+        0 => spec.name = value.trim().to_string(),
+        1 => spec.rule = split_line_items(value),
+        2 => spec.framework = value.trim().to_string(),
+        3 => spec.description = value.trim().to_string(),
+        _ => {}
+    }
+}
+
+fn open_project_value_edit_modal(
+    request_input_pane: &mut RequestInputPane,
+    pane_task_spec: &mut PaneTaskSpec,
+) {
+    let field = pane_task_spec.project_selected_field;
+    request_input_pane.open = true;
+    request_input_pane.kind = RequestInputKind::ProjectValueEdit;
+    request_input_pane.project_field = field;
+    request_input_pane.text = get_project_field_value(&pane_task_spec.spec, field);
+    request_input_pane.input_scroll = 0;
+    request_input_pane.focus = RequestPaneFocus::Input;
+    request_input_pane.selected_button = RequestButton::Confirm;
+    pane_task_spec.status = format!("edit {} value", get_project_field_name(field));
+}
+
+fn count_request_input_lines(text: &str, content_width: u16) -> usize {
+    let width = usize::from(content_width.max(1));
+    let mut total = 0usize;
+    for line in text.lines() {
+        let len = line.chars().count();
+        total += std::cmp::max(1, len.div_ceil(width));
+    }
+    if total == 0 { 1 } else { total }
+}
+
+fn open_project_select_pane(
+    project_select_pane: &mut ProjectSelectPane,
+    pane_task_spec: &mut PaneTaskSpec,
+) {
+    project_select_pane.open = true;
+    project_select_pane.focus = ProjectSelectFocus::List;
+    project_select_pane.input_text.clear();
+    project_select_pane.selected_button = RequestButton::Confirm;
+    project_select_pane.project_list = pane_task_spec.project_list.clone();
+    if project_select_pane.project_list.is_empty() {
+        project_select_pane.project_list.push("test".to_string());
+    }
+    project_select_pane.selected_project = project_select_pane
+        .project_list
+        .iter()
+        .position(|v| v == &pane_task_spec.current_project)
+        .unwrap_or(0);
+    pane_task_spec.status = "project selector opened".to_string();
+}
+
+fn set_project_select_pane(
+    project_select_pane: &mut ProjectSelectPane,
+    key: KeyCode,
+    pane_task_spec: &mut PaneTaskSpec,
+    rows: &mut Vec<WorkingRow>,
+) -> bool {
+    if !project_select_pane.open {
+        return false;
+    }
+
+    match key {
+        KeyCode::Esc | KeyCode::F(1) => {
+            project_select_pane.open = false;
+            pane_task_spec.status = "project selector canceled".to_string();
+            return true;
+        }
+        KeyCode::Tab => {
+            project_select_pane.focus = match project_select_pane.focus {
+                ProjectSelectFocus::List => ProjectSelectFocus::Input,
+                ProjectSelectFocus::Input => ProjectSelectFocus::Buttons,
+                ProjectSelectFocus::Buttons => ProjectSelectFocus::List,
+            };
+            return true;
+        }
+        _ => {}
+    }
+
+    match project_select_pane.focus {
+        ProjectSelectFocus::List => {
+            match key {
+                KeyCode::Up => {
+                    project_select_pane.selected_project =
+                        project_select_pane.selected_project.saturating_sub(1);
+                }
+                KeyCode::Down => {
+                    if project_select_pane.selected_project + 1
+                        < project_select_pane.project_list.len()
+                    {
+                        project_select_pane.selected_project += 1;
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(project) = project_select_pane
+                        .project_list
+                        .get(project_select_pane.selected_project)
+                    {
+                        pane_task_spec.status = format!("selected project: {project}");
+                    }
+                }
+                _ => {}
+            }
+            true
+        }
+        ProjectSelectFocus::Input => {
+            match key {
+                KeyCode::Backspace => {
+                    let _ = project_select_pane.input_text.pop();
+                }
+                KeyCode::Char(c) => {
+                    project_select_pane.input_text.push(c);
+                }
+                KeyCode::Enter => {
+                    let candidate = project_select_pane.input_text.trim();
+                    if !candidate.is_empty()
+                        && !project_select_pane
+                            .project_list
+                            .iter()
+                            .any(|v| v == candidate)
+                    {
+                        project_select_pane.project_list.push(candidate.to_string());
+                        project_select_pane.project_list.sort();
+                    }
+                    if let Some(index) = project_select_pane
+                        .project_list
+                        .iter()
+                        .position(|v| v == candidate)
+                    {
+                        project_select_pane.selected_project = index;
+                        pane_task_spec.status = format!("project added/selected: {candidate}");
+                    }
+                    project_select_pane.input_text.clear();
+                }
+                _ => {}
+            }
+            true
+        }
+        ProjectSelectFocus::Buttons => {
+            match key {
+                KeyCode::Left => project_select_pane.selected_button = RequestButton::Cancel,
+                KeyCode::Right => project_select_pane.selected_button = RequestButton::Confirm,
+                KeyCode::Up => project_select_pane.focus = ProjectSelectFocus::List,
+                KeyCode::Enter => match project_select_pane.selected_button {
+                    RequestButton::Cancel => {
+                        project_select_pane.open = false;
+                        pane_task_spec.status = "project selector canceled".to_string();
+                    }
+                    RequestButton::Confirm => {
+                        pane_task_spec.project_list = project_select_pane.project_list.clone();
+                        if let Some(project_name) = project_select_pane
+                            .project_list
+                            .get(project_select_pane.selected_project)
+                            .cloned()
+                        {
+                            apply_selected_project(pane_task_spec, rows, &project_name);
+                        }
+                        project_select_pane.open = false;
+                    }
+                },
+                _ => {}
+            }
+            true
+        }
+    }
+}
+
+fn open_plan_chat_pane(plan_chat_pane: &mut PlanChatPane, pane_task_spec: &PaneTaskSpec) {
+    plan_chat_pane.open = true;
+    plan_chat_pane.running = false;
+    plan_chat_pane.project_path = pane_task_spec.project_path.clone();
+    plan_chat_pane.tasks_path = pane_task_spec.tasks_path.clone();
+    plan_chat_pane.plan_path = pane_task_spec
+        .project_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("plan.md");
+    if plan_chat_pane.lines.is_empty() {
+        plan_chat_pane.lines.push(
+            "plan-chat opened: Enter로 codex에게 설계 질문을 보내고 plan.md를 갱신합니다."
+                .to_string(),
+        );
+    }
+}
+
+fn set_plan_chat_pane(
+    plan_chat_pane: &mut PlanChatPane,
+    plan_chat_job: &mut Option<PlanChatJob>,
+    key: KeyCode,
+    pane_task_spec: &mut PaneTaskSpec,
+) -> Result<bool> {
+    if !plan_chat_pane.open {
+        return Ok(false);
+    }
+
+    match key {
+        KeyCode::Esc => {
+            plan_chat_pane.open = false;
+            return Ok(true);
+        }
+        KeyCode::PageUp => {
+            plan_chat_pane.output_scroll = plan_chat_pane.output_scroll.saturating_sub(3);
+            return Ok(true);
+        }
+        KeyCode::PageDown => {
+            plan_chat_pane.output_scroll = plan_chat_pane.output_scroll.saturating_add(3);
+            return Ok(true);
+        }
+        _ => {}
+    }
+
+    if plan_chat_pane.running {
+        return Ok(true);
+    }
+
+    match key {
+        KeyCode::Backspace => {
+            let _ = plan_chat_pane.input_text.pop();
+            Ok(true)
+        }
+        KeyCode::Char(c) => {
+            plan_chat_pane.input_text.push(c);
+            Ok(true)
+        }
+        KeyCode::Enter => {
+            let message = plan_chat_pane.input_text.trim().to_string();
+            if message.is_empty() {
+                return Ok(true);
+            }
+            start_plan_chat_turn(plan_chat_pane, plan_chat_job, &message)?;
+            pane_task_spec.status = "plan-chat request sent".to_string();
+            plan_chat_pane.input_text.clear();
+            Ok(true)
+        }
+        _ => Ok(true),
+    }
+}
+
+fn start_plan_chat_turn(
+    plan_chat_pane: &mut PlanChatPane,
+    plan_chat_job: &mut Option<PlanChatJob>,
+    user_message: &str,
+) -> Result<()> {
+    if plan_chat_job.is_some() {
+        return Ok(());
+    }
+    let user_message = user_message.trim();
+    if user_message.is_empty() {
+        return Ok(());
+    }
+    plan_chat_pane
+        .lines
+        .push(format!("user> {user_message}"));
+    plan_chat_pane.history.push(PlanChatTurn {
+        role: "user".to_string(),
+        content: user_message.to_string(),
+    });
+    plan_chat_pane.output_scroll = u16::MAX;
+    plan_chat_pane.running = true;
+
+    let project_path = plan_chat_pane.project_path.clone();
+    let plan_path = plan_chat_pane.plan_path.clone();
+    let history = plan_chat_pane.history.clone();
+    let message = user_message.to_string();
+    let (tx, rx) = mpsc::channel::<PlanChatEvent>();
+    thread::spawn(move || {
+        let result = run_plan_chat_turn(&project_path, &plan_path, &history, &message)
+            .map_err(|err| err.to_string());
+        let _ = tx.send(PlanChatEvent::Finished(result));
+    });
+    *plan_chat_job = Some(PlanChatJob { rx });
+    Ok(())
+}
+
+fn start_plan_file_watch(plan_chat_pane: &PlanChatPane, plan_watch_job: &mut Option<PlanWatchJob>) {
+    if plan_watch_job.is_some() {
+        return;
+    }
+    let project_path = plan_chat_pane.project_path.clone();
+    let tasks_path = plan_chat_pane.tasks_path.clone();
+    let plan_path = plan_chat_pane.plan_path.clone();
+    let baseline_modified = std::fs::metadata(&plan_path).and_then(|m| m.modified()).ok();
+    let (tx, rx) = mpsc::channel::<PlanWatchEvent>();
+    thread::spawn(move || {
+        let started = std::time::Instant::now();
+        loop {
+            if started.elapsed() > Duration::from_secs(1800) {
+                let _ = tx.send(PlanWatchEvent::Ready(Err(
+                    "plan watcher timeout (30m)".to_string(),
+                )));
+                break;
+            }
+            let generated = match std::fs::metadata(&plan_path) {
+                Ok(meta) => {
+                    if meta.len() == 0 {
+                        false
+                    } else if let Ok(modified) = meta.modified() {
+                        baseline_modified.map(|v| modified > v).unwrap_or(true)
+                    } else {
+                        baseline_modified.is_none()
+                    }
+                }
+                Err(_) => false,
+            };
+            if generated {
+                let plan_md = std::fs::read_to_string(&plan_path).unwrap_or_default();
+                let result = enforce_tasks_from_plan_with_codex(&project_path, &tasks_path, &plan_md)
+                    .map_err(|err| err.to_string());
+                let _ = tx.send(PlanWatchEvent::Ready(result));
+                break;
+            }
+            thread::sleep(Duration::from_millis(700));
+        }
+    });
+    *plan_watch_job = Some(PlanWatchJob { rx });
+}
+
+fn poll_plan_chat_job(
+    plan_chat_job: &mut Option<PlanChatJob>,
+    plan_chat_pane: &mut PlanChatPane,
+    pane_task_spec: &mut PaneTaskSpec,
+) {
+    let Some(job) = plan_chat_job.as_mut() else {
+        return;
+    };
+    match job.rx.try_recv() {
+        Ok(PlanChatEvent::Finished(result)) => {
+            plan_chat_pane.running = false;
+            match result {
+                Ok(output) => {
+                    plan_chat_pane.lines.push(format!("assistant> {}", output.reply));
+                    plan_chat_pane.history.push(PlanChatTurn {
+                        role: "assistant".to_string(),
+                        content: output.reply,
+                    });
+                    pane_task_spec.status = format!(
+                        "plan.md updated: {}",
+                        plan_chat_pane.plan_path.display()
+                    );
+                    if output.plan_md.trim().is_empty() {
+                        plan_chat_pane
+                            .lines
+                            .push("warning: plan.md 내용이 비어 있습니다.".to_string());
+                    }
+                }
+                Err(err) => {
+                    plan_chat_pane.lines.push(format!("error> {err}"));
+                    pane_task_spec.status = format!("plan-chat failed: {err}");
+                }
+            }
+            plan_chat_pane.output_scroll = u16::MAX;
+            *plan_chat_job = None;
+        }
+        Err(TryRecvError::Disconnected) => {
+            plan_chat_pane.running = false;
+            plan_chat_pane
+                .lines
+                .push("error> plan-chat channel disconnected".to_string());
+            *plan_chat_job = None;
+        }
+        Err(TryRecvError::Empty) => {}
+    }
+}
+
+fn poll_plan_watch_job(
+    plan_watch_job: &mut Option<PlanWatchJob>,
+    plan_chat_pane: &mut PlanChatPane,
+    pane_task_spec: &mut PaneTaskSpec,
+    rows: &mut Vec<WorkingRow>,
+) {
+    let Some(job) = plan_watch_job.as_mut() else {
+        return;
+    };
+    match job.rx.try_recv() {
+        Ok(PlanWatchEvent::Ready(result)) => {
+            match result {
+                Ok(updated) => {
+                    let tasks = load_tasks_items(&plan_chat_pane.tasks_path);
+                    pane_task_spec.spec.tasks = tasks;
+                    rows.clear();
+                    rows.extend(build_working_rows_from_tasks(&pane_task_spec.spec.tasks));
+                    pane_task_spec.status = format!("plan ready -> tasks updated: {updated}");
+                    plan_chat_pane.lines.push(format!(
+                        "system> plan.md detected. tasks.yaml updated: {updated}"
+                    ));
+                    plan_chat_pane.open = false;
+                }
+                Err(err) => {
+                    pane_task_spec.status = format!("plan watcher failed: {err}");
+                    plan_chat_pane.lines.push(format!("error> {err}"));
+                }
+            }
+            *plan_watch_job = None;
+        }
+        Err(TryRecvError::Disconnected) => {
+            pane_task_spec.status = "plan watcher disconnected".to_string();
+            *plan_watch_job = None;
+        }
+        Err(TryRecvError::Empty) => {}
+    }
+}
+
+fn run_plan_chat_turn(
+    project_path: &std::path::Path,
+    plan_path: &std::path::Path,
+    history: &[PlanChatTurn],
+    user_message: &str,
+) -> Result<PlanChatTurnOutput> {
+    let project_yaml = std::fs::read_to_string(project_path).unwrap_or_default();
+    let prompt = build_plan_chat_prompt(&project_yaml, history, user_message);
+    let raw = execute_codex_prompt(&prompt)?;
+    let (reply, plan_md) = parse_plan_chat_output(&raw);
+    let content = if plan_md.trim().is_empty() {
+        "# Plan\n\n- (empty)\n".to_string()
+    } else {
+        plan_md
+    };
+    std::fs::write(plan_path, &content).map_err(|e| {
+        anyhow::anyhow!("failed to write plan.md ({}): {e}", plan_path.display())
+    })?;
+    Ok(PlanChatTurnOutput {
+        reply,
+        plan_md: content,
+    })
+}
+
+fn build_plan_chat_prompt(project_yaml: &str, history: &[PlanChatTurn], user_message: &str) -> String {
+    let history_text = history
+        .iter()
+        .map(|turn| format!("{}: {}", turn.role, turn.content))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "스킬 사용:\n- /home/tree/ai/skills/plan-code/SKILL.md\n\n\
+목표:\n- project.yaml을 바탕으로 plan.md를 작성/갱신한다.\n\
+- 사용자 질문에 짧게 답하고, 항상 plan.md 전체 최신본을 제공한다.\n\n\
+출력 형식(반드시 준수):\n\
+[CHAT]\n\
+사용자에게 보여줄 답변\n\
+[/CHAT]\n\
+[PLAN_MD]\n\
+plan.md 전체 markdown\n\
+[/PLAN_MD]\n\n\
+project.yaml:\n{project_yaml}\n\n\
+history:\n{history_text}\n\n\
+latest_user_message:\n{user_message}\n"
+    )
+}
+
+fn parse_plan_chat_output(raw: &str) -> (String, String) {
+    let chat = extract_tag_block(raw, "[CHAT]", "[/CHAT]");
+    let plan = extract_tag_block(raw, "[PLAN_MD]", "[/PLAN_MD]");
+    let reply = chat.unwrap_or_else(|| raw.trim().to_string());
+    let plan_md = plan.unwrap_or_else(|| raw.trim().to_string());
+    (reply, plan_md)
+}
+
+fn enforce_tasks_from_plan_with_codex(
+    project_path: &std::path::Path,
+    tasks_path: &std::path::Path,
+    plan_md: &str,
+) -> Result<usize> {
+    let project_yaml = std::fs::read_to_string(project_path).unwrap_or_default();
+    let current_tasks = std::fs::read_to_string(tasks_path).unwrap_or_default();
+    let prompt = format!(
+        "스킬 사용:\n- /home/tree/ai/skills/plan-code/SKILL.md\n\n\
+아래 plan.md를 기준으로 tasks.yaml을 생성/갱신해라.\n\
+규칙:\n\
+- tasks.yaml 형식의 순수 YAML만 출력\n\
+- 최상위 키는 tasks\n\
+- 각 item 키는 name,type,domain,depends_on,scope,state,rule,step\n\
+- type은 action|calc\n\
+- 기존 tasks.yaml을 참고하되 plan.md를 우선 반영\n\n\
+project.yaml:\n{project_yaml}\n\n\
+current tasks.yaml:\n{current_tasks}\n\n\
+plan.md:\n{plan_md}"
+    );
+    let raw = execute_codex_prompt(&prompt)?;
+    let candidate = extract_yaml_candidate(&raw);
+    let parsed = serde_yaml::from_str::<TasksYaml>(&candidate)
+        .map_err(|e| anyhow::anyhow!("failed to parse tasks yaml from plan output: {e}"))?;
+    if parsed.tasks.is_empty() {
+        return Err(anyhow::anyhow!(
+            "plan-based tasks generation returned empty tasks"
+        ));
+    }
+    let tasks_yaml = serde_yaml::to_string(&parsed)
+        .map_err(|e| anyhow::anyhow!("failed to serialize tasks yaml: {e}"))?;
+    std::fs::write(tasks_path, tasks_yaml).map_err(|e| {
+        anyhow::anyhow!(
+            "failed to save tasks.yaml from generated plan ({}): {e}",
+            tasks_path.display()
+        )
+    })?;
+    Ok(parsed.tasks.len())
+}
+
+fn extract_tag_block(raw: &str, start_tag: &str, end_tag: &str) -> Option<String> {
+    let start = raw.find(start_tag)?;
+    let end = raw.find(end_tag)?;
+    if end <= start {
+        return None;
+    }
+    let from = start + start_tag.len();
+    Some(raw[from..end].trim().to_string())
+}
+
+fn apply_selected_project(
+    pane_task_spec: &mut PaneTaskSpec,
+    rows: &mut Vec<WorkingRow>,
+    project_name: &str,
+) {
+    if project_name.trim().is_empty() {
+        return;
+    }
+    let mut registry = ProjectRegistryYaml {
+        currentproject: project_name.to_string(),
+        projectlist: pane_task_spec.project_list.clone(),
+    };
+    registry.projectlist.sort();
+    registry.projectlist.dedup();
+    let _ = save_project_registry_yaml(&pane_task_spec.project_registry_path, &registry);
+
+    let project_dir = pane_task_spec.project_root_dir.join(project_name);
+    let _ = std::fs::create_dir_all(&project_dir);
+    let next_spec_path = project_dir.join("tasks.yaml");
+    let mut next = load_pane_task_spec(next_spec_path);
+    next.status = format!("project switched: {project_name} | {}", next.status);
+    *pane_task_spec = next;
+    rows.clear();
+    rows.extend(build_working_rows_from_tasks(&pane_task_spec.spec.tasks));
+}
+
+fn load_project_list(path: &std::path::Path, fallback_current: &str) -> Vec<String> {
+    let mut items = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_yaml::from_str::<ProjectRegistryYaml>(&raw).ok())
+        .map(|doc| doc.projectlist)
+        .unwrap_or_default();
+    if !fallback_current.trim().is_empty() && !items.iter().any(|v| v == fallback_current) {
+        items.push(fallback_current.to_string());
+    }
+    if items.is_empty() {
+        items.push("test".to_string());
+    }
+    items.sort();
+    items.dedup();
+    items
+}
+
+fn save_project_registry_yaml(
+    path: &std::path::Path,
+    registry: &ProjectRegistryYaml,
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            anyhow::anyhow!(
+                "failed to create project registry directory ({}): {e}",
+                parent.display()
+            )
+        })?;
+    }
+    let yaml = serde_yaml::to_string(registry)
+        .map_err(|e| anyhow::anyhow!("failed to serialize project registry yaml: {e}"))?;
+    std::fs::write(path, yaml).map_err(|e| {
+        anyhow::anyhow!(
+            "failed to save project registry yaml ({}): {e}",
+            path.display()
+        )
+    })?;
+    Ok(())
+}
+
+>>>>>>> 5b2a204 (fix: seperate process)
 fn stage_handle_pane_key_events(
     focus: &mut PaneFocus,
     pane_task_spec: &mut PaneTaskSpec,
@@ -840,6 +1692,9 @@ fn stage_handle_pane_key_events(
     quit_requested: &mut bool,
     make_todos_progress_pane: &mut MakeTodosProgressPane,
     make_todos_job: &mut Option<MakeTodosJob>,
+    plan_chat_pane: &mut PlanChatPane,
+    plan_chat_job: &mut Option<PlanChatJob>,
+    plan_watch_job: &mut Option<PlanWatchJob>,
     auto_run_after_todos: &mut bool,
 ) -> Result<()> {
     while crossterm::event::poll(Duration::from_millis(0))? {
@@ -862,7 +1717,30 @@ fn stage_handle_pane_key_events(
                 continue;
             }
         }
+<<<<<<< HEAD
         if matches!(key.code, KeyCode::Char('q') | KeyCode::Char('Q')) {
+=======
+        if set_plan_chat_pane(plan_chat_pane, plan_chat_job, key.code, pane_task_spec)? {
+            continue;
+        }
+        let typing_in_input = pane_task_spec.input_mode
+            || (request_input_pane.open
+                && matches!(request_input_pane.focus, RequestPaneFocus::Input))
+            || (project_select_pane.open
+                && matches!(project_select_pane.focus, ProjectSelectFocus::Input));
+        if !typing_in_input
+            && matches!(key.code, KeyCode::Char('q') | KeyCode::Char('Q'))
+            && matches!(focus, PaneFocus::TaskSpec)
+            && matches!(pane_task_spec.mode, TaskSpecMode::Form)
+        {
+            pane_task_spec.mode = TaskSpecMode::List;
+            pane_task_spec.selected_field = 0;
+            pane_task_spec.list_focus = TaskListFocus::Item;
+            pane_task_spec.status = "card-list mode".to_string();
+            continue;
+        }
+        if !typing_in_input && matches!(key.code, KeyCode::Char('q') | KeyCode::Char('Q')) {
+>>>>>>> 5b2a204 (fix: seperate process)
             *quit_requested = true;
             continue;
         }
@@ -906,12 +1784,43 @@ fn stage_handle_pane_key_events(
                 KeyCode::Up if matches!(focus, PaneFocus::Working) => *focus = PaneFocus::Todos,
                 KeyCode::Up if matches!(focus, PaneFocus::TaskSpec) => *focus = PaneFocus::Project,
                 KeyCode::Char('p') | KeyCode::Char('P') if matches!(focus, PaneFocus::Working) => {
-                    if !*run_requested {
+                    if !pane_task_spec.todos_path.exists() || pane_task_spec.todos.is_empty() {
+                        pane_task_spec.status =
+                            "run blocked: generate todos first (todos pane: p)".to_string();
+                    } else if !*run_requested {
                         let _ = run_start_tx.send(());
                         *run_requested = true;
                         pane_task_spec.status = "run started".to_string();
                     }
                 }
+<<<<<<< HEAD
+=======
+                KeyCode::Char('f') | KeyCode::Char('F') if matches!(focus, PaneFocus::Project) => {
+                    if make_todos_job.is_none() {
+                        let (pane, job) = start_fill_project_tasks_job(
+                            &pane_task_spec.project_path,
+                            &pane_task_spec.tasks_path,
+                        );
+                        *make_todos_progress_pane = pane;
+                        *make_todos_job = Some(job);
+                        pane_task_spec.status = "tasks.yaml fill started".to_string();
+                    }
+                }
+                KeyCode::F(1) if matches!(focus, PaneFocus::Project) => {
+                    open_project_select_pane(project_select_pane, pane_task_spec);
+                }
+                KeyCode::Char('P') if matches!(focus, PaneFocus::TaskSpec) => {
+                    if pane_task_spec.spec.tasks.is_empty() {
+                        open_plan_chat_pane(plan_chat_pane, pane_task_spec);
+                        start_plan_file_watch(plan_chat_pane, plan_watch_job);
+                        start_plan_chat_turn(
+                            plan_chat_pane,
+                            plan_chat_job,
+                            "project.yaml을 기반으로 plan-code 방식의 plan.md를 작성해줘.",
+                        )?;
+                    }
+                }
+>>>>>>> 5b2a204 (fix: seperate process)
                 KeyCode::Char('a') | KeyCode::Char('A') if matches!(focus, PaneFocus::Project) => {
                     let has_base = !pane_task_spec.spec.name.trim().is_empty()
                         && !pane_task_spec.spec.framework.trim().is_empty()
@@ -923,12 +1832,33 @@ fn stage_handle_pane_key_events(
                         let (pane, job) = start_make_todos_job(&pane_task_spec.path);
                         *make_todos_progress_pane = pane;
                         *make_todos_job = Some(job);
-                        *auto_run_after_todos = true;
-                        pane_task_spec.status = "auto mode started".to_string();
+                        *auto_run_after_todos = false;
+                        pane_task_spec.status = "auto mode started (run is manual)".to_string();
                     }
                 }
                 _ => {}
             }
+<<<<<<< HEAD
+=======
+
+            if matches!(focus, PaneFocus::Todos)
+                && matches!(key.code, KeyCode::Char('p') | KeyCode::Char('P'))
+                && make_todos_job.is_none()
+            {
+                if !pane_task_spec.tasks_path.exists() || pane_task_spec.spec.tasks.is_empty() {
+                    pane_task_spec.status =
+                        "make_todos blocked: fill tasks first (project/task pane: f)".to_string();
+                } else {
+                    let (pane, job) = start_make_todos_job(
+                        &pane_task_spec.project_path,
+                        &pane_task_spec.tasks_path,
+                    );
+                    *make_todos_progress_pane = pane;
+                    *make_todos_job = Some(job);
+                    pane_task_spec.status = "make_todos_spec started".to_string();
+                }
+            }
+>>>>>>> 5b2a204 (fix: seperate process)
         }
 
         if !matches!(focus, PaneFocus::TaskSpec) {
@@ -965,7 +1895,11 @@ fn stage_handle_pane_key_events(
                         }
                     }
                 }
+<<<<<<< HEAD
                 KeyCode::Char('p') | KeyCode::Char('P') => {
+=======
+                KeyCode::Char('f') | KeyCode::Char('F') => {
+>>>>>>> 5b2a204 (fix: seperate process)
                     if make_todos_job.is_none() {
                         let (pane, job) = start_make_todos_job(&pane_task_spec.path);
                         *make_todos_progress_pane = pane;
@@ -1143,7 +2077,23 @@ fn render_todos_pane(
     theme: &WorkingTheme,
 ) {
     if pane_task_spec.todos.is_empty() {
-        frame.render_widget(Paragraph::new("todo item이 없습니다."), area);
+        if !pane_task_spec.tasks_path.exists() || pane_task_spec.spec.tasks.is_empty() {
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from("todo item이 없습니다."),
+                    Line::from("선행조건 미완료: tasks.yaml 생성/채우기 (project/task pane: f)"),
+                ]),
+                area,
+            );
+        } else {
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from("todo item이 없습니다."),
+                    Line::from("작업리스트 만들기: todos pane에서 p"),
+                ]),
+                area,
+            );
+        }
         return;
     }
     let task_opt = pane_task_spec
@@ -1194,8 +2144,9 @@ fn render_todos_pane(
 
 fn render_working_compact(frame: &mut ratatui::Frame, area: Rect, pane_task_spec: &PaneTaskSpec) {
     let mut lines = vec![Line::from("todo names:")];
-    if pane_task_spec.todos.is_empty() {
+    if !pane_task_spec.todos_path.exists() || pane_task_spec.todos.is_empty() {
         lines.push(Line::from("  - (none)"));
+        lines.push(Line::from("선행조건 미완료: todos.yaml 생성 (todos pane: p)"));
     } else {
         for (idx, item) in pane_task_spec.todos.iter().enumerate() {
             lines.push(Line::from(format!("  {}. {}", idx + 1, item.name)));
@@ -1241,6 +2192,15 @@ fn split_semicolon_items(input: &str) -> Vec<String> {
         .collect::<Vec<_>>()
 }
 
+fn split_line_items(input: &str) -> Vec<String> {
+    input
+        .lines()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+}
+
 fn stage_save_task_spec(pane_task_spec: &mut PaneTaskSpec) {
     let yaml = match serde_yaml::to_string(&pane_task_spec.spec) {
         Ok(v) => v,
@@ -1273,9 +2233,48 @@ fn start_make_todos_job(spec_path: &std::path::Path) -> (MakeTodosProgressPane, 
         MakeTodosProgressPane {
             open: true,
             running: true,
+            kind: BackgroundJobKind::MakeTodos,
             lines: vec!["make_todos_spec started".to_string()],
         },
+<<<<<<< HEAD
         MakeTodosJob { rx },
+=======
+        MakeTodosJob {
+            rx,
+            kind: BackgroundJobKind::MakeTodos,
+        },
+    )
+}
+
+fn start_fill_project_tasks_job(
+    project_path: &std::path::Path,
+    tasks_path: &std::path::Path,
+) -> (MakeTodosProgressPane, MakeTodosJob) {
+    let (tx, rx) = mpsc::channel::<MakeTodosEvent>();
+    let project_path = project_path.to_path_buf();
+    let tasks_path = tasks_path.to_path_buf();
+    thread::spawn(move || {
+        let send_progress = |message: &str| {
+            let _ = tx.send(MakeTodosEvent::Progress(message.to_string()));
+        };
+        let result =
+            run_project_task_fill_pipeline_with_progress(&project_path, &tasks_path, send_progress)
+                .map_err(|err| err.to_string());
+        let _ = tx.send(MakeTodosEvent::Finished(result));
+    });
+
+    (
+        MakeTodosProgressPane {
+            open: true,
+            running: true,
+            kind: BackgroundJobKind::FillProjectTasks,
+            lines: vec!["project_spec tasks fill started".to_string()],
+        },
+        MakeTodosJob {
+            rx,
+            kind: BackgroundJobKind::FillProjectTasks,
+        },
+>>>>>>> 5b2a204 (fix: seperate process)
     )
 }
 
@@ -1283,8 +2282,14 @@ fn poll_make_todos_job(
     make_todos_job: &mut Option<MakeTodosJob>,
     make_todos_progress_pane: &mut MakeTodosProgressPane,
     pane_task_spec: &mut PaneTaskSpec,
+<<<<<<< HEAD
     run_start_tx: &tokio::sync::mpsc::UnboundedSender<()>,
     run_requested: &mut bool,
+=======
+    rows: &mut Vec<WorkingRow>,
+    _run_start_tx: &tokio::sync::mpsc::UnboundedSender<()>,
+    _run_requested: &mut bool,
+>>>>>>> 5b2a204 (fix: seperate process)
     auto_run_after_todos: &mut bool,
 ) {
     let Some(job) = make_todos_job.as_mut() else {
@@ -1301,6 +2306,7 @@ fn poll_make_todos_job(
                 match result {
                     Ok(output) => {
                         pane_task_spec.spec = output.updated_spec;
+<<<<<<< HEAD
                         let appended = output.generated_todos.len();
                         if appended == 0 {
                             pane_task_spec.status = "make_todos_spec failed: generated todos is empty".to_string();
@@ -1319,6 +2325,57 @@ fn poll_make_todos_job(
                                 let _ = run_start_tx.send(());
                                 *run_requested = true;
                                 pane_task_spec.status = "auto mode: run started".to_string();
+=======
+                        match job_kind {
+                            BackgroundJobKind::MakeTodos => {
+                                let appended = output.generated_todos.len();
+                                if appended == 0 {
+                                    pane_task_spec.status =
+                                        "make_todos_spec failed: generated todos is empty"
+                                            .to_string();
+                                    make_todos_progress_pane
+                                        .lines
+                                        .push("failed: generated todos is empty".to_string());
+                                    if let Some(path) = write_make_todos_failure_file(
+                                        &pane_task_spec.status,
+                                        &make_todos_progress_pane.lines,
+                                    ) {
+                                        make_todos_progress_pane
+                                            .lines
+                                            .push(format!("saved failure: {}", path.display()));
+                                    }
+                                } else {
+                                    pane_task_spec.todos.extend(output.generated_todos);
+                                    stage_save_todos_spec(pane_task_spec);
+                                    pane_task_spec.status =
+                                        format!("make_todos_spec appended: {appended}");
+                                    make_todos_progress_pane
+                                        .lines
+                                        .push(format!("done: appended {appended} items"));
+                                    make_todos_progress_pane
+                                        .lines
+                                        .push("auto-close: success".to_string());
+                                    make_todos_progress_pane.open = false;
+                                }
+                            }
+                            BackgroundJobKind::FillProjectTasks => {
+                                rows.clear();
+                                rows.extend(build_working_rows_from_tasks(
+                                    &pane_task_spec.spec.tasks,
+                                ));
+                                pane_task_spec.status = format!(
+                                    "project_spec tasks updated: {}",
+                                    pane_task_spec.spec.tasks.len()
+                                );
+                                make_todos_progress_pane.lines.push(format!(
+                                    "done: tasks {}",
+                                    pane_task_spec.spec.tasks.len()
+                                ));
+                                make_todos_progress_pane
+                                    .lines
+                                    .push("auto-close: success".to_string());
+                                make_todos_progress_pane.open = false;
+>>>>>>> 5b2a204 (fix: seperate process)
                             }
                         }
                     }
@@ -1352,6 +2409,7 @@ fn poll_make_todos_job(
     }
 }
 
+<<<<<<< HEAD
 fn render_shortcut_bar(frame: &mut ratatui::Frame, area: Rect, focus: &PaneFocus) {
     let base = "q: quit | ←/→/↑/↓: focus 이동 | Enter: 선택";
     let extra = match focus {
@@ -1359,6 +2417,85 @@ fn render_shortcut_bar(frame: &mut ratatui::Frame, area: Rect, focus: &PaneFocus
         PaneFocus::TaskSpec => " | p: make_todos",
         PaneFocus::Todos => " | ↓: working",
         PaneFocus::Working => " | p: run",
+=======
+fn append_error_log_in_cwd(message: &str) {
+    let path = std::path::Path::new("log.md");
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let line = format!("- [{ts}] {message}\n");
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = std::io::Write::write_all(&mut file, line.as_bytes());
+    }
+}
+
+fn write_make_todos_failure_file(
+    status: &str,
+    progress_lines: &[String],
+) -> Option<std::path::PathBuf> {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let path = std::path::PathBuf::from(format!("make_todos_spec_failed_{ts}.md"));
+    let mut body = String::new();
+    body.push_str("# make_todos_spec failure\n\n");
+    body.push_str(&format!("- time: {ts}\n"));
+    body.push_str(&format!("- status: {status}\n\n"));
+    body.push_str("## Progress\n");
+    for line in progress_lines {
+        body.push_str("- ");
+        body.push_str(line);
+        body.push('\n');
+    }
+    if std::fs::write(&path, body).is_ok() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn render_shortcut_bar(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    focus: &PaneFocus,
+    pane_detached: bool,
+    request_input_pane: &RequestInputPane,
+    project_select_pane: &ProjectSelectPane,
+    make_todos_progress_pane: &MakeTodosProgressPane,
+    plan_chat_pane: &PlanChatPane,
+) {
+    let line = if request_input_pane.open {
+        "modal(request): Tab focus | PgUp/PgDn scroll | Enter action | Esc close".to_string()
+    } else if project_select_pane.open {
+        "modal(project): Up/Down select | Tab focus | Enter apply | Esc/F1 close".to_string()
+    } else if plan_chat_pane.open {
+        "modal(plan-chat): Enter send | PgUp/PgDn scroll | Esc close".to_string()
+    } else if make_todos_progress_pane.open {
+        if make_todos_progress_pane.running {
+            "background job running...".to_string()
+        } else {
+            "background job done: Esc/Enter close".to_string()
+        }
+    } else if pane_detached {
+        "navigation mode: arrows move pane | Enter: focus pane | q: quit".to_string()
+    } else {
+        let base = "q: quit | arrows: focus | Enter: select";
+        let extra = match focus {
+            PaneFocus::Project => {
+                " | F1: project | Up/Down: field | Enter: edit value | f: fill tasks"
+            }
+            PaneFocus::TaskSpec => " | Enter: add/edit | f: fill tasks | P: plan-chat",
+            PaneFocus::Todos => " | Up/Down: focus | p/P: make_todos",
+            PaneFocus::Working => " | p: run",
+        };
+        format!("{base}{extra}")
+>>>>>>> 5b2a204 (fix: seperate process)
     };
     let line = format!("{base}{extra}");
     frame.render_widget(
@@ -1520,7 +2657,18 @@ fn enrich_spec_tasks_with_codex(spec: &TaskSpecYaml) -> Result<TaskSpecYaml> {
     let spec_text = serde_yaml::to_string(spec)
         .map_err(|e| anyhow::anyhow!("failed to serialize spec for enrich prompt: {e}"))?;
     let domain_candidates = extract_domain_candidates(spec);
+<<<<<<< HEAD
     let prompt = build_enrich_spec_prompt(&spec_text, &domain_candidates);
+=======
+    let project_definition = build_project_definition_block(spec);
+    let design_template = load_plan_code_design_template_for_prompt();
+    let prompt = build_enrich_spec_prompt(
+        &spec_text,
+        &domain_candidates,
+        &project_definition,
+        &design_template,
+    );
+>>>>>>> 5b2a204 (fix: seperate process)
     let raw_output = execute_codex_prompt(&prompt)?;
     parse_spec_from_codex_output(&raw_output)
 }
@@ -1539,11 +2687,33 @@ fn extract_domain_candidates(spec: &TaskSpecYaml) -> Vec<String> {
     candidates
 }
 
+<<<<<<< HEAD
 fn build_enrich_spec_prompt(spec_text: &str, domain_candidates: &[String]) -> String {
     let fallback = "현재 spec.yaml의 tasks/feature를 전체적으로 검토하고 domain 구성을 보강해줘.\n\
 \n\
 스킬 사용:\n\
 - /home/tree/ai/skills/domain_create/SKILL.md\n\
+=======
+fn build_project_definition_block(spec: &TaskSpecYaml) -> String {
+    let project_rule = if spec.rule.is_empty() {
+        "[]".to_string()
+    } else {
+        format!("[{}]", spec.rule.join(", "))
+    };
+    format!(
+        "name: {}\ndescription: {}\nframework: {}\nrule: {}",
+        spec.name, spec.description, spec.framework, project_rule
+    )
+}
+
+fn build_enrich_spec_prompt(
+    spec_text: &str,
+    domain_candidates: &[String],
+    project_definition: &str,
+    design_template: &str,
+) -> String {
+    let fallback = "현재 tasks.yaml의 tasks/feature를 전체적으로 검토하고 domain 구성을 보강해줘.\n\
+>>>>>>> 5b2a204 (fix: seperate process)
 \n\
 목표:\n\
 - 모든 기능 추가를 먼저 훑어본 뒤 spec.yaml의 features.domain을 보강\n\
@@ -1551,6 +2721,11 @@ fn build_enrich_spec_prompt(spec_text: &str, domain_candidates: &[String]) -> St
 \n\
 규칙:\n\
 - 단일 codex 호출로 전체를 처리(병렬 금지)\n\
+<<<<<<< HEAD
+=======
+- 외부 Skill/plan 문서를 읽으려 하지 말고, 아래 제공된 design_template/project_definition/tasks 텍스트만 사용\n\
+- design_template 형식으로 먼저 내부 설계를 고정한 뒤 결과를 tasks.yaml + features 순수 YAML로만 출력\n\
+>>>>>>> 5b2a204 (fix: seperate process)
 - features.domain은 문자열 배열로 유지\n\
 - 도메인은 중복 없이 정규화\n\
 - type은 action|calc만 허용\n\
@@ -1561,12 +2736,27 @@ fn build_enrich_spec_prompt(spec_text: &str, domain_candidates: &[String]) -> St
 domain_candidates:\n\
 {{domain_candidates}}\n\
 \n\
+<<<<<<< HEAD
 spec.yaml:\n\
+=======
+project_definition(from project.yaml):\n\
+{{project_definition}}\n\
+\n\
+design_template(from /home/tree/ai/skills/plan-code/references/plan.md):\n\
+{{design_template}}\n\
+\n\
+tasks.yaml + features:\n\
+>>>>>>> 5b2a204 (fix: seperate process)
 {{spec_yaml}}\n";
     let template = std::fs::read_to_string("assets/prompts/Prompt_domain.txt")
         .unwrap_or_else(|_| fallback.to_string());
     template
         .replace("{{domain_candidates}}", &domain_candidates.join(", "))
+<<<<<<< HEAD
+=======
+        .replace("{{project_definition}}", project_definition)
+        .replace("{{design_template}}", design_template)
+>>>>>>> 5b2a204 (fix: seperate process)
         .replace("{{spec_yaml}}", spec_text)
 }
 
@@ -1713,6 +2903,16 @@ fn load_todos_items(path: &std::path::Path) -> Vec<TaskSpecItem> {
     if parsed.tasks.is_empty() { parsed.todos } else { parsed.tasks }
 }
 
+fn load_tasks_items(path: &std::path::Path) -> Vec<TaskSpecItem> {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(parsed) = serde_yaml::from_str::<TasksYaml>(&raw) else {
+        return Vec::new();
+    };
+    parsed.tasks
+}
+
 fn stage_save_todos_spec(pane_task_spec: &mut PaneTaskSpec) {
     #[derive(Debug, Clone, Serialize)]
     struct TodosYaml<'a> {
@@ -1740,6 +2940,39 @@ fn load_todos_template_for_prompt() -> String {
     let path = std::path::Path::new("assets/templates/todos.yaml");
     std::fs::read_to_string(path).unwrap_or_else(|_| {
         "tasks:\n  - name: \"\"\n    type: \"\"\n    domain: []\n    depends_on: []\n    scope: []\n    state: []\n    rule: []\n    step: []\n".to_string()
+    })
+}
+
+fn load_plan_code_design_template_for_prompt() -> String {
+    let path = std::path::Path::new("/home/tree/ai/skills/plan-code/references/plan.md");
+    std::fs::read_to_string(path).unwrap_or_else(|_| {
+        "# Design Document\n\
+\n\
+## Domain\n\
+- **Subject**:\n\
+- **Core Object**:\n\
+- **States**:\n\
+- **Actions**:\n\
+\n\
+## Flow (1st Iteration)\n\
+- **State Transition**:\n\
+- **Object Interaction**:\n\
+- **Available Actions**:\n\
+\n\
+## Context\n\
+- **Tech Stack**:\n\
+- **Reusable Components**:\n\
+- **Style Patterns**:\n\
+\n\
+## Constraints\n\
+- **Business Rules**:\n\
+\n\
+## Verification\n\
+- **Done Criteria**:\n\
+\n\
+## Next Iterations\n\
+-\n"
+            .to_string()
     })
 }
 
@@ -1803,6 +3036,12 @@ fn load_working_theme() -> WorkingTheme {
     let fallback = WorkingTheme {
         primary: Color::Rgb(18, 16, 16),
         secondary: Color::Rgb(105, 86, 86),
+<<<<<<< HEAD
+=======
+        active: Color::Rgb(235, 160, 175),
+        inactive: Color::DarkGray,
+        focus: Color::Rgb(235, 160, 175),
+>>>>>>> 5b2a204 (fix: seperate process)
         background: Color::Rgb(250, 227, 222),
         margin: 2,
         padding: 1,
@@ -1823,6 +3062,12 @@ fn load_working_theme() -> WorkingTheme {
     WorkingTheme {
         primary: parse_hex_color(&parsed.basic.primary).unwrap_or(fallback.primary),
         secondary: parse_hex_color(&parsed.basic.secondary).unwrap_or(fallback.secondary),
+<<<<<<< HEAD
+=======
+        active: parse_hex_color(&parsed.basic.active).unwrap_or(fallback.active),
+        inactive: parse_hex_color(&parsed.basic.inactive).unwrap_or(fallback.inactive),
+        focus: parse_hex_color(&parsed.basic.focus).unwrap_or(fallback.focus),
+>>>>>>> 5b2a204 (fix: seperate process)
         background: parse_hex_color(&parsed.basic.background).unwrap_or(fallback.background),
         margin: parsed.layout.margin,
         padding: parsed.layout.padding,
@@ -1864,3 +3109,62 @@ fn working_area(area: Rect, theme: &WorkingTheme) -> Rect {
         area.height.saturating_sub(m.saturating_mul(2)),
     )
 }
+<<<<<<< HEAD
+=======
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_spec_from_codex_output_accepts_framework_sequence() {
+        let raw = "요약 문장\n```yaml\nname: demo\ndescription: sample\nframework:\n  - rust\nrule: []\nfeatures:\n  domain: []\n  feature: []\ntasks: []\n```";
+        let parsed = parse_spec_from_codex_output(raw).expect("spec parse should succeed");
+        assert_eq!(parsed.framework, "rust");
+    }
+
+    #[test]
+    fn parse_spec_from_codex_output_accepts_text_prefix_without_fence() {
+        let raw = "설명 문장\nname: demo\ndescription: sample\nframework: rust\nrule: []\nfeatures:\n  domain: []\n  feature: []\ntasks: []\n";
+        let parsed = parse_spec_from_codex_output(raw).expect("spec parse should succeed");
+        assert_eq!(parsed.name, "demo");
+        assert_eq!(parsed.framework, "rust");
+    }
+
+    #[test]
+    fn parse_spec_from_codex_output_accepts_task_scalar_fields() {
+        let raw = "name: demo\ndescription: sample\nframework: rust\nrule: []\nfeatures:\n  domain: []\n  feature: []\ntasks:\n  - name: t1\n    type: action\n    domain: catalog\n    depends_on: prev_task\n    scope: src/app\n    state: todo\n    rule: must-pass\n    step: do-work\n";
+        let parsed = parse_spec_from_codex_output(raw).expect("spec parse should succeed");
+        let task = parsed.tasks.first().expect("task should exist");
+        assert_eq!(task.domain, vec!["catalog".to_string()]);
+        assert_eq!(task.depends_on, vec!["prev_task".to_string()]);
+        assert_eq!(task.scope, vec!["src/app".to_string()]);
+        assert_eq!(task.state, vec!["todo".to_string()]);
+        assert_eq!(task.rule, vec!["must-pass".to_string()]);
+        assert_eq!(task.step, vec!["do-work".to_string()]);
+    }
+
+    #[test]
+    fn parse_spec_from_codex_output_accepts_features_with_nested_mapping_values() {
+        let raw = "name: demo\ndescription: sample\nframework: rust\nrule: []\nfeatures:\n  domain:\n    primary: catalog\n  feature:\n    - name: product.list\ntasks: []\n";
+        let parsed = parse_spec_from_codex_output(raw).expect("spec parse should succeed");
+        assert_eq!(parsed.features.domain, vec!["catalog".to_string()]);
+        assert_eq!(parsed.features.feature, vec!["product.list".to_string()]);
+    }
+
+    #[test]
+    fn split_line_items_parses_one_item_per_line() {
+        let parsed = split_line_items(" keep auth \n\nlimit length\n");
+        assert_eq!(
+            parsed,
+            vec!["keep auth".to_string(), "limit length".to_string()]
+        );
+    }
+
+    #[test]
+    fn count_request_input_lines_counts_wrapped_lines() {
+        assert_eq!(count_request_input_lines("abcdef", 4), 2);
+        assert_eq!(count_request_input_lines("ab\ncdef", 4), 2);
+    }
+}
+>>>>>>> 5b2a204 (fix: seperate process)

@@ -1,6 +1,12 @@
 basic:
   primary: "#121010"
   secondary: "#695656"
+<<<<<<< HEAD
+=======
+  active: "#EBA0AF"
+  inactive: "#555555"
+  focus: "#EBA0AF"
+>>>>>>> 5b2a204 (fix: seperate process)
   background: "#E6E6E6"
 layout:
   margin: 2

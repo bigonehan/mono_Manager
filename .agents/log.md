@@ -374,3 +374,92 @@
 
 ## 2026-02-19 - 작업한일
 - README.md 신규 작성: 프로젝트 개요, 빌드 방법, 주요 CLI 명령(show-ui/make-spec/fill-spec/make-todos/run-paralles/check-last) 안내 추가
+<<<<<<< HEAD
+=======
+
+## 2026-02-19 - 작업한일
+- show-ui에서 project_spec<->task pane을 Up/Down으로 명시적으로 이동 가능하도록 포커스 동작 정리
+- project_spec 활성 + Enter 시 project.yaml 편집 팝업 오픈, 파일이 없으면 기본 YAML로 생성 가능한 편집 흐름 추가
+- project.yaml 저장 시 spec.yaml(name/framework/rule/domain/feature) 동기화 로직 추가
+- 하단 단축키 바를 활성 pane별 안내 문구로 변경(검은 배경/흰 글자 유지)
+
+## 2026-02-19 - 작업한일
+- show-ui의 project_spec 편집 방식을 raw YAML 전체 입력 팝업에서 필드 단위 form 편집(name/framework/rule/domain/feature)으로 전환
+- project_spec 활성 Enter로 form 모드 진입, Up/Down 필드 선택, Enter 필드값 편집/저장, Esc 모드 종료 동작 추가
+- project 필드 저장 시 project.yaml 생성/갱신 및 spec.yaml 동기화 유지
+- 하단 단축키 바를 project view/form/input 상태별 안내로 세분화
+
+## 2026-02-19 - 작업한일
+- project_spec 편집을 인라인 방식에서 모달 방식으로 전환(project.yaml editor)
+- 모달에서 필드(name/framework/rule/domain/feature) 포커스 이동 및 Enter 기반 값 수정 지원
+- 모달 하단에 확인/취소 버튼 추가(Tab/Left/Right/Enter) 및 확인 시 project.yaml 저장 + spec.yaml 동기화
+
+## 2026-02-19 - 작업한일
+- `.project/project.yaml` 기반 프로젝트 레지스트리 템플릿(`assets/templates/project.yaml`)을 추가하고 currentproject/projectlist 구조를 기본 관리 대상으로 정리
+- show-ui에서 `F1`(또는 project pane `Enter`)로 프로젝트 선택/추가 모달을 열어 current project 전환 및 레지스트리 저장이 가능하도록 구현
+- 프로젝트 전환 시 `.project/<project>/spec.yaml` 기준으로 화면을 다시 로드하고 `tasks.yaml`/`todos.yaml` 파일 부재 상태를 UI 상태 메시지로 표시하도록 보강
+- 하단 검은색 단축키 바를 활성 컨텍스트(일반 pane, request 모달, project 모달, make_todos 진행 모달)에 맞춰 동적으로 표시하도록 변경
+
+## 2026-02-20 - 작업한일
+- 서버 시작 시 요청 포트가 사용 중이면 다음 포트로 자동 재시도하도록 바인딩 로직 추가(serve/show-ui 공통 적용)
+- 실제 바인딩된 포트를 callback URL 및 병렬 실행 server_url에 반영하도록 수정
+- spec YAML 파서를 완화해 features/domain/feature에 중첩 매핑 등 비정형 값이 와도 문자열 목록으로 정규화해 파싱 실패를 줄임
+- 관련 회귀 테스트 추가(포트 fallback, 중첩 features 파싱) 및 cargo test 통과
+
+## 2026-02-20 - 작업한일
+- UI 포커스 색상을 연핑크로 조정하고 선택된 카드/모달 border에 background 적용을 제거해 border 색상 중심 강조로 통일
+- 프로젝트 스키마를 project.yaml(프로젝트 정의) + tasks.yaml(작업 목록)으로 분리하고 working pane 저장/로딩 및 make-spec/fill-spec/make-todos 경로를 분리 구조로 정렬
+- tasks 보강 프롬프트에 project.yaml의 description/rule 준수 규칙을 추가하고 Prompt_domain 텍스트도 동일 기준으로 갱신
+- 초기 실행 시 git 저장소 확인 후 필요 시 jj git init 분기 유지, 기본 프로젝트명을 현재 폴더명으로 설정하고 package.json 존재 시 name/lib 자동 채움 + description 질의로 project.yaml 초기화
+- 도메인 보강 단계에서 모노레포 감지 시 domain/feature 디렉터리 경로를 monomap.md에 기록하는 절차를 추가
+- spec 보강 로직 중복을 공통 파이프라인으로 통합하고, 키 동작을 변경해 TaskSpec의 p는 보강만 수행하고 Todos pane의 P에서 make_todos 병렬 생성이 실행되도록 분리
+- 병렬 작업 완료 후 project.yaml의 features.feature 리스트에 기능을 중복 없이 append하도록 후처리 대상을 전환
+
+## 2026-02-20 - 작업한일
+- 서버 관련 타입/라우팅/바인딩/결과 전송 함수를 `src/server/mod.rs`로 분리해 서버 책임 코드를 main에서 모듈화
+- 서버 요청 미들웨어를 추가해 7878(또는 바인딩 포트) 접속 시 `[access] remote=<ip> method=<...> path=<...>` 한 줄 로그 출력
+- 서버 실행 경로를 `into_make_service_with_connect_info` 기반으로 변경해 원격 접속 IP가 로그에 표시되도록 적용
+
+## 2026-02-20 - 작업한일
+- tasks 보강 프롬프트가 plan-code 설계 형식을 반영하도록 `/home/tree/ai/skills/plan-code/references/plan.md` 템플릿 주입 로직 추가
+- `assets/prompts/Prompt_domain.txt`에 `design_template` 블록/규칙을 추가해 내부 설계 후 최종 출력은 순수 YAML로 강제
+- UI 경로(`working_pane`)에서 프롬프트 플레이스홀더 치환(`{{design_template}}`)을 연동하고 fallback 템플릿도 동일 구조로 정리
+## 2026-02-20 - 작업한일
+- `orc -ts "메시지"` 입력을 지원하도록 CLI 인자 전처리(`-ts` -> `--ts`)와 루트 옵션(`--ts`)을 추가
+- `src/tmux/mod.rs` 모듈을 신설하고 현재 tmux 창에서 세로 pane을 분할해 `orc show-ui --add-msg <메시지>`를 실행하는 함수 구현
+- tmux 세션 미감지/명령 실패 시 에러를 반환하도록 예외 처리 보강 및 관련 단위 테스트 추가
+## 2026-02-20 - 작업한일
+- `/home/tree/ai/skills/plan-code/SKILL.md`의 "설계문 완성 후" 단계를 갱신해 설계 완료 시 `orc show-ui --add-msg "생성된 plan.md를 보고 여기에 맞는 코드를 설계하고 작성하시오."`를 실행하도록 명시
+## 2026-02-20 - 작업한일
+- `plan-code` 스킬의 설계 완료 실행 명령을 `orc show-ui --add-msg ...`에서 `orc -ts ...`로 수정해 직접 show-ui 호출 문구를 제거
+## 2026-02-20 - 작업한일
+- project value editor 입력창에서 긴 줄이 잘리지 않도록 자동 줄바꿈 렌더링 및 표시 폭 기준 스크롤 줄 수 계산으로 수정
+- project `rule` 필드 입력을 `;` 구분에서 "한 줄당 한 항목" 방식으로 변경(열기/저장 모두 줄 단위 처리)
+- 관련 단위 테스트 추가(`split_line_items`, `count_request_input_lines`) 및 cargo test 통과
+## 2026-02-20 - 작업한일
+- task 수정(Form) 모드에서 `q/Q` 입력 시 프로그램 종료 대신 card-list 모드로만 복귀하도록 키 처리 분기 추가
+## 2026-02-20 - 작업한일
+- task pane에 항목이 있을 때 todos pane이 비어 있으면 `작업리스트 만들기: todos pane에서 p` 안내 문구를 표시하도록 추가
+- todos pane 포커스에서 `p`/`P` 모두 make_todos 시작 키로 동작하도록 변경
+- 하단 단축키 안내를 `p/P: make_todos`로 갱신
+## 2026-02-20 - 작업한일
+- todos 생성과 task fill 과정을 분리해 keymap 재정의: todos pane은 `p/P`로 make_todos, project/taskSpec pane은 `f/F`로 fill tasks
+- 진행 팝업 제목을 작업 종류별로 분리(`make_todos` / `fill_tasks`)해 현재 실행 파이프라인이 구분되도록 개선
+## 2026-02-20 - 작업한일
+- `make_todos`와 `working run` 흐름을 분리: todos 생성 후 자동 run 트리거를 제거하고 run은 `todos.yaml + todo 항목` 준비 시에만 시작되도록 차단 메시지 추가
+- 선행조건 미완료 시 todos/working pane border와 title을 옅은 색으로 표시하도록 상태 표현 강화
+- todos pane/working pane 본문에도 선행조건 안내 문구를 추가해 단계 미완료 이유를 명시
+## 2026-02-20 - 작업한일
+- `configs/style.yaml`의 `basic`에 `active`, `inactive` 색상 키를 추가하고 `inactive`를 dark gray 계열(`#555555`)로 설정
+- 선행조건 미완료 pane(todos/working)의 border/title 색상을 하드코딩 `DarkGray` 대신 `theme.inactive` 값을 사용하도록 변경
+- working pane 색상 상태 규칙을 분리: 병렬처리 중(`running`)은 `focus`, 대기(`ready`)는 `inactive`, 완료(`done`)는 `primary`로 표시
+## 2026-02-20 - 작업한일
+- 생성 완료 후 `tasks.yaml` 비움 여부를 y/n으로 묻는 후속 단계 추가
+- `yes` 선택 시 `tasks.yaml`을 빈 상태로 초기화하고 `todos.yaml` 파일을 삭제하도록 처리
+- `project.yaml`의 `features.feature`를 domain-action(도메인 우선, 행동 차순) 정렬해 `feature.yaml`에 기록하는 로직 추가
+- 관련 정렬/파싱 단위 테스트 추가 후 cargo test 통과
+## 2026-02-20 - 작업한일
+- tasks가 비어있는 TaskSpec 상태에서 `P`를 누르면 `plan-chat` 모달을 열고 codex(plan-code 스킬 지시 포함)로 `plan.md` 생성을 시작하도록 추가
+- plan-chat 시작 시 백그라운드 `plan.md` watcher를 실행해 파일 생성/갱신을 감지하면 LLM으로 `tasks.yaml` 강제 갱신(enforce) 후 모달을 자동 종료하도록 구현
+- TaskSpec pane 선행조건 미충족(프로젝트만 있는 상태)에서는 border/title을 inactive 색상으로 표시하도록 상태 표현 강화
+>>>>>>> 5b2a204 (fix: seperate process)

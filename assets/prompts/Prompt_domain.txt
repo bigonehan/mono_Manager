@@ -9,6 +9,14 @@
 
 규칙:
 - 단일 codex 호출로 전체를 처리(병렬 금지)
+<<<<<<< HEAD
+=======
+- 외부 Skill/plan 문서를 읽으려 하지 말고, 아래 제공된 design_template/project_definition/tasks 텍스트만 사용
+- design_template 형식으로 먼저 내부 설계를 고정한 뒤 결과를 tasks.yaml + features 순수 YAML로만 출력
+- 순수 YAML만 출력(설명/코드블록/접두어 금지)
+- 최상위 키는 `name,description,framework,rule,features,tasks`만 사용
+- tasks item 키는 `name,type,domain,depends_on,scope,state,rule,step`를 사용
+>>>>>>> 5b2a204 (fix: seperate process)
 - features.domain은 문자열 배열로 유지
 - 도메인은 중복 없이 정규화
 - type은 action|calc만 허용
@@ -22,5 +30,15 @@
 domain_candidates:
 {{domain_candidates}}
 
+<<<<<<< HEAD
 spec.yaml:
+=======
+project_definition:
+{{project_definition}}
+
+design_template(from /home/tree/ai/skills/plan-code/references/plan.md):
+{{design_template}}
+
+tasks.yaml + features:
+>>>>>>> 5b2a204 (fix: seperate process)
 {{spec_yaml}}
