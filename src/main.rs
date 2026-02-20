@@ -1076,6 +1076,105 @@ fn split_domain_action(feature: &str) -> (&str, &str) {
     }
 }
 
+fn stage_prompt_cleanup_after_generation(project_dir: &std::path::Path) -> Result<()> {
+    let answer = input_ask_question(
+        "모든 생성이 완료되었습니다. tasks.yaml을 비울까요? (y/n)".to_string(),
+        InputAnswerKind::YesNo,
+        None,
+    )?;
+    if answer != "yes" {
+        return Ok(());
+    }
+
+    let tasks_path = project_dir.join("tasks.yaml");
+    let todos_path = project_dir.join("todos.yaml");
+    let project_path = project_dir.join("project.yaml");
+    let feature_path = project_dir.join("feature.yaml");
+
+    let empty_tasks = serde_yaml::to_string(&TasksFile::default())
+        .context("failed to serialize empty tasks.yaml")?;
+    std::fs::write(&tasks_path, empty_tasks).with_context(|| {
+        format!(
+            "failed to clear tasks.yaml after generation: {}",
+            tasks_path.display()
+        )
+    })?;
+
+    if todos_path.exists() {
+        std::fs::remove_file(&todos_path).with_context(|| {
+            format!(
+                "failed to remove todos.yaml after generation: {}",
+                todos_path.display()
+            )
+        })?;
+    }
+
+    let ordered_features = collect_ordered_feature_entries(&project_path)?;
+    let feature_doc = FeatureRecordFile {
+        feature: ordered_features,
+    };
+    let feature_text =
+        serde_yaml::to_string(&feature_doc).context("failed to serialize feature.yaml")?;
+    std::fs::write(&feature_path, feature_text).with_context(|| {
+        format!(
+            "failed to write feature.yaml after generation: {}",
+            feature_path.display()
+        )
+    })?;
+
+    println!(
+        "cleanup done: tasks cleared, todos removed, feature recorded ({})",
+        feature_path.display()
+    );
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct FeatureRecordFile {
+    #[serde(default)]
+    feature: Vec<String>,
+}
+
+fn collect_ordered_feature_entries(project_path: &std::path::Path) -> Result<Vec<String>> {
+    let raw = std::fs::read_to_string(project_path).with_context(|| {
+        format!(
+            "failed to read project.yaml for feature record: {}",
+            project_path.display()
+        )
+    })?;
+    let doc = serde_yaml::from_str::<ProjectDefinitionFile>(&raw)
+        .with_context(|| format!("failed to parse project.yaml: {}", project_path.display()))?;
+
+    let mut unique = Vec::<String>::new();
+    for item in doc.features.feature {
+        let trimmed = item.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !unique.iter().any(|v| v == trimmed) {
+            unique.push(trimmed.to_string());
+        }
+    }
+
+    unique.sort_by(|a, b| {
+        let (a_domain, a_action) = split_domain_action(a);
+        let (b_domain, b_action) = split_domain_action(b);
+        a_domain
+            .cmp(b_domain)
+            .then(a_action.cmp(b_action))
+            .then(a.cmp(b))
+    });
+    Ok(unique)
+}
+
+fn split_domain_action(feature: &str) -> (&str, &str) {
+    if let Some((domain, action)) = feature.split_once('.') {
+        (domain.trim(), action.trim())
+    } else {
+        (feature.trim(), "")
+    }
+}
+
 fn load_task_messages(project_name: &str, file_name: &str) -> Result<Vec<String>> {
     let yaml = read_blueprint(project_name, file_name)?;
     if yaml.trim().is_empty() {

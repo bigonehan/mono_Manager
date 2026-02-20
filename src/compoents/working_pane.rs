@@ -58,6 +58,10 @@ struct BasicStyle {
     #[serde(default)]
     inactive: String,
     #[serde(default)]
+    active: String,
+    #[serde(default)]
+    inactive: String,
+    #[serde(default)]
     focus: String,
 >>>>>>> 5b2a204 (fix: seperate process)
     background: String,
@@ -151,6 +155,14 @@ struct PlanChatPane {
 
 struct MakeTodosJob {
     rx: Receiver<MakeTodosEvent>,
+}
+
+struct PlanChatJob {
+    rx: Receiver<PlanChatEvent>,
+}
+
+struct PlanWatchJob {
+    rx: Receiver<PlanWatchEvent>,
 }
 
 struct PlanChatJob {
@@ -448,8 +460,12 @@ pub async fn stage_run_working_pane(
                 Style::default().fg(theme.inactive)
             } else if task_active {
                 Style::default().fg(theme.secondary)
-            } else {
+            } else if all_done {
                 Style::default().fg(theme.primary)
+            } else if working_active {
+                Style::default().fg(theme.active)
+            } else {
+                inactive_style
             };
             let todos_ready = pane_task_spec.tasks_path.exists();
             let working_ready = pane_task_spec.tasks_path.exists()
@@ -2901,6 +2917,16 @@ fn load_todos_items(path: &std::path::Path) -> Vec<TaskSpecItem> {
         return Vec::new();
     };
     if parsed.tasks.is_empty() { parsed.todos } else { parsed.tasks }
+}
+
+fn load_tasks_items(path: &std::path::Path) -> Vec<TaskSpecItem> {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(parsed) = serde_yaml::from_str::<TasksYaml>(&raw) else {
+        return Vec::new();
+    };
+    parsed.tasks
 }
 
 fn load_tasks_items(path: &std::path::Path) -> Vec<TaskSpecItem> {
