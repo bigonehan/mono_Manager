@@ -1,0 +1,4 @@
+active:
+  border: "green"
+inactive:
+  border: "darkgray"

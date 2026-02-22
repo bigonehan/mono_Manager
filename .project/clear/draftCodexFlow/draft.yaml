@@ -1,0 +1,25 @@
+rule:
+  - tmux는 세션 관리가 아닌 메시지 전송 용도로만 사용한다.
+  - draft 삭제 시 y/n 확인 입력을 받고 y일 때만 삭제한다.
+features:
+  domain:
+    - draft
+    - tmux
+task:
+  - name: draft_codex_flow
+    type: action
+    domain:
+      - draft
+      - tmux
+    depends_on: []
+    scope:
+      - src/main.rs
+      - src/ui/mod.rs
+    rule:
+      - plan-drafts-code 명령 전달은 tmux pane을 통해 실행한다.
+      - draft 생성/추가/삭제는 CLI 명령으로 제공한다.
+    step:
+      - orc draft-create <feature_name>를 읽고 tmux pane에 codex plan-drafts-code 명령을 전달한다.
+      - src/assets/templates/draft.yaml을 읽고 .project/feature/<feature_name>/draft.yaml 생성 여부를 확인/보정한다.
+      - orc draft-add <feature_name> [request]를 읽고 질문/답변 문자열을 포함한 codex 명령을 tmux로 전달한다.
+      - orc draft-delete <feature_name>를 읽고 y/n 확인 후 draft 파일 삭제를 처리한다.

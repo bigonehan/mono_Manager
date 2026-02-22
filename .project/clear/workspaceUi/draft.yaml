@@ -1,0 +1,35 @@
+name: workspace_ui_interaction
+description: 3패널 UI 포커스 이동, 활성/비활성 전환, task 상태 표시를 구현한다.
+rule:
+  - pane은 active/inactive 스타일을 적용해야 한다.
+  - list item 선택 시 esc 2회 정책을 지켜야 한다.
+features:
+  domain:
+    - workspace_ui
+    - task_execution
+task:
+  - name: implement_pane_focus_navigation
+    type: action
+    domain:
+      - workspace_ui
+    depends_on: []
+    scope:
+      - src/ui/mod.rs
+      - src/assets/style
+    rule:
+      - 화살표 이동/enter active/esc inactive 동작을 일관되게 적용한다.
+    step:
+      - 키 입력 이벤트 입력 -> 포커스/활성 상태 전이 -> pane 스타일 렌더 상태 반영
+  - name: render_task_runtime_status
+    type: action
+    domain:
+      - workspace_ui
+      - task_execution
+    depends_on:
+      - implement_pane_focus_navigation
+    scope:
+      - src/ui/mod.rs
+    rule:
+      - task 상태(inactive/active/clear)를 실시간으로 표시한다.
+    step:
+      - task 상태맵 입력 -> 색상/모양 매핑 -> task pane 화면 출력

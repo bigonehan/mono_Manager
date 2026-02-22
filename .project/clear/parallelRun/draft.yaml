@@ -1,0 +1,38 @@
+name: parallel_run_pipeline
+description: task를 tokio로 병렬 실행하고 codex를 자동 y 옵션과 함께 호출한다.
+rule:
+  - codex 자동 y 옵션은 설정으로 on/off 가능해야 한다.
+  - max_parallel 값을 초과하지 않고 동시 실행해야 한다.
+features:
+  domain:
+    - task_execution
+    - project
+task:
+  - name: build_parallel_run_queue
+    type: action
+    domain:
+      - task_execution
+      - project
+    depends_on: []
+    scope:
+      - .project/feature
+      - .project/project.md
+      - src/main.rs
+    rule:
+      - feature별 draft 정보와 project info를 결합해 실행 입력을 만든다.
+    step:
+      - feature 폴더/프로젝트 정보 입력 -> 실행 queue 구성 -> codex 입력 payload 생성
+  - name: execute_parallel_codex_tasks
+    type: action
+    domain:
+      - task_execution
+    depends_on:
+      - build_parallel_run_queue
+    scope:
+      - src/main.rs
+      - src/config/mod.rs
+      - src/assets/templates/prompts/tasks.txt
+    rule:
+      - tokio 동시 실행 수는 config.max_parallel을 사용한다.
+    step:
+      - queue 입력 -> tokio 병렬 실행 + codex 호출 -> task 상태 업데이트 결과 반환

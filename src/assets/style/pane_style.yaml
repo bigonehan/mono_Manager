@@ -1,0 +1,10 @@
+active:
+  border: "green"
+  title: "bold"
+inactive:
+  border: "gray"
+  title: "dim"
+task_state:
+  inactive: "[ ]"
+  active: "[>]"
+  clear: "[x]"

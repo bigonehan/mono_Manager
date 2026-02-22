@@ -1,0 +1,1 @@
+/home/tree/project/rust-orc/target/release/orc: /home/tree/project/rust-orc/src/cli/mod.rs /home/tree/project/rust-orc/src/config/mod.rs /home/tree/project/rust-orc/src/main.rs /home/tree/project/rust-orc/src/tmux/mod.rs /home/tree/project/rust-orc/src/ui/mod.rs

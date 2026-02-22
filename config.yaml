@@ -1,0 +1,6 @@
+max_parallel: 10
+timeout_sec: 1800
+auto_yes: true
+dangerous_bypass: true
+keymap:
+  run_parallel: p
