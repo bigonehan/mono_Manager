@@ -1,0 +1,34 @@
+name: task_planning_dependency_validation
+description: draft에서 task 리스트를 만들고 depends_on 기반 실행 가능 여부를 검증한다.
+rule:
+  - depends_on 미완료 task는 실행하지 않는다.
+features:
+  domain:
+    - draft
+    - task_execution
+task:
+  - name: parse_draft_tasks
+    type: action
+    domain:
+      - draft
+    depends_on: []
+    scope:
+      - .project/features/work
+      - src/main.rs
+    rule:
+      - task 타입은 action/calc 기준으로 라벨링한다.
+    step:
+      - draft.yaml 입력 -> task 목록/속성 파싱 -> 메모리 task 집합 생성
+  - name: validate_task_dependencies
+    type: action
+    domain:
+      - task_execution
+    depends_on:
+      - parse_draft_tasks
+    scope:
+      - src/main.rs
+      - src/ui/mod.rs
+    rule:
+      - 미충족 의존성 task는 blocked 상태로 분류해야 한다.
+    step:
+      - task 집합 입력 -> depends_on 충족 여부 검사 -> runnable/blocked 목록 출력

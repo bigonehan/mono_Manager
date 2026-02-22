@@ -1,0 +1,36 @@
+name: project_language_stack_bootstrap
+description: project info의 spec을 기준으로 rust 프로젝트 초기화와 핵심 의존성 설정을 수행한다.
+rule:
+  - 프로젝트 폴더가 비어있을 때만 초기화 명령을 실행한다.
+  - rust 스택은 cargo init 후 ratatui, tokio 의존성을 반영한다.
+features:
+  domain:
+    - project
+task:
+  - name: validate_bootstrap_preconditions
+    type: action
+    domain:
+      - project
+    depends_on: []
+    scope:
+      - .project/project.md
+      - src/main.rs
+      - Cargo.toml
+    rule:
+      - 기존 소스가 있을 경우 초기화가 아닌 병합 모드로 전환해야 한다.
+    step:
+      - project.md/spec 입력 -> 폴더 비어있음 검사 -> bootstrap 가능 여부 출력
+  - name: run_rust_stack_bootstrap
+    type: action
+    domain:
+      - project
+    depends_on:
+      - validate_bootstrap_preconditions
+    scope:
+      - Cargo.toml
+      - src/main.rs
+      - src/config/mod.rs
+    rule:
+      - tokio 실행 환경과 ratatui 기본 엔트리 구조가 동작해야 한다.
+    step:
+      - bootstrap 가능 상태 입력 -> cargo 초기화/의존성 반영 -> 실행 가능한 기본 코드 출력
