@@ -1,6 +1,9 @@
 active:
   border: "green"
   title: "bold"
+normal:
+  border: "black"
+  title: "none"
 inactive:
   border: "gray"
   title: "dim"
