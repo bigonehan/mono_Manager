@@ -16,6 +16,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Semaphore;
 
 const REGISTRY_PATH: &str = "configs/project.yaml";
+const LEGACY_REGISTRY_PATH: &str = "configs/Project.yaml";
 const EXEC_LOG_PATH: &str = ".project/log.md";
 const PROJECT_MD_PATH: &str = ".project/project.md";
 const CODEX_DANGEROUS_FLAG: &str = "--dangerously-bypass-approvals-and-sandbox";
@@ -34,6 +35,8 @@ const DEFAULT_PROJECT_MD: &str = "# info
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProjectRecord {
+    #[serde(default)]
+    id: String,
     name: String,
     path: String,
     description: String,
@@ -44,6 +47,9 @@ struct ProjectRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct ProjectRegistry {
+    #[serde(default, rename = "recentActivepane")]
+    recent_active_pane: Option<String>,
+    #[serde(default)]
     projects: Vec<ProjectRecord>,
 }
 
@@ -87,17 +93,81 @@ fn calc_now_unix() -> String {
     secs.to_string()
 }
 
+fn calc_generate_project_id(existing: &HashSet<String>) -> String {
+    const ALNUM: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    let mut seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    for _ in 0..512 {
+        let mut out = String::with_capacity(4);
+        for _ in 0..4 {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1);
+            let idx = (seed as usize) % ALNUM.len();
+            out.push(ALNUM[idx] as char);
+        }
+        if !existing.contains(&out) {
+            return out;
+        }
+    }
+    "0000".to_string()
+}
+
+fn action_normalize_registry(registry: &mut ProjectRegistry) -> bool {
+    let mut changed = false;
+    let mut ids: HashSet<String> = registry
+        .projects
+        .iter()
+        .filter_map(|p| if p.id.is_empty() { None } else { Some(p.id.clone()) })
+        .collect();
+    for project in &mut registry.projects {
+        if project.id.is_empty() {
+            let id = calc_generate_project_id(&ids);
+            ids.insert(id.clone());
+            project.id = id;
+            changed = true;
+        }
+    }
+    if let Some(recent_id) = &registry.recent_active_pane {
+        if !registry.projects.iter().any(|p| &p.id == recent_id) {
+            registry.recent_active_pane = None;
+            changed = true;
+        }
+    }
+    changed
+}
+
 fn calc_shell_single_quote_escape(input: &str) -> String {
     input.replace('\'', "'\"'\"'")
 }
 
+fn calc_model_supports_dangerous_flag(model_bin: &str) -> bool {
+    model_bin.eq_ignore_ascii_case("codex")
+}
+
+fn action_default_model_bin() -> String {
+    action_load_app_config()
+        .and_then(|c| c.ai.as_ref().and_then(|a| a.model.as_ref()).cloned())
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "codex".to_string())
+}
+
 fn action_send_codex_to_new_tmux_pane(prompt: &str) -> Result<String, String> {
     let pane_id = tmux::action_split_window_pane()?;
-    let command_line = format!(
-        "codex exec {} '{}'",
-        CODEX_DANGEROUS_FLAG,
-        calc_shell_single_quote_escape(prompt)
-    );
+    let model_bin = action_default_model_bin();
+    let command_line = if calc_model_supports_dangerous_flag(&model_bin) {
+        format!(
+            "{} exec {} '{}'",
+            model_bin,
+            CODEX_DANGEROUS_FLAG,
+            calc_shell_single_quote_escape(prompt)
+        )
+    } else {
+        format!("{} exec '{}'", model_bin, calc_shell_single_quote_escape(prompt))
+    };
     tmux::action_send_keys(&pane_id, &command_line, tmux::SendOption::Enter)?;
     Ok(pane_id)
 }
@@ -155,12 +225,16 @@ fn action_read_multiline_until_blank(prompt: &str) -> Result<String, String> {
 }
 
 fn action_run_codex_exec_capture(prompt: &str) -> Result<String, String> {
-    let output = Command::new("codex")
-        .arg("exec")
-        .arg(CODEX_DANGEROUS_FLAG)
+    let model_bin = action_default_model_bin();
+    let mut command = Command::new(&model_bin);
+    command.arg("exec");
+    if calc_model_supports_dangerous_flag(&model_bin) {
+        command.arg(CODEX_DANGEROUS_FLAG);
+    }
+    let output = command
         .arg(prompt)
         .output()
-        .map_err(|e| format!("failed to execute codex: {}", e))?;
+        .map_err(|e| format!("failed to execute {}: {}", model_bin, e))?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
@@ -169,13 +243,16 @@ fn action_run_codex_exec_capture(prompt: &str) -> Result<String, String> {
 }
 
 fn action_run_codex_exec_capture_in_dir(dir: &Path, prompt: &str) -> Result<String, String> {
-    let output = Command::new("codex")
-        .current_dir(dir)
-        .arg("exec")
-        .arg(CODEX_DANGEROUS_FLAG)
+    let model_bin = action_default_model_bin();
+    let mut command = Command::new(&model_bin);
+    command.current_dir(dir).arg("exec");
+    if calc_model_supports_dangerous_flag(&model_bin) {
+        command.arg(CODEX_DANGEROUS_FLAG);
+    }
+    let output = command
         .arg(prompt)
         .output()
-        .map_err(|e| format!("failed to execute codex in {}: {}", dir.display(), e))?;
+        .map_err(|e| format!("failed to execute {} in {}: {}", model_bin, dir.display(), e))?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
@@ -223,6 +300,30 @@ fn calc_extract_markdown_block(raw: &str) -> String {
     raw.trim().to_string()
 }
 
+fn calc_render_template_pairs(template: &str, pairs: &[(&str, &str)]) -> String {
+    let mut rendered = template.to_string();
+    for (key, value) in pairs {
+        let plain = format!("{{{{{}}}}}", key);
+        let spaced = format!("{{{{ {} }}}}", key);
+        rendered = rendered.replace(&plain, value).replace(&spaced, value);
+    }
+    rendered
+}
+
+fn calc_collect_unresolved_placeholders(rendered: &str, keys: &[&str]) -> Vec<String> {
+    keys.iter()
+        .filter_map(|key| {
+            let plain = format!("{{{{{}}}}}", key);
+            let spaced = format!("{{{{ {} }}}}", key);
+            if rendered.contains(&plain) || rendered.contains(&spaced) {
+                Some((*key).to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 fn action_append_failure_log(task_name: &str, reason: &str) -> Result<(), String> {
     if let Some(parent) = Path::new(EXEC_LOG_PATH).parent() {
         fs::create_dir_all(parent)
@@ -245,11 +346,23 @@ fn action_append_failure_log(task_name: &str, reason: &str) -> Result<(), String
 
 fn action_load_registry(path: &Path) -> Result<ProjectRegistry, String> {
     if !path.exists() {
+        let legacy = action_legacy_registry_path();
+        if legacy.exists() {
+            let raw = fs::read_to_string(&legacy)
+                .map_err(|e| format!("failed to read {}: {}", legacy.display(), e))?;
+            let mut parsed: ProjectRegistry =
+                serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse yaml: {}", e))?;
+            action_normalize_registry(&mut parsed);
+            return Ok(parsed);
+        }
         return Ok(ProjectRegistry::default());
     }
     let raw = fs::read_to_string(path)
         .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
-    serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse yaml: {}", e))
+    let mut parsed: ProjectRegistry =
+        serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse yaml: {}", e))?;
+    action_normalize_registry(&mut parsed);
+    Ok(parsed)
 }
 
 fn action_save_registry(path: &Path, registry: &ProjectRegistry) -> Result<(), String> {
@@ -278,7 +391,14 @@ fn calc_select_only(registry: &ProjectRegistry, target: &str) -> ProjectRegistry
             ..p.clone()
         })
         .collect();
-    ProjectRegistry { projects }
+    let mut updated = ProjectRegistry {
+        recent_active_pane: registry.recent_active_pane.clone(),
+        projects,
+    };
+    if let Some(selected) = updated.projects.iter().find(|p| p.selected) {
+        updated.recent_active_pane = Some(selected.id.clone());
+    }
+    updated
 }
 
 fn action_upsert_project(
@@ -289,14 +409,25 @@ fn action_upsert_project(
 ) -> ProjectRegistry {
     let now = calc_now_unix();
     let mut updated = registry.projects.clone();
+    let existing_ids: HashSet<String> = updated
+        .iter()
+        .filter_map(|p| if p.id.is_empty() { None } else { Some(p.id.clone()) })
+        .collect();
     if let Some(existing) = updated.iter_mut().find(|p| p.name == name) {
         existing.path = path.display().to_string();
         existing.description = description.to_string();
         existing.updated_at = now;
-        return ProjectRegistry { projects: updated };
+        if existing.id.is_empty() {
+            existing.id = calc_generate_project_id(&existing_ids);
+        }
+        return ProjectRegistry {
+            recent_active_pane: registry.recent_active_pane.clone(),
+            projects: updated,
+        };
     }
 
     updated.push(ProjectRecord {
+        id: calc_generate_project_id(&existing_ids),
         name: name.to_string(),
         path: path.display().to_string(),
         description: description.to_string(),
@@ -304,7 +435,10 @@ fn action_upsert_project(
         updated_at: now,
         selected: false,
     });
-    ProjectRegistry { projects: updated }
+    ProjectRegistry {
+        recent_active_pane: registry.recent_active_pane.clone(),
+        projects: updated,
+    }
 }
 
 fn action_delete_project(registry: &ProjectRegistry, name: &str) -> ProjectRegistry {
@@ -314,7 +448,16 @@ fn action_delete_project(registry: &ProjectRegistry, name: &str) -> ProjectRegis
         .filter(|p| p.name != name)
         .cloned()
         .collect();
-    ProjectRegistry { projects }
+    let mut updated = ProjectRegistry {
+        recent_active_pane: registry.recent_active_pane.clone(),
+        projects,
+    };
+    if let Some(recent_id) = &updated.recent_active_pane {
+        if !updated.projects.iter().any(|p| &p.id == recent_id) {
+            updated.recent_active_pane = None;
+        }
+    }
+    updated
 }
 
 fn action_ensure_project_dir(path: &Path) -> Result<(), String> {
@@ -322,16 +465,23 @@ fn action_ensure_project_dir(path: &Path) -> Result<(), String> {
 }
 
 fn flow_list_projects() -> Result<String, String> {
-    let registry = action_load_registry(Path::new(REGISTRY_PATH))?;
+    let registry = action_load_registry(&action_registry_path())?;
     Ok(ui::render_project_list(&registry.projects))
 }
 
 fn flow_ui() -> Result<String, String> {
-    let registry_path = Path::new(REGISTRY_PATH);
-    let mut registry = action_load_registry(registry_path)?;
-    let result = ui::flow_run_ui(&mut registry.projects)?;
-    if result.changed {
-        action_save_registry(registry_path, &registry)?;
+    let registry_path = action_registry_path();
+    let mut registry = action_load_registry(&registry_path)?;
+    let normalized = action_normalize_registry(&mut registry);
+    let result = ui::flow_run_ui(&mut registry.projects, &mut registry.recent_active_pane)?;
+    if normalized {
+        registry.recent_active_pane = registry
+            .recent_active_pane
+            .as_ref()
+            .and_then(|id| registry.projects.iter().find(|p| &p.id == id).map(|p| p.id.clone()));
+    }
+    if result.changed || normalized {
+        action_save_registry(&registry_path, &registry)?;
     }
     if let Some(project_name) = result.auto_mode_project {
         return flow_auto_mode(Some(&project_name));
@@ -378,7 +528,7 @@ fn action_run_command_in_dir(
 }
 
 fn flow_auto_mode(project_name: Option<&str>) -> Result<String, String> {
-    let registry = action_load_registry(Path::new(REGISTRY_PATH))?;
+    let registry = action_load_registry(&action_registry_path())?;
     let target = if let Some(name) = project_name {
         registry.projects.iter().find(|p| p.name == name)
     } else {
@@ -449,11 +599,11 @@ fn flow_create_project(name: &str, path: Option<&str>, description: &str) -> Res
             .map_err(|e| format!("failed to create .project: {}", e))?;
     }
 
-    let registry_path = Path::new(REGISTRY_PATH);
-    let registry = action_load_registry(registry_path)?;
+    let registry_path = action_registry_path();
+    let registry = action_load_registry(&registry_path)?;
     let upserted = action_upsert_project(&registry, name, &target, description);
     let selected = calc_select_only(&upserted, name);
-    action_save_registry(registry_path, &selected)?;
+    action_save_registry(&registry_path, &selected)?;
 
     if existing {
         Ok(format!("loaded existing project: {} ({})", name, target.display()))
@@ -463,30 +613,30 @@ fn flow_create_project(name: &str, path: Option<&str>, description: &str) -> Res
 }
 
 fn flow_add_project(name: &str, path: &str, description: &str) -> Result<String, String> {
-    let registry_path = Path::new(REGISTRY_PATH);
-    let registry = action_load_registry(registry_path)?;
+    let registry_path = action_registry_path();
+    let registry = action_load_registry(&registry_path)?;
     let updated = action_upsert_project(&registry, name, Path::new(path), description);
-    action_save_registry(registry_path, &updated)?;
+    action_save_registry(&registry_path, &updated)?;
     Ok(format!("added project: {}", name))
 }
 
 fn flow_select_project(name: &str) -> Result<String, String> {
-    let registry_path = Path::new(REGISTRY_PATH);
-    let registry = action_load_registry(registry_path)?;
+    let registry_path = action_registry_path();
+    let registry = action_load_registry(&registry_path)?;
     let exists = registry.projects.iter().any(|p| p.name == name);
     if !exists {
         return Err(format!("project not found: {}", name));
     }
     let updated = calc_select_only(&registry, name);
-    action_save_registry(registry_path, &updated)?;
+    action_save_registry(&registry_path, &updated)?;
     Ok(format!("selected project: {}", name))
 }
 
 fn flow_delete_project(name: &str) -> Result<String, String> {
-    let registry_path = Path::new(REGISTRY_PATH);
-    let registry = action_load_registry(registry_path)?;
+    let registry_path = action_registry_path();
+    let registry = action_load_registry(&registry_path)?;
     let updated = action_delete_project(&registry, name);
-    action_save_registry(registry_path, &updated)?;
+    action_save_registry(&registry_path, &updated)?;
     Ok(format!("deleted project: {}", name))
 }
 
@@ -518,6 +668,7 @@ fn flow_draft_add(feature_name: &str, request: Option<String>) -> Result<String,
         feature_name,
         Some(&patch),
     )?;
+    flow_add_feature_to_planned(feature_name)?;
     Ok(format!(
         "draft-add sent to tmux pane {} | updated: {}",
         pane_id,
@@ -539,66 +690,189 @@ fn flow_draft_delete(feature_name: &str) -> Result<String, String> {
     Ok(format!("draft deleted: {}", path.display()))
 }
 
-fn flow_add_func() -> Result<String, String> {
+#[derive(Debug, Clone)]
+struct AddFunctionObject {
+    name: String,
+    steps: Vec<String>,
+    rules: Vec<String>,
+}
+
+fn calc_parse_add_function_objects(raw: &str) -> Vec<AddFunctionObject> {
+    let mut out = Vec::new();
+    let mut current: Option<AddFunctionObject> = None;
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(name) = trimmed.strip_prefix('#') {
+            if let Some(obj) = current.take() {
+                out.push(obj);
+            }
+            current = Some(AddFunctionObject {
+                name: name.trim().to_string(),
+                steps: Vec::new(),
+                rules: Vec::new(),
+            });
+            continue;
+        }
+        if let Some(step) = trimmed.strip_prefix('>') {
+            if current.is_none() {
+                current = Some(AddFunctionObject {
+                    name: "new feature".to_string(),
+                    steps: Vec::new(),
+                    rules: Vec::new(),
+                });
+            }
+            if let Some(obj) = current.as_mut() {
+                obj.steps.push(step.trim().to_string());
+            }
+            continue;
+        }
+        if let Some(rule) = trimmed.strip_prefix('-') {
+            if current.is_none() {
+                current = Some(AddFunctionObject {
+                    name: "new feature".to_string(),
+                    steps: Vec::new(),
+                    rules: Vec::new(),
+                });
+            }
+            if let Some(obj) = current.as_mut() {
+                obj.rules.push(rule.trim().to_string());
+            }
+            continue;
+        }
+        if current.is_none() {
+            current = Some(AddFunctionObject {
+                name: trimmed.to_string(),
+                steps: vec![trimmed.to_string()],
+                rules: Vec::new(),
+            });
+        } else if let Some(obj) = current.as_mut() {
+            obj.steps.push(trimmed.to_string());
+        }
+    }
+    if let Some(obj) = current.take() {
+        out.push(obj);
+    }
+    out.into_iter()
+        .map(|mut obj| {
+            if obj.name.trim().is_empty() {
+                obj.name = "new feature".to_string();
+            }
+            obj
+        })
+        .collect()
+}
+
+fn action_append_feature_to_project_md(feature_name: &str, display_name: &str) -> Result<(), String> {
+    let path = Path::new(PROJECT_MD_PATH);
+    let mut lines: Vec<String> = fs::read_to_string(path)
+        .map_err(|e| format!("failed to read {}: {}", PROJECT_MD_PATH, e))?
+        .lines()
+        .map(|v| v.to_string())
+        .collect();
+
+    let feature_label = format!("{} : {}", feature_name, display_name.trim());
+    if lines
+        .iter()
+        .any(|line| line.trim_start_matches("- ").trim().starts_with(feature_name))
+    {
+        return Ok(());
+    }
+
+    let header_idx = lines
+        .iter()
+        .position(|line| line.trim().eq_ignore_ascii_case("## features"));
+    let idx = if let Some(i) = header_idx {
+        i
+    } else {
+        lines.push(String::new());
+        lines.push("## features".to_string());
+        lines.push(String::new());
+        lines.len() - 2
+    };
+
+    let mut end = idx + 1;
+    while end < lines.len() {
+        let t = lines[end].trim();
+        if t.starts_with('#') {
+            break;
+        }
+        end += 1;
+    }
+    lines.insert(end, format!("- {}", feature_label));
+    fs::write(path, lines.join("\n") + "\n")
+        .map_err(|e| format!("failed to write {}: {}", PROJECT_MD_PATH, e))
+}
+
+fn flow_add_func(request_input: Option<String>) -> Result<String, String> {
     let project_md = fs::read_to_string(PROJECT_MD_PATH)
         .map_err(|e| format!("failed to read {}: {}", PROJECT_MD_PATH, e))?;
     let project_info = calc_extract_project_info(&project_md);
     let project_rules = calc_extract_project_rules(&project_md);
-    let request = action_read_one_line("추가할 기능 요약을 입력하세요: ")?;
-    if request.trim().is_empty() {
+    let request_raw = match request_input {
+        Some(v) if !v.trim().is_empty() => v,
+        _ => action_read_multiline_until_blank(
+            "기능 입력(`# 이름`, `> step`, `- 규칙`) - 여러 객체 가능:",
+        )?,
+    };
+    if request_raw.trim().is_empty() {
         return Err("add-func requires non-empty feature request".to_string());
     }
-
-    let question_prompt = format!(
-        "너는 CLI 설계 도우미다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n요청 기능: {}\n\n사용자에게 물어볼 추가 질문 3개를 한국어로 출력해.\n출력 형식은 반드시 bullet 3줄만 사용한다.\n예시:\n- 질문1\n- 질문2\n- 질문3",
-        project_info,
-        project_rules.join("\n- "),
-        request
-    );
-    let question_raw = action_run_codex_exec_capture(&question_prompt)?;
-    let mut questions = calc_extract_bullet_lines(&question_raw);
-    if questions.is_empty() {
-        questions = vec![
-            "기능 이름(짧은 영어 식별자)은 무엇인가요?".to_string(),
-            "이 기능의 핵심 동작 2~3가지를 알려주세요.".to_string(),
-            "관련 제약이나 반드시 지켜야 할 규칙이 있나요?".to_string(),
-        ];
+    let objects = calc_parse_add_function_objects(&request_raw);
+    if objects.is_empty() {
+        return Err("add-func parse failed: expected `# / > / -` format".to_string());
     }
 
-    let mut qa_lines = Vec::new();
-    for q in &questions {
-        let answer = action_read_one_line(&format!("Q: {}\nA: ", q))?;
-        qa_lines.push(format!("- Q: {}\n  A: {}", q, answer));
-    }
-    let qa_text = qa_lines.join("\n");
+    let mut created = Vec::new();
+    for obj in &objects {
+        let draft_prompt = format!(
+            "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 객체:\n- name: {}\n- step:\n{}\n- rule:\n{}\n\n다음 형식으로만 출력해:\nFEATURE_NAME: <camelCase>\n```yaml\nrule:\nfeatures:\n  domain: []\ntask:\n  - name: <snake_case>\n    type: action\n    domain: [util]\n    depends_on: []\n    scope:\n      - src/main.rs\n    rule:\n      - \"\"\n    step:\n      - \"\"\n```\n설명 문장 추가 금지.",
+            project_info,
+            project_rules.join("\n- "),
+            obj.name,
+            if obj.steps.is_empty() {
+                "- (none)".to_string()
+            } else {
+                obj.steps
+                    .iter()
+                    .map(|v| format!("- {}", v))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            },
+            if obj.rules.is_empty() {
+                "- (none)".to_string()
+            } else {
+                obj.rules
+                    .iter()
+                    .map(|v| format!("- {}", v))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            },
+        );
+        let draft_raw = action_run_codex_exec_capture(&draft_prompt)?;
+        let feature_name = calc_extract_feature_name(&draft_raw, &obj.name);
+        let draft_yaml = calc_extract_yaml_block(&draft_raw);
+        let _: serde_yaml::Value = serde_yaml::from_str(&draft_yaml)
+            .map_err(|e| format!("generated draft yaml invalid: {}", e))?;
 
-    let draft_prompt = format!(
-        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n사용자 요청: {}\n\n질의응답:\n{}\n\n다음 형식으로만 출력해:\nFEATURE_NAME: <camelCase>\n```yaml\nrule:\nfeatures:\n  domain: []\ntask:\n  - name: <snake_case>\n    type: action\n    domain: [util]\n    depends_on: []\n    scope:\n      - src/main.rs\n    rule:\n      - \"\"\n    step:\n      - \"\"\n```\n설명 문장 추가 금지.",
-        project_info,
-        project_rules.join("\n- "),
-        request,
-        qa_text
-    );
-    let draft_raw = action_run_codex_exec_capture(&draft_prompt)?;
-    let feature_name = calc_extract_feature_name(&draft_raw, &request);
-    let draft_yaml = calc_extract_yaml_block(&draft_raw);
-    let _: serde_yaml::Value =
-        serde_yaml::from_str(&draft_yaml).map_err(|e| format!("generated draft yaml invalid: {}", e))?;
-
-    let draft_path = ui::action_resolve_feature_draft_path(&feature_name);
-    if let Some(parent) = draft_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
+        let draft_path = ui::action_resolve_feature_draft_path(&feature_name);
+        if let Some(parent) = draft_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
+        }
+        fs::write(&draft_path, draft_yaml)
+            .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
+        action_append_feature_to_project_md(&feature_name, &obj.name)?;
+        flow_add_feature_to_planned(&feature_name)?;
+        created.push(format!("{} -> {}", feature_name, draft_path.display()));
     }
-    fs::write(&draft_path, draft_yaml)
-        .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
-    flow_add_feature_to_planned(&feature_name)?;
 
     Ok(format!(
-        "add-func completed: feature={} | draft={} | questions={}",
-        feature_name,
-        draft_path.display(),
-        questions.len()
+        "add-func completed: {} item(s)\n{}",
+        created.len(),
+        created.join("\n")
     ))
 }
 
@@ -623,7 +897,10 @@ fn flow_plan_init(
     spec: Option<&str>,
     llm: Option<&str>,
 ) -> Result<String, String> {
-    let llm_bin = llm.unwrap_or("codex");
+    let llm_bin_owned = llm
+        .map(|v| v.to_string())
+        .unwrap_or_else(action_default_model_bin);
+    let llm_bin = llm_bin_owned.as_str();
     let default_name = calc_default_project_name_from_cwd()?;
     let project_name = match name {
         Some(v) if !v.trim().is_empty() => v.trim().to_string(),
@@ -685,7 +962,10 @@ fn flow_plan_init(
 }
 
 fn flow_detail_project(llm: Option<&str>) -> Result<String, String> {
-    let llm_bin = llm.unwrap_or("codex");
+    let llm_bin_owned = llm
+        .map(|v| v.to_string())
+        .unwrap_or_else(action_default_model_bin);
+    let llm_bin = llm_bin_owned.as_str();
     let current = fs::read_to_string(PROJECT_MD_PATH)
         .map_err(|e| format!("failed to read {}: {}", PROJECT_MD_PATH, e))?;
     let project_template_path = action_resolve_project_template_path()?;
@@ -695,10 +975,24 @@ fn flow_detail_project(llm: Option<&str>) -> Result<String, String> {
     let prompt_template = fs::read_to_string(&prompt_template_path)
         .map_err(|e| format!("failed to read {}: {}", prompt_template_path.display(), e))?;
     let context_hint = action_read_one_line("보강할 내용 힌트(없으면 Enter): ")?;
-    let prompt = prompt_template
-        .replace("{{project_template}}", &project_template)
-        .replace("{{current_project_md}}", &current)
-        .replace("{{user_context_hint}}", &context_hint);
+    let prompt = calc_render_template_pairs(
+        &prompt_template,
+        &[
+            ("project_template", &project_template),
+            ("current_project_md", &current),
+            ("user_context_hint", &context_hint),
+        ],
+    );
+    let unresolved = calc_collect_unresolved_placeholders(
+        &prompt,
+        &["project_template", "current_project_md", "user_context_hint"],
+    );
+    if !unresolved.is_empty() {
+        return Err(format!(
+            "detail-project prompt has unresolved placeholders: {}",
+            unresolved.join(", ")
+        ));
+    }
     let generated = action_run_llm_exec_capture(llm_bin, &prompt)?;
     let project_md = calc_extract_markdown_block(&generated);
     fs::write(PROJECT_MD_PATH, &project_md)
@@ -740,9 +1034,19 @@ fn flow_validate_tasks(feature_name: &str) -> Result<String, String> {
 }
 
 fn action_load_app_config() -> Option<config::AppConfig> {
-    let candidates = ["config.yaml", "assets/config/config.yaml", "src/assets/config/config.yaml"];
+    let root = action_source_root();
+    let candidates = [
+        root.join("configs.yaml"),
+        root.join("config.yaml"),
+        root.join("assets").join("config").join("config.yaml"),
+        root.join("src").join("assets").join("config").join("config.yaml"),
+        PathBuf::from("configs.yaml"),
+        PathBuf::from("config.yaml"),
+        PathBuf::from("assets").join("config").join("config.yaml"),
+        PathBuf::from("src").join("assets").join("config").join("config.yaml"),
+    ];
     for candidate in candidates {
-        if let Ok(conf) = config::AppConfig::load_from_path(Path::new(candidate)) {
+        if let Ok(conf) = config::AppConfig::load_from_path(&candidate) {
             return Some(conf);
         }
     }
@@ -884,15 +1188,28 @@ fn action_read_project_info() -> Result<String, String> {
 }
 
 fn action_source_root() -> PathBuf {
+    if let Ok(exe) = env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            return parent.to_path_buf();
+        }
+    }
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn action_registry_path() -> PathBuf {
+    action_source_root().join(REGISTRY_PATH)
+}
+
+fn action_legacy_registry_path() -> PathBuf {
+    action_source_root().join(LEGACY_REGISTRY_PATH)
 }
 
 fn action_resolve_project_template_path() -> Result<PathBuf, String> {
     let root = action_source_root();
     let candidates = [
         root.join("assets").join("templates").join("project.md"),
-        root.join("src").join("assets").join("templates").join("project.md"),
         PathBuf::from("assets").join("templates").join("project.md"),
+        root.join("src").join("assets").join("templates").join("project.md"),
         PathBuf::from("src").join("assets").join("templates").join("project.md"),
     ];
     for candidate in candidates {
@@ -906,15 +1223,34 @@ fn action_resolve_project_template_path() -> Result<PathBuf, String> {
     ))
 }
 
+fn action_resolve_drafts_list_template_path() -> Result<PathBuf, String> {
+    let root = action_source_root();
+    let candidates = [
+        root.join("assets").join("templates").join("drafts_list.yaml"),
+        PathBuf::from("assets").join("templates").join("drafts_list.yaml"),
+        root.join("src").join("assets").join("templates").join("drafts_list.yaml"),
+        PathBuf::from("src").join("assets").join("templates").join("drafts_list.yaml"),
+    ];
+    for candidate in candidates {
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "drafts_list template not found (source root: {})",
+        root.display()
+    ))
+}
+
 fn action_resolve_detail_project_prompt_path() -> Result<PathBuf, String> {
     let root = action_source_root();
     let candidates = [
         root.join("assets").join("prompt").join("detail-project.txt"),
         root.join("assets").join("prompts").join("detail-project.txt"),
-        root.join("src").join("assets").join("prompt").join("detail-project.txt"),
-        root.join("src").join("assets").join("prompts").join("detail-project.txt"),
         PathBuf::from("assets").join("prompt").join("detail-project.txt"),
         PathBuf::from("assets").join("prompts").join("detail-project.txt"),
+        root.join("src").join("assets").join("prompt").join("detail-project.txt"),
+        root.join("src").join("assets").join("prompts").join("detail-project.txt"),
         PathBuf::from("src").join("assets").join("prompt").join("detail-project.txt"),
         PathBuf::from("src").join("assets").join("prompts").join("detail-project.txt"),
     ];
@@ -932,13 +1268,9 @@ fn action_resolve_detail_project_prompt_path() -> Result<PathBuf, String> {
 fn action_resolve_task_template_path() -> Result<PathBuf, String> {
     let root = action_source_root();
     let candidates = [
-        root.join("templates").join("prompts").join("tasks.txt"),
-        root.join("src")
-            .join("assets")
-            .join("templates")
-            .join("prompts")
-            .join("tasks.txt"),
-        PathBuf::from("templates").join("prompts").join("tasks.txt"),
+        root.join("assets").join("templates").join("prompts").join("tasks.txt"),
+        PathBuf::from("assets").join("templates").join("prompts").join("tasks.txt"),
+        root.join("src").join("assets").join("templates").join("prompts").join("tasks.txt"),
         PathBuf::from("src").join("assets").join("templates").join("prompts").join("tasks.txt"),
     ];
     for candidate in candidates {
@@ -982,8 +1314,12 @@ fn action_initialize_parallel_workspace_if_empty(path: &Path) -> Result<Option<S
     })?;
 
     let drafts_list_path = project_dir.join("drafts_list.yaml");
-    let draft_doc = DraftsListDoc::default();
-    action_save_drafts_list(&drafts_list_path, &draft_doc)?;
+    let draft_template = action_resolve_drafts_list_template_path()
+        .ok()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .unwrap_or_else(|| serde_yaml::to_string(&DraftsListDoc::default()).unwrap_or_default());
+    fs::write(&drafts_list_path, draft_template)
+        .map_err(|e| format!("failed to write {}: {}", drafts_list_path.display(), e))?;
 
     Ok(Some(format!(
         "workspace was empty; initialized parallel environment at {}",
@@ -1039,10 +1375,24 @@ fn action_build_task_prompt(
 ) -> Result<String, String> {
     let draft_raw = fs::read_to_string(draft_path)
         .map_err(|e| format!("failed to read {}: {}", draft_path.display(), e))?;
-    let rendered = task_template
-        .replace("{{project_info}}", project_info)
-        .replace("{{draft_path}}", &draft_path.display().to_string())
-        .replace("{{draft_content}}", &draft_raw);
+    let rendered = calc_render_template_pairs(
+        task_template,
+        &[
+            ("project_info", project_info),
+            ("draft_path", &draft_path.display().to_string()),
+            ("draft_content", &draft_raw),
+        ],
+    );
+    let unresolved = calc_collect_unresolved_placeholders(
+        &rendered,
+        &["project_info", "draft_path", "draft_content"],
+    );
+    if !unresolved.is_empty() {
+        return Err(format!(
+            "tasks prompt has unresolved placeholders: {}",
+            unresolved.join(", ")
+        ));
+    }
     Ok(rendered)
 }
 
@@ -1069,6 +1419,7 @@ fn action_print_parallel_modal(statuses: &[(String, ui::TaskRuntimeState)]) {
 
 async fn action_run_one_parallel_task(
     semaphore: Arc<Semaphore>,
+    model_bin: String,
     task_name: String,
     prompt: String,
     timeout_sec: u64,
@@ -1079,9 +1430,9 @@ async fn action_run_one_parallel_task(
         .acquire_owned()
         .await
         .map_err(|e| format!("failed to acquire semaphore: {}", e))?;
-    let mut cmd = tokio::process::Command::new("codex");
+    let mut cmd = tokio::process::Command::new(&model_bin);
     cmd.arg("exec");
-    if dangerous_bypass {
+    if dangerous_bypass && calc_model_supports_dangerous_flag(&model_bin) {
         cmd.arg("--dangerously-bypass-approvals-and-sandbox");
     }
     cmd.arg(prompt);
@@ -1114,6 +1465,7 @@ async fn flow_run_parallel_build_code() -> Result<String, String> {
     let dangerous_bypass = app_conf
         .as_ref()
         .is_none_or(config::AppConfig::dangerous_bypass_enabled);
+    let model_bin = action_default_model_bin();
 
     let project_info = action_read_project_info()?;
     let task_template_path = action_resolve_task_template_path()?;
@@ -1172,6 +1524,7 @@ async fn flow_run_parallel_build_code() -> Result<String, String> {
             let prompt = action_build_task_prompt(&task_template, &project_info, &task.draft_path)?;
             handles.push(tokio::spawn(action_run_one_parallel_task(
                 semaphore.clone(),
+                model_bin.clone(),
                 task.name.clone(),
                 prompt,
                 timeout_sec,

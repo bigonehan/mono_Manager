@@ -152,7 +152,14 @@ pub async fn flow_execute_cli(args: &[String]) -> Result<String, String> {
             }
             super::flow_draft_delete(&args[2])
         }
-        "add-function" | "add-func" => super::flow_add_func(),
+        "add-function" | "add-func" => {
+            let request = if args.len() >= 3 {
+                Some(args[2..].join(" "))
+            } else {
+                None
+            };
+            super::flow_add_func(request)
+        }
         "open-ui" | "ui" => super::flow_ui(),
         "run-auto" | "auto" => {
             let project_name = args.get(2).map(String::as_str);

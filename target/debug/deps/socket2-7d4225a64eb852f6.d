@@ -1,9 +1,0 @@
-/home/tree/project/rust-orc/target/debug/deps/socket2-7d4225a64eb852f6.d: /home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/lib.rs /home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/sockaddr.rs /home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/socket.rs /home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/sockref.rs /home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/sys/unix.rs
-
-/home/tree/project/rust-orc/target/debug/deps/libsocket2-7d4225a64eb852f6.rmeta: /home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/lib.rs /home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/sockaddr.rs /home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/socket.rs /home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/sockref.rs /home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/sys/unix.rs
-
-/home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/lib.rs:
-/home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/sockaddr.rs:
-/home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/socket.rs:
-/home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/sockref.rs:
-/home/tree/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.2/src/sys/unix.rs:
