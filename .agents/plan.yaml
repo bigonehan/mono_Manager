@@ -1,0 +1,17 @@
+task: redo_bootstrap_threefiber_project_preset
+intent:
+  - bootstrap 산출물 실행 기준을 명확히 만족
+  - three fiber spec 반영 누락을 재현 확인 후 보완
+  - project tab preset 로딩 기능을 실제 preset 파일과 연결
+purpose:
+  - spec 기반 bootstrap 신뢰성 확보
+scope:
+  code_changes:
+    - src/ui/mod.rs
+    - assets/presets/project.yaml (new)
+    - .agents/log.md
+validation:
+  - cargo test
+  - /tmp 재현: three fiber spec 시 package.json dependencies 반영
+  - rust bootstrap main.rs hello world 출력 확인
+  - project tab load preset 키로 spec 기본 라이브러리 주입 확인

@@ -1,11 +1,15 @@
 # info
-- name : 
-- description : 
-- spec : 
-- goal : 
+- name: 
+- description: 
+- path: 
+- spec: 
+- goal: 
 
 ## rule
 - 
+
+## plan
+1. 
 
 ## features
 1. 
@@ -14,10 +18,28 @@
 - 
 
 # Domains
-- 
+### domain
+- **name**: 
+- **description**: 
+- **state**: 
+- **action**: 
+- **rule**:
+  - 
+- **variable**:
+  - 
 
 # Flow
-- 
+- stage_init_plan:
+  - feature -> domain -> flow
+- stage_draft:
+  - set_draft / add_draft / enter_parallel
+- stage_build:
+  - check_draft -> build_draft -> enter_check_job
+
+# UI
+- Project
+- Draft
+- Parallel
 
 # Step
 - 

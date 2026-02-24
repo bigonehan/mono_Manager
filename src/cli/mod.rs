@@ -14,18 +14,17 @@ pub fn calc_is_help_command(args: &[String]) -> bool {
     )
 }
 
-pub fn flow_print_usage(program: &str) {
+pub fn print_usage(program: &str) {
     println!("usage:");
     println!("  {program} plan-project [llm]");
-    println!("  {program} plan-init [-n name] [-d description] [-s spec] [--llm llm]");
     println!("  {program} detail-project [llm]");
     println!("  {program} list-projects");
     println!("  {program} create-project <name> [path] [description]");
-    println!("  {program} add-project <name> <path> [description]");
     println!("  {program} select-project <name>");
     println!("  {program} delete-project <name>");
     println!("  {program} validate-tasks <feature_name>");
     println!("  {program} create-draft");
+    println!("  {program} add-plan [hint]");
     println!("  {program} add-draft <feature_name> [request]");
     println!("  {program} delete-draft <feature_name>");
     println!("  {program} add-function");
@@ -36,7 +35,7 @@ pub fn flow_print_usage(program: &str) {
     println!("  {program} press-key <key>");
 }
 
-pub async fn flow_execute_cli(args: &[String]) -> Result<String, String> {
+pub async fn execute_cli(args: &[String]) -> Result<String, String> {
     if args.len() < 2 {
         return Err("missing command".to_string());
     }
@@ -44,96 +43,54 @@ pub async fn flow_execute_cli(args: &[String]) -> Result<String, String> {
     match args[1].as_str() {
         "plan-project" => {
             let llm = args.get(2).map(String::as_str);
-            super::flow_plan_project(llm)
-        }
-        "plan-init" => {
-            let mut name: Option<&str> = None;
-            let mut description: Option<&str> = None;
-            let mut spec: Option<&str> = None;
-            let mut llm: Option<&str> = None;
-            let mut i = 2usize;
-            while i < args.len() {
-                match args[i].as_str() {
-                    "-n" | "--name" => {
-                        i += 1;
-                        if i >= args.len() {
-                            return Err("plan-init: -n/--name requires value".to_string());
-                        }
-                        name = Some(args[i].as_str());
-                    }
-                    "-d" | "--description" => {
-                        i += 1;
-                        if i >= args.len() {
-                            return Err("plan-init: -d/--description requires value".to_string());
-                        }
-                        description = Some(args[i].as_str());
-                    }
-                    "-s" | "--spec" => {
-                        i += 1;
-                        if i >= args.len() {
-                            return Err("plan-init: -s/--spec requires value".to_string());
-                        }
-                        spec = Some(args[i].as_str());
-                    }
-                    "--llm" => {
-                        i += 1;
-                        if i >= args.len() {
-                            return Err("plan-init: --llm requires value".to_string());
-                        }
-                        llm = Some(args[i].as_str());
-                    }
-                    unknown => {
-                        return Err(format!("plan-init: unknown arg `{}`", unknown));
-                    }
-                }
-                i += 1;
-            }
-            super::flow_plan_init(name, description, spec, llm)
+            super::plan_project(llm)
         }
         "detail-project" => {
             let llm = args.get(2).map(String::as_str);
-            super::flow_detail_project(llm)
+            super::detail_project(llm)
         }
-        "list-projects" | "list" => super::flow_list_projects(),
-        "create-project" | "create" => {
+        "list-projects" | "list" => super::list_projects(),
+        "create-project" => {
             if args.len() < 3 {
-                return Err("create-project requires <name>".to_string());
+                return Err("create-project requires <name> [path] [description]".to_string());
             }
-            let name = &args[2];
-            let path = args.get(3).map(|s| s.as_str());
-            let description = args.get(4).map_or("", String::as_str);
-            super::flow_create_project(name, path, description)
-        }
-        "add-project" | "add" => {
-            if args.len() < 4 {
-                return Err("add-project requires <name> <path>".to_string());
-            }
-            let description = args.get(4).map_or("", String::as_str);
-            super::flow_add_project(&args[2], &args[3], description)
+            super::create_project(
+                args[2].as_str(),
+                args.get(3).map(String::as_str),
+                args.get(4).map_or("", String::as_str),
+            )
         }
         "select-project" | "select" => {
             if args.len() < 3 {
                 return Err("select-project requires <name>".to_string());
             }
-            super::flow_select_project(&args[2])
+            super::select_project(&args[2])
         }
         "delete-project" | "delete" => {
             if args.len() < 3 {
                 return Err("delete-project requires <name>".to_string());
             }
-            super::flow_delete_project(&args[2])
+            super::delete_project(&args[2])
         }
         "validate-tasks" => {
             if args.len() < 3 {
                 return Err("validate-tasks requires <feature_name>".to_string());
             }
-            super::flow_validate_tasks(&args[2])
+            super::validate_tasks(&args[2])
         }
         "create-draft" | "draft-create" => {
             if args.len() != 2 {
                 return Err("create-draft does not accept arguments".to_string());
             }
-            super::flow_draft_create()
+            super::draft_create()
+        }
+        "add-plan" => {
+            let request = if args.len() >= 3 {
+                Some(args[2..].join(" "))
+            } else {
+                None
+            };
+            super::add_plan(request)
         }
         "add-draft" | "draft-add" => {
             if args.len() < 3 {
@@ -144,13 +101,13 @@ pub async fn flow_execute_cli(args: &[String]) -> Result<String, String> {
             } else {
                 None
             };
-            super::flow_draft_add(&args[2], request)
+            super::draft_add(&args[2], request)
         }
         "delete-draft" | "draft-delete" => {
             if args.len() < 3 {
                 return Err("delete-draft requires <feature_name>".to_string());
             }
-            super::flow_draft_delete(&args[2])
+            super::draft_delete(&args[2])
         }
         "add-function" | "add-func" => {
             let request = if args.len() >= 3 {
@@ -158,12 +115,12 @@ pub async fn flow_execute_cli(args: &[String]) -> Result<String, String> {
             } else {
                 None
             };
-            super::flow_add_func(request)
+            super::add_func(request)
         }
-        "open-ui" | "ui" => super::flow_ui(),
+        "open-ui" | "ui" => super::ui(),
         "run-auto" | "auto" => {
             let project_name = args.get(2).map(String::as_str);
-            super::flow_auto_mode(project_name)
+            super::auto_mode(project_name)
         }
         "send-tmux" | "tsend" => {
             if args.len() < 4 {
@@ -178,16 +135,16 @@ pub async fn flow_execute_cli(args: &[String]) -> Result<String, String> {
                 return Err("send-tmux requires non-empty message".to_string());
             }
             let msg = msg_slice.join(" ");
-            super::flow_tsend(pane_id, &msg, option)
+            super::tmux::tsend(pane_id, &msg, option)
         }
         "build-parallel-code" => {
-            super::flow_run_parallel_build_code().await
+            super::parallel::run_parallel_build_code().await
         }
         "press-key" => {
             if args.len() < 3 {
                 return Err("press-key requires <key>".to_string());
             }
-            super::flow_press_key(&args[2]).await
+            super::parallel::press_key(&args[2]).await
         }
         _ => Err(format!("unknown command: {}", args[1])),
     }

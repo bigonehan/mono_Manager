@@ -1,1 +1,9 @@
-projects: []
+recentActivepane: AR8h
+projects:
+- id: AR8h
+  name: temp
+  path: /home/tree/temp
+  description: threefiber와 react, zustand를 이용한 game
+  created_at: '1771942237'
+  updated_at: '1771942744'
+  selected: true

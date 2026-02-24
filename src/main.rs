@@ -1,37 +1,26 @@
 mod config;
 mod cli;
+mod parallel;
 mod tmux;
 mod ui;
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::sync::Semaphore;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const REGISTRY_PATH: &str = "configs/project.yaml";
 const LEGACY_REGISTRY_PATH: &str = "configs/Project.yaml";
 const EXEC_LOG_PATH: &str = ".project/log.md";
 const PROJECT_MD_PATH: &str = ".project/project.md";
+const PRIMARY_DRAFTS_LIST_FILE: &str = "drafts_list.yaml";
 const CODEX_DANGEROUS_FLAG: &str = "--dangerously-bypass-approvals-and-sandbox";
-const DEFAULT_PROJECT_MD: &str = "# info
-- name: bootstrap
-- description: initialized by run parallel
-- spec: unknown
-- goal: initialize workspace
-
-## rule
-- keep changes minimal
-
-## features
-- bootstrap | .project/* | initialize project metadata
-";
+const FEATURE_NAME_SKILL_PATH: &str = "/home/tree/ai/skills/feature-name-prompt-rules/SKILL.md";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProjectRecord {
@@ -56,12 +45,42 @@ struct ProjectRegistry {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct DraftTask {
     name: String,
+    #[serde(default, rename = "type")]
+    task_type: String,
+    #[serde(default)]
+    domain: Vec<String>,
+    #[serde(default)]
+    flow: String,
     #[serde(default)]
     depends_on: Vec<String>,
+    #[serde(default)]
+    scope: Vec<String>,
+    #[serde(default)]
+    rule: Vec<String>,
+    #[serde(default)]
+    step: Vec<String>,
+    #[serde(default)]
+    touches: Vec<String>,
+    #[serde(default)]
+    constraints: Vec<String>,
+    #[serde(default)]
+    contracts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct DraftFeatures {
+    #[serde(default)]
+    domain: Vec<String>,
+    #[serde(default)]
+    flow: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct DraftDoc {
+    #[serde(default)]
+    rule: Vec<String>,
+    #[serde(default)]
+    features: DraftFeatures,
     #[serde(default)]
     depends_on: Vec<String>,
     #[serde(default)]
@@ -73,16 +92,39 @@ struct DraftsListDoc {
     #[serde(default)]
     domains: Vec<String>,
     #[serde(default)]
-    feature: Vec<String>,
+    flows: Vec<String>,
+    #[serde(default)]
+    #[serde(alias = "feature")]
+    features: Vec<String>,
     #[serde(default)]
     planned: Vec<String>,
+    #[serde(default)]
+    planned_items: Vec<PlannedItem>,
+    #[serde(default)]
+    draft_state: DraftStateDoc,
+    #[serde(default)]
+    sync_initialized: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct PlannedItem {
+    name: String,
+    value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct DraftStateDoc {
+    #[serde(default)]
+    generated: Vec<String>,
+    #[serde(default)]
+    pending: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
-struct ParallelFeatureTask {
-    name: String,
-    draft_path: PathBuf,
-    depends_on: Vec<String>,
+pub(crate) struct ParallelFeatureTask {
+    pub(crate) name: String,
+    pub(crate) draft_path: PathBuf,
+    pub(crate) depends_on: Vec<String>,
 }
 
 fn calc_now_unix() -> String {
@@ -91,6 +133,25 @@ fn calc_now_unix() -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     secs.to_string()
+}
+
+fn calc_primary_drafts_list_path(project_root: &Path) -> PathBuf {
+    project_root.join(".project").join(PRIMARY_DRAFTS_LIST_FILE)
+}
+
+fn action_resolve_drafts_list_path(project_root: &Path) -> Result<PathBuf, String> {
+    let meta = project_root.join(".project");
+    fs::create_dir_all(&meta)
+        .map_err(|e| format!("failed to create {}: {}", meta.display(), e))?;
+    Ok(calc_primary_drafts_list_path(project_root))
+}
+
+fn action_save_drafts_list_primary_with_legacy_mirror(
+    project_root: &Path,
+    doc: &DraftsListDoc,
+) -> Result<(), String> {
+    let primary = action_resolve_drafts_list_path(project_root)?;
+    action_save_drafts_list(&primary, doc)
 }
 
 fn calc_generate_project_id(existing: &HashSet<String>) -> String {
@@ -139,50 +200,16 @@ fn action_normalize_registry(registry: &mut ProjectRegistry) -> bool {
     changed
 }
 
-fn calc_shell_single_quote_escape(input: &str) -> String {
-    input.replace('\'', "'\"'\"'")
-}
-
-fn calc_model_supports_dangerous_flag(model_bin: &str) -> bool {
+pub(crate) fn calc_model_supports_dangerous_flag(model_bin: &str) -> bool {
     model_bin.eq_ignore_ascii_case("codex")
 }
 
-fn action_default_model_bin() -> String {
+pub(crate) fn action_default_model_bin() -> String {
     action_load_app_config()
         .and_then(|c| c.ai.as_ref().and_then(|a| a.model.as_ref()).cloned())
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| "codex".to_string())
-}
-
-fn action_send_codex_to_new_tmux_pane(prompt: &str) -> Result<String, String> {
-    let pane_id = tmux::action_split_window_pane()?;
-    let model_bin = action_default_model_bin();
-    let command_line = if calc_model_supports_dangerous_flag(&model_bin) {
-        format!(
-            "{} exec {} '{}'",
-            model_bin,
-            CODEX_DANGEROUS_FLAG,
-            calc_shell_single_quote_escape(prompt)
-        )
-    } else {
-        format!("{} exec '{}'", model_bin, calc_shell_single_quote_escape(prompt))
-    };
-    tmux::action_send_keys(&pane_id, &command_line, tmux::SendOption::Enter)?;
-    Ok(pane_id)
-}
-
-fn flow_tsend(pane_id: &str, msg: &str, option: &str) -> Result<String, String> {
-    let send_option = match option {
-        "raw" => tmux::SendOption::Raw,
-        "enter" => tmux::SendOption::Enter,
-        _ => return Err("tsend option must be `enter` or `raw`".to_string()),
-    };
-    tmux::action_send_keys(pane_id, msg, send_option)?;
-    Ok(format!(
-        "tsend done: pane={} option={} msg={}",
-        pane_id, option, msg
-    ))
 }
 
 fn action_read_one_line(prompt: &str) -> Result<String, String> {
@@ -224,7 +251,25 @@ fn action_read_multiline_until_blank(prompt: &str) -> Result<String, String> {
     Ok(lines.join("\n").trim().to_string())
 }
 
+fn action_append_chat_log(project_root: &Path, role: &str, message: &str) {
+    let path = project_root.join(".project").join("chat.log");
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "[{}] {}", ts, role);
+        let _ = writeln!(file, "{}", message);
+        let _ = writeln!(file);
+    }
+}
+
 fn action_run_codex_exec_capture(prompt: &str) -> Result<String, String> {
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    action_append_chat_log(&cwd, "LLM_PROMPT", prompt);
     let model_bin = action_default_model_bin();
     let mut command = Command::new(&model_bin);
     command.arg("exec");
@@ -236,13 +281,18 @@ fn action_run_codex_exec_capture(prompt: &str) -> Result<String, String> {
         .output()
         .map_err(|e| format!("failed to execute {}: {}", model_bin, e))?;
     if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
+        Ok(stdout)
     } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        action_append_chat_log(&cwd, "LLM_ERROR", &stderr);
+        Err(stderr)
     }
 }
 
 fn action_run_codex_exec_capture_in_dir(dir: &Path, prompt: &str) -> Result<String, String> {
+    action_append_chat_log(dir, "LLM_PROMPT", prompt);
     let model_bin = action_default_model_bin();
     let mut command = Command::new(&model_bin);
     command.current_dir(dir).arg("exec");
@@ -254,13 +304,19 @@ fn action_run_codex_exec_capture_in_dir(dir: &Path, prompt: &str) -> Result<Stri
         .output()
         .map_err(|e| format!("failed to execute {} in {}: {}", model_bin, dir.display(), e))?;
     if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        action_append_chat_log(dir, "LLM_RESPONSE", &stdout);
+        Ok(stdout)
     } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        action_append_chat_log(dir, "LLM_ERROR", &stderr);
+        Err(stderr)
     }
 }
 
 fn action_run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, String> {
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    action_append_chat_log(&cwd, "LLM_PROMPT", prompt);
     let output = Command::new(llm)
         .arg("exec")
         .arg("-y")
@@ -268,7 +324,9 @@ fn action_run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, String
         .output()
         .map_err(|e| format!("failed to execute {}: {}", llm, e))?;
     if output.status.success() {
-        return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
+        return Ok(stdout);
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -279,11 +337,16 @@ fn action_run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, String
             .output()
             .map_err(|e| format!("failed to execute {} retry: {}", llm, e))?;
         if retry.status.success() {
-            return Ok(String::from_utf8_lossy(&retry.stdout).to_string());
+            let stdout = String::from_utf8_lossy(&retry.stdout).to_string();
+            action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
+            return Ok(stdout);
         }
-        return Err(String::from_utf8_lossy(&retry.stderr).trim().to_string());
+        let retry_err = String::from_utf8_lossy(&retry.stderr).trim().to_string();
+        action_append_chat_log(&cwd, "LLM_ERROR", &retry_err);
+        return Err(retry_err);
     }
 
+    action_append_chat_log(&cwd, "LLM_ERROR", &stderr);
     Err(stderr)
 }
 
@@ -298,6 +361,55 @@ fn calc_extract_markdown_block(raw: &str) -> String {
         return raw[start..].trim().to_string();
     }
     raw.trim().to_string()
+}
+
+fn action_validate_project_md_format(project_md: &str) -> Result<(), String> {
+    let required_headers = [
+        "# info",
+        "## rule",
+        "## plan",
+        "## features",
+        "## structure",
+        "# Domains",
+        "# Flow",
+        "# UI",
+        "# Step",
+        "# Constraints",
+        "# Verification",
+        "# Gate Checklist",
+    ];
+    for header in required_headers {
+        if !project_md.lines().any(|line| line.trim().eq_ignore_ascii_case(header)) {
+            return Err(format!("project.md format invalid: missing header `{}`", header));
+        }
+    }
+    for banned in ["- 제안 도메인:", "- 근거:", "- 책임:"] {
+        if project_md.contains(banned) {
+            return Err(format!(
+                "project.md format invalid: banned domains summary style `{}`",
+                banned
+            ));
+        }
+    }
+    if !project_md.contains("### domain") {
+        return Err("project.md format invalid: missing `### domain` block".to_string());
+    }
+    for required in [
+        "- **name**:",
+        "- **description**:",
+        "- **state**:",
+        "- **action**:",
+        "- **rule**:",
+        "- **variable**:",
+    ] {
+        if !project_md.contains(required) {
+            return Err(format!(
+                "project.md format invalid: missing domain field `{}`",
+                required
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn calc_render_template_pairs(template: &str, pairs: &[(&str, &str)]) -> String {
@@ -324,7 +436,7 @@ fn calc_collect_unresolved_placeholders(rendered: &str, keys: &[&str]) -> Vec<St
         .collect()
 }
 
-fn action_append_failure_log(task_name: &str, reason: &str) -> Result<(), String> {
+pub(crate) fn action_append_failure_log(task_name: &str, reason: &str) -> Result<(), String> {
     if let Some(parent) = Path::new(EXEC_LOG_PATH).parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
@@ -374,8 +486,8 @@ fn action_save_registry(path: &Path, registry: &ProjectRegistry) -> Result<(), S
     fs::write(path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
 }
 
-fn calc_default_project_path(name: &str) -> PathBuf {
-    Path::new(".").join(name)
+fn calc_default_project_path() -> PathBuf {
+    env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
 fn calc_is_existing_project(path: &Path) -> bool {
@@ -464,16 +576,17 @@ fn action_ensure_project_dir(path: &Path) -> Result<(), String> {
     fs::create_dir_all(path).map_err(|e| format!("failed to create {}: {}", path.display(), e))
 }
 
-fn flow_list_projects() -> Result<String, String> {
+fn list_projects() -> Result<String, String> {
     let registry = action_load_registry(&action_registry_path())?;
     Ok(ui::render_project_list(&registry.projects))
 }
 
-fn flow_ui() -> Result<String, String> {
+fn ui() -> Result<String, String> {
     let registry_path = action_registry_path();
     let mut registry = action_load_registry(&registry_path)?;
     let normalized = action_normalize_registry(&mut registry);
-    let result = ui::flow_run_ui(&mut registry.projects, &mut registry.recent_active_pane)?;
+    action_save_registry(&registry_path, &registry)?;
+    let result = ui::run_ui(&mut registry.projects, &mut registry.recent_active_pane)?;
     if normalized {
         registry.recent_active_pane = registry
             .recent_active_pane
@@ -484,21 +597,481 @@ fn flow_ui() -> Result<String, String> {
         action_save_registry(&registry_path, &registry)?;
     }
     if let Some(project_name) = result.auto_mode_project {
-        return flow_auto_mode(Some(&project_name));
+        return auto_mode(Some(&project_name));
     }
     Ok(result.message)
 }
 
 fn action_collect_project_features(project_path: &Path) -> Result<Vec<String>, String> {
-    let drafts_list_path = project_path.join(".project").join("drafts_list.yaml");
+    let drafts_list_path = action_resolve_drafts_list_path(project_path)?;
     let doc = action_load_drafts_list(&drafts_list_path)?;
-    let mut out = doc.feature;
+    let mut out = doc.features;
     for planned in doc.planned {
         if !out.iter().any(|v| v == &planned) {
             out.push(planned);
         }
     }
     Ok(out)
+}
+
+fn calc_extract_project_md_list_by_header(project_md: &str, header: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_features = false;
+    for line in project_md.lines() {
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case(header) {
+            in_features = true;
+            continue;
+        }
+        if in_features && trimmed.starts_with('#') {
+            break;
+        }
+        if !in_features {
+            continue;
+        }
+        let body = if trimmed.starts_with("- ") {
+            trimmed.trim_start_matches("- ").trim().to_string()
+        } else if let Some((_, right)) = trimmed.split_once(". ") {
+            if trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                right.trim().to_string()
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
+        if body.is_empty() {
+            continue;
+        }
+        let key = body
+            .split('|')
+            .next()
+            .unwrap_or(&body)
+            .split(':')
+            .next()
+            .unwrap_or(&body)
+            .trim();
+        if key.is_empty() {
+            continue;
+        }
+        if !out.iter().any(|v| v == key) {
+            out.push(key.to_string());
+        }
+    }
+    out
+}
+
+fn calc_is_fileish_feature_key(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.starts_with("src_")
+        || lower.contains("_src_")
+        || lower.ends_with("_ts")
+        || lower.ends_with("_tsx")
+        || lower.ends_with("_js")
+        || lower.ends_with("_jsx")
+        || lower.ends_with("_rs")
+        || lower.ends_with("_yaml")
+        || lower.ends_with("_yml")
+        || lower.ends_with("_md")
+}
+
+fn calc_is_feature_key_like(value: &str) -> bool {
+    let trimmed = value.trim();
+    !trimmed.is_empty()
+        && trimmed.len() <= 48
+        && !trimmed.chars().any(|ch| ch.is_ascii_whitespace())
+        && !calc_is_fileish_feature_key(trimmed)
+        && trimmed
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+}
+
+fn calc_feature_name_snake_like(input: &str) -> String {
+    let mut out = String::new();
+    let mut prev_is_alnum = false;
+    for ch in input.chars() {
+        if ch.is_ascii_uppercase() {
+            if prev_is_alnum && !out.ends_with('_') {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+            prev_is_alnum = true;
+        } else if ch.is_ascii_lowercase() || ch.is_ascii_digit() {
+            if out.is_empty() {
+                if ch.is_ascii_lowercase() {
+                    out.push(ch);
+                    prev_is_alnum = true;
+                }
+            } else {
+                out.push(ch.to_ascii_lowercase());
+                prev_is_alnum = true;
+            }
+        } else {
+            if !out.is_empty() && !out.ends_with('_') {
+                out.push('_');
+            }
+            prev_is_alnum = false;
+        }
+    }
+    let out = out.trim_matches('_').to_string();
+    if out.is_empty() {
+        "new_feature".to_string()
+    } else {
+        out
+    }
+}
+
+fn calc_is_valid_snake_feature_key(value: &str) -> bool {
+    if value.len() < 3 {
+        return false;
+    }
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
+    value.contains('_')
+        && !value.contains("__")
+        && !value.ends_with('_')
+        && value
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+fn calc_fallback_feature_key(raw: &str) -> String {
+    let mut key = calc_feature_name_snake_like(raw);
+    if key == "new_feature" || !calc_is_valid_snake_feature_key(&key) {
+        let mut hash: u32 = 2166136261;
+        for b in raw.as_bytes() {
+            hash ^= *b as u32;
+            hash = hash.wrapping_mul(16777619);
+        }
+        key = format!("plan_feature_{:08x}", hash);
+    }
+    key
+}
+
+fn calc_sync_llm_enabled() -> bool {
+    matches!(env::var("ORC_SYNC_LLM").ok().as_deref(), Some("1"))
+}
+
+fn calc_feature_name_prompt_rules_from_skill() -> String {
+    let fallback = "FEATURE_NAME 규칙:\n\
+- 출력은 정확히 한 줄: FEATURE_NAME: <name>\n\
+- <name>은 소문자 snake_case만 허용\n\
+- 반드시 동사_명사 형태로 작성\n\
+- 공백/하이픈/한글/설명문 금지";
+    let Ok(raw) = fs::read_to_string(FEATURE_NAME_SKILL_PATH) else {
+        return fallback.to_string();
+    };
+    let marker = "## Prompt Snippet";
+    let Some(idx) = raw.find(marker) else {
+        return fallback.to_string();
+    };
+    let mut lines = Vec::new();
+    for line in raw[idx + marker.len()..].lines() {
+        if line.starts_with("## ") {
+            break;
+        }
+        let trimmed = line.trim_end();
+        if !trimmed.trim().is_empty() {
+            lines.push(trimmed.to_string());
+        }
+    }
+    if lines.is_empty() {
+        fallback.to_string()
+    } else {
+        lines.join("\n")
+    }
+}
+
+fn action_normalize_feature_key_with_llm(raw: &str) -> String {
+    if calc_is_feature_key_like(raw) {
+        return calc_feature_name_snake_like(raw);
+    }
+    if !calc_sync_llm_enabled() {
+        return calc_fallback_feature_key(raw);
+    }
+    let prompt = format!(
+        "다음 기능명을 코드 폴더 key로 쓸 짧은 영문 snake_case(동사_명사)로 변환해.\n\
+규칙은 아래 skill snippet을 우선 준수해.\n\
+{}\n\
+입력: {}",
+        calc_feature_name_prompt_rules_from_skill(),
+        raw
+    );
+    match action_run_codex_exec_capture(&prompt) {
+        Ok(output) => {
+            let name = calc_extract_feature_name(&output, raw);
+            if !calc_is_valid_snake_feature_key(&name) || name == "new_feature" {
+                calc_fallback_feature_key(raw)
+            } else {
+                name
+            }
+        }
+        Err(_) => calc_fallback_feature_key(raw),
+    }
+}
+
+fn action_generate_planned_items_with_llm(raw_items: &[String]) -> Vec<PlannedItem> {
+    let inputs: Vec<String> = raw_items
+        .iter()
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_string())
+        .collect();
+    if inputs.is_empty() {
+        return Vec::new();
+    }
+    if !calc_sync_llm_enabled() {
+        let mut out = Vec::new();
+        for raw in inputs {
+            let mut name = calc_fallback_feature_key(&raw);
+            if out.iter().any(|v: &PlannedItem| v.name == name) {
+                name = format!("{}{}", name, out.len() + 1);
+            }
+            out.push(PlannedItem { name, value: raw });
+        }
+        return out;
+    }
+    let bullet = inputs
+        .iter()
+        .map(|v| format!("- {}", v))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let prompt = format!(
+        "다음 planned 기능 후보를 코드 구현 단위로 정리해.\n\
+출력은 반드시 YAML만:\n\
+planned_items:\n\
+  - name: <verb_noun snake_case 영문 키>\n\
+    value: <원문 의미를 유지한 한 줄 설명>\n\
+규칙:\n\
+1) name은 중복 없이 영문 소문자 snake_case(동사_명사)\n\
+2) value는 한국어 가능, 1줄\n\
+3) 불필요한 설명문 금지\n\
+입력:\n{}",
+        bullet
+    );
+    let Ok(raw) = action_run_codex_exec_capture(&prompt) else {
+        return Vec::new();
+    };
+    let yaml = calc_extract_yaml_block(&raw);
+    #[derive(Debug, Deserialize)]
+    struct PlannedItemsDoc {
+        #[serde(default)]
+        planned_items: Vec<PlannedItem>,
+    }
+    let Ok(doc) = serde_yaml::from_str::<PlannedItemsDoc>(&yaml) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for item in doc.planned_items {
+        let name = calc_feature_name_snake_like(&item.name);
+        let value = item.value.trim().to_string();
+        if value.is_empty()
+            || !calc_is_valid_snake_feature_key(&name)
+            || out.iter().any(|v: &PlannedItem| v.name == name)
+        {
+            continue;
+        }
+        out.push(PlannedItem { name, value });
+    }
+    out
+}
+
+fn calc_is_placeholder_planned_item(item: &PlannedItem) -> bool {
+    let name = item.name.trim();
+    let value = item.value.trim();
+    matches!(
+        name,
+        "project_project_md"
+            | "features_project_md_features"
+            | "features_project_features_work_draft_yaml"
+            | "draft_yaml"
+    ) || value.contains(".project/project.md")
+        || value.contains("project.md features")
+        || value.contains("draft.yaml")
+}
+
+fn calc_should_force_tasks_list_resync(doc: &DraftsListDoc) -> bool {
+    if doc.planned.is_empty() || doc.planned_items.is_empty() {
+        return false;
+    }
+    let placeholder_planned = doc.planned.iter().all(|name| {
+        matches!(
+            name.trim(),
+            "project_project_md"
+                | "features_project_md_features"
+                | "features_project_features_work_draft_yaml"
+                | "draft_yaml"
+        )
+    });
+    let placeholder_items = doc.planned_items.iter().all(calc_is_placeholder_planned_item);
+    placeholder_planned && placeholder_items
+}
+
+fn calc_should_force_tasks_list_resync_by_md(
+    doc: &DraftsListDoc,
+    features_keys: &[String],
+    planned_keys: &[String],
+) -> bool {
+    if doc.planned_items.iter().any(|item| {
+        let value = item.value.trim();
+        value == "프로젝트 정보 입력" || value == "features 리스트 입력" || value == "draft.yaml 읽기"
+    }) {
+        return true;
+    }
+    if !features_keys.is_empty() {
+        let md: HashSet<String> = features_keys
+            .iter()
+            .map(|v| calc_feature_name_snake_like(v))
+            .collect();
+        let current: HashSet<String> = doc
+            .features
+            .iter()
+            .map(|v| calc_feature_name_snake_like(v))
+            .collect();
+        if current.is_empty() || current.intersection(&md).count() == 0 {
+            return true;
+        }
+    }
+    if !planned_keys.is_empty() {
+        let md: HashSet<String> = planned_keys
+            .iter()
+            .map(|v| calc_feature_name_snake_like(v))
+            .collect();
+        let current: HashSet<String> = doc
+            .planned
+            .iter()
+            .map(|v| calc_feature_name_snake_like(v))
+            .collect();
+        if current.is_empty() || current.intersection(&md).count() == 0 {
+            return true;
+        }
+    }
+    false
+}
+
+pub(crate) fn action_sync_project_tasks_list_from_project_md(project_root: &Path) -> Result<bool, String> {
+    let project_md_path = project_root.join(PROJECT_MD_PATH);
+    let project_md = match fs::read_to_string(&project_md_path) {
+        Ok(v) => v,
+        Err(_) => return Ok(false),
+    };
+    let plan_keys = calc_extract_project_md_list_by_header(&project_md, "## plan");
+    let feature_keys = calc_extract_project_md_list_by_header(&project_md, "## features");
+    let (features_keys, planned_keys) = if !plan_keys.is_empty() {
+        // new format: features=features, plan=planned
+        (feature_keys, plan_keys)
+    } else {
+        // compatibility fallback: features=planned
+        (Vec::new(), feature_keys)
+    };
+    let drafts_list_path = action_resolve_drafts_list_path(project_root)?;
+    let mut doc = action_load_drafts_list(&drafts_list_path)?;
+    let force_resync = calc_should_force_tasks_list_resync(&doc)
+        || calc_should_force_tasks_list_resync_by_md(&doc, &features_keys, &planned_keys);
+    if doc.sync_initialized
+        && (!doc.features.is_empty() || !doc.planned.is_empty() || !doc.planned_items.is_empty())
+        && !force_resync
+    {
+        return Ok(false);
+    }
+    if force_resync {
+        doc.features.clear();
+        doc.planned.clear();
+        doc.planned_items.clear();
+        doc.sync_initialized = false;
+    }
+    let before_features_len = doc.features.len();
+    let before_planned_len = doc.planned.len();
+    let before_planned_items_len = doc.planned_items.len();
+    let mut cache: HashMap<String, String> = HashMap::new();
+    let mut normalize_cached = |raw: &str| -> String {
+        if let Some(existing) = cache.get(raw) {
+            return existing.clone();
+        }
+        let normalized = action_normalize_feature_key_with_llm(raw);
+        cache.insert(raw.to_string(), normalized.clone());
+        normalized
+    };
+
+    let mut next_features = Vec::new();
+    for raw in doc.features.iter().chain(features_keys.iter()) {
+        let key = normalize_cached(raw);
+        if !next_features.iter().any(|v| v == &key) {
+            next_features.push(key);
+        }
+    }
+
+    let mut planned_items_map: HashMap<String, String> = doc
+        .planned_items
+        .iter()
+        .map(|item| (item.name.clone(), item.value.clone()))
+        .collect();
+    for raw in &doc.planned {
+        let key = normalize_cached(raw);
+        planned_items_map
+            .entry(key)
+            .or_insert_with(|| raw.trim().to_string());
+    }
+    let md_sentence_items: Vec<String> = planned_keys
+        .iter()
+        .filter(|raw| !calc_is_feature_key_like(raw))
+        .cloned()
+        .collect();
+    for item in action_generate_planned_items_with_llm(&md_sentence_items) {
+        planned_items_map.insert(item.name, item.value);
+    }
+
+    let mut next_planned = Vec::new();
+    for raw in doc.planned.iter().chain(planned_keys.iter()) {
+        let key = normalize_cached(raw);
+        if next_features.iter().any(|v| v == &key) || next_planned.iter().any(|v| v == &key) {
+            continue;
+        }
+        planned_items_map
+            .entry(key.clone())
+            .or_insert_with(|| raw.trim().to_string());
+        next_planned.push(key);
+    }
+
+    let next_planned_items: Vec<PlannedItem> = next_planned
+        .iter()
+        .map(|name| PlannedItem {
+            name: name.clone(),
+            value: planned_items_map
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| name.clone()),
+        })
+        .collect();
+
+    doc.features = next_features;
+    doc.planned = next_planned;
+    doc.planned_items = next_planned_items;
+    doc.sync_initialized = true;
+
+    if doc.features.len() == before_features_len
+        && doc.planned.len() == before_planned_len
+        && doc.planned_items.len() == before_planned_items_len
+        && doc.sync_initialized
+    {
+        action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc)?;
+        return Ok(false);
+    }
+    action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc)?;
+    Ok(true)
+}
+
+fn action_sync_tasks_list_on_ui_open(projects: &[ProjectRecord]) -> Result<(), String> {
+    for project in projects {
+        let root = Path::new(&project.path);
+        let _ = action_sync_project_tasks_list_from_project_md(root)?;
+    }
+    Ok(())
 }
 
 fn action_run_command_in_dir(
@@ -527,7 +1100,7 @@ fn action_run_command_in_dir(
     }
 }
 
-fn flow_auto_mode(project_name: Option<&str>) -> Result<String, String> {
+fn auto_mode(project_name: Option<&str>) -> Result<String, String> {
     let registry = action_load_registry(&action_registry_path())?;
     let target = if let Some(name) = project_name {
         registry.projects.iter().find(|p| p.name == name)
@@ -567,6 +1140,7 @@ fn flow_auto_mode(project_name: Option<&str>) -> Result<String, String> {
 3) Create/update drafts under `.project/feature/*/draft.yaml`.\n\
 4) Implement all selected features in this repository with minimal safe changes.\n\
 5) Run project tests/lint required by project rules.\n\
+If a YAML/Markdown file is referenced, read it first, identify headers/properties to fill, then append in the required format.\n\
 Output a short action log at the end.\n\n\
 Current project info:\n{}\n\nCurrent feature list:\n{}",
         target.name, project_info, features_text
@@ -586,10 +1160,10 @@ Current project info:\n{}\n\nCurrent feature list:\n{}",
     ))
 }
 
-fn flow_create_project(name: &str, path: Option<&str>, description: &str) -> Result<String, String> {
+fn create_project(name: &str, path: Option<&str>, description: &str) -> Result<String, String> {
     let target = path
         .map(PathBuf::from)
-        .unwrap_or_else(|| calc_default_project_path(name));
+        .unwrap_or_else(calc_default_project_path);
 
     action_ensure_project_dir(&target)?;
 
@@ -598,29 +1172,57 @@ fn flow_create_project(name: &str, path: Option<&str>, description: &str) -> Res
         fs::create_dir_all(target.join(".project"))
             .map_err(|e| format!("failed to create .project: {}", e))?;
     }
-
     let registry_path = action_registry_path();
     let registry = action_load_registry(&registry_path)?;
     let upserted = action_upsert_project(&registry, name, &target, description);
     let selected = calc_select_only(&upserted, name);
     action_save_registry(&registry_path, &selected)?;
 
+    let project_md_path = target.join(PROJECT_MD_PATH);
+    let mut create_project_plan_msg = String::new();
+    let defer_project_plan = env::var("ORC_DEFER_PROJECT_PLAN")
+        .ok()
+        .map(|v| v == "1")
+        .unwrap_or(false);
+    if !project_md_path.exists() && !defer_project_plan {
+        create_project_plan_msg = action_generate_project_plan(
+            &target,
+            name,
+            description,
+            "",
+            "",
+            &[],
+            "",
+            None,
+        )?;
+    }
+
     if existing {
-        Ok(format!("loaded existing project: {} ({})", name, target.display()))
+        if create_project_plan_msg.is_empty() {
+            Ok(format!("loaded existing project: {} ({})", name, target.display()))
+        } else {
+            Ok(format!(
+                "loaded existing project: {} ({}) | {}",
+                name,
+                target.display(),
+                create_project_plan_msg
+            ))
+        }
     } else {
-        Ok(format!("created project: {} ({})", name, target.display()))
+        if create_project_plan_msg.is_empty() {
+            Ok(format!("created project: {} ({})", name, target.display()))
+        } else {
+            Ok(format!(
+                "created project: {} ({}) | {}",
+                name,
+                target.display(),
+                create_project_plan_msg
+            ))
+        }
     }
 }
 
-fn flow_add_project(name: &str, path: &str, description: &str) -> Result<String, String> {
-    let registry_path = action_registry_path();
-    let registry = action_load_registry(&registry_path)?;
-    let updated = action_upsert_project(&registry, name, Path::new(path), description);
-    action_save_registry(&registry_path, &updated)?;
-    Ok(format!("added project: {}", name))
-}
-
-fn flow_select_project(name: &str) -> Result<String, String> {
+fn select_project(name: &str) -> Result<String, String> {
     let registry_path = action_registry_path();
     let registry = action_load_registry(&registry_path)?;
     let exists = registry.projects.iter().any(|p| p.name == name);
@@ -632,7 +1234,7 @@ fn flow_select_project(name: &str) -> Result<String, String> {
     Ok(format!("selected project: {}", name))
 }
 
-fn flow_delete_project(name: &str) -> Result<String, String> {
+fn delete_project(name: &str) -> Result<String, String> {
     let registry_path = action_registry_path();
     let registry = action_load_registry(&registry_path)?;
     let updated = action_delete_project(&registry, name);
@@ -640,16 +1242,86 @@ fn flow_delete_project(name: &str) -> Result<String, String> {
     Ok(format!("deleted project: {}", name))
 }
 
-fn flow_draft_create() -> Result<String, String> {
-    let prompt = "plan-drafts-code 스킬을 사용해서 `.project/project.md`의 `## features` 전체를 기준으로 `.project/drafts_list.yaml`과 `.project/feature/*/draft.yaml`을 생성/갱신해줘.".to_string();
-    let pane_id = action_send_codex_to_new_tmux_pane(&prompt)?;
+fn draft_create() -> Result<String, String> {
+    let _ = action_sync_project_tasks_list_from_project_md(Path::new("."))?;
+    let project_root = Path::new(".");
+    let path = action_resolve_drafts_list_path(project_root)?;
+    let preflight_msg = action_preflight_draft_create(&path)?;
+    let mut doc = action_load_drafts_list(&path)?;
+    action_sync_draft_state_doc(project_root, &mut doc);
+    action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc)?;
+    let project_md_path = action_resolve_project_md_path_for_flow();
+    let project_md = fs::read_to_string(&project_md_path)
+        .map_err(|e| format!("failed to read {}: {}", project_md_path.display(), e))?;
+    let project_info = calc_extract_project_info(&project_md);
+    let project_rules = calc_extract_project_rules(&project_md);
+    let mut created = Vec::new();
+    let mut next_planned = Vec::new();
+    let planned_snapshot = doc.planned.clone();
+    for feature in &planned_snapshot {
+        let result: Result<(), String> = (|| {
+            let prompt = format!(
+            "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능:\n- {}\n\n지시:\n- `draft.yaml`은 템플릿(`/home/tree/ai/skills/plan-drafts/references/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$feature-name-prompt-rules` 스킬을 사용해.\n출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
+            project_info,
+            project_rules.join("\n- "),
+            feature
+        );
+            let draft_raw = action_run_codex_exec_capture(&prompt)?;
+            let feature_name = calc_extract_feature_name(&draft_raw, feature);
+            let draft_yaml = calc_extract_yaml_block(&draft_raw);
+            let draft_doc: DraftDoc = serde_yaml::from_str(&draft_yaml)
+                .map_err(|e| format!("generated draft yaml invalid: {}", e))?;
+            let draft_issues = action_validate_draft_doc(&draft_doc);
+            if !draft_issues.is_empty() {
+                return Err(format!(
+                    "generated draft yaml invalid: {}",
+                    draft_issues.join(" | ")
+                ));
+            }
+            let draft_path = ui::action_apply_draft_create_update_delete(
+                ui::DraftCommand::Create,
+                &feature_name,
+                None,
+            )?;
+            fs::write(&draft_path, &draft_yaml)
+                .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
+            let task_path = ui::action_resolve_feature_draft_path(&feature_name)
+                .parent()
+                .ok_or_else(|| "failed to resolve feature dir".to_string())?
+                .join("task.yaml");
+            fs::write(&task_path, &draft_yaml)
+                .map_err(|e| format!("failed to write {}: {}", task_path.display(), e))?;
+            if !next_planned.iter().any(|v| v == &feature_name)
+                && !doc.features.iter().any(|v| v == &feature_name)
+            {
+                next_planned.push(feature_name.clone());
+            }
+            created.push(feature_name);
+            Ok(())
+        })();
+        if let Err(e) = result {
+            doc.planned = next_planned;
+            action_sync_draft_state_doc(project_root, &mut doc);
+            let _ = action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc);
+            return Err(e);
+        }
+        doc.planned = next_planned.clone();
+        action_sync_draft_state_doc(project_root, &mut doc);
+        let _ = action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc);
+    }
+    doc.planned = next_planned;
+    action_sync_draft_state_doc(project_root, &mut doc);
+    action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc)?;
+    let check_msg = action_run_check_code_after_draft_changes(&created, "create-draft")?;
     Ok(format!(
-        "draft-create sent to tmux pane {} | source=.project/project.md#features",
-        pane_id
+        "{}; draft-create completed with llm: {} item(s) from drafts_list.yaml.planned | {}",
+        preflight_msg,
+        created.len(),
+        check_msg,
     ))
 }
 
-fn flow_draft_add(feature_name: &str, request: Option<String>) -> Result<String, String> {
+fn draft_add(feature_name: &str, request: Option<String>) -> Result<String, String> {
     let request_text = match request {
         Some(v) if !v.trim().is_empty() => v,
         _ => action_read_one_line("draft 추가 요구사항을 입력하세요: ")?,
@@ -657,26 +1329,56 @@ fn flow_draft_add(feature_name: &str, request: Option<String>) -> Result<String,
     if request_text.trim().is_empty() {
         return Err("draft-add requires non-empty request".to_string());
     }
+    let project_md = fs::read_to_string(PROJECT_MD_PATH)
+        .map_err(|e| format!("failed to read {}: {}", PROJECT_MD_PATH, e))?;
+    let project_info = calc_extract_project_info(&project_md);
+    let project_rules = calc_extract_project_rules(&project_md);
     let prompt = format!(
-        "plan-drafts-code 결과를 바탕으로 `{}` feature draft에 신규 task를 질의응답 방식으로 1개 추가해줘. 요구사항: {}",
-        feature_name, request_text
-    );
-    let pane_id = action_send_codex_to_new_tmux_pane(&prompt)?;
-    let patch = format!("# qa-request: {}\n", request_text);
-    let path = ui::action_apply_draft_create_update_delete(
-        ui::DraftCommand::Add,
+        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능명:\n- {}\n요구사항:\n- {}\n\n지시:\n- `draft.yaml`은 템플릿(`/home/tree/ai/skills/plan-drafts/references/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$feature-name-prompt-rules` 스킬을 사용해.\n출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
+        project_info,
+        project_rules.join("\n- "),
         feature_name,
-        Some(&patch),
+        request_text
+    );
+    let draft_raw = action_run_codex_exec_capture(&prompt)?;
+    let generated_name = calc_extract_feature_name(&draft_raw, feature_name);
+    let draft_yaml = calc_extract_yaml_block(&draft_raw);
+    let draft_doc: DraftDoc = serde_yaml::from_str(&draft_yaml)
+        .map_err(|e| format!("generated draft yaml invalid: {}", e))?;
+    let draft_issues = action_validate_draft_doc(&draft_doc);
+    if !draft_issues.is_empty() {
+        return Err(format!(
+            "generated draft yaml invalid: {}",
+            draft_issues.join(" | ")
+        ));
+    }
+    add_feature_to_planned(&generated_name)?;
+    let draft_path = ui::action_apply_draft_create_update_delete(
+        ui::DraftCommand::Create,
+        &generated_name,
+        None,
     )?;
-    flow_add_feature_to_planned(feature_name)?;
+    fs::write(&draft_path, &draft_yaml)
+        .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
+    let task_path = ui::action_resolve_feature_draft_path(&generated_name)
+        .parent()
+        .ok_or_else(|| "failed to resolve feature dir".to_string())?
+        .join("task.yaml");
+    fs::write(&task_path, &draft_yaml)
+        .map_err(|e| format!("failed to write {}: {}", task_path.display(), e))?;
+    let check_msg = action_run_check_code_after_draft_changes(
+        &[generated_name.clone()],
+        "add-draft",
+    )?;
     Ok(format!(
-        "draft-add sent to tmux pane {} | updated: {}",
-        pane_id,
-        path.display()
+        "draft-add completed with llm: planned+file updated for {} ({}) | {}",
+        generated_name,
+        task_path.display(),
+        check_msg
     ))
 }
 
-fn flow_draft_delete(feature_name: &str) -> Result<String, String> {
+fn draft_delete(feature_name: &str) -> Result<String, String> {
     let answer = action_read_one_line(&format!(
         "delete `.project/feature/{}/draft.yaml` ? [y/N]: ",
         feature_name
@@ -783,12 +1485,12 @@ fn action_append_feature_to_project_md(feature_name: &str, display_name: &str) -
 
     let header_idx = lines
         .iter()
-        .position(|line| line.trim().eq_ignore_ascii_case("## features"));
+        .position(|line| line.trim().eq_ignore_ascii_case("## plan"));
     let idx = if let Some(i) = header_idx {
         i
     } else {
         lines.push(String::new());
-        lines.push("## features".to_string());
+        lines.push("## plan".to_string());
         lines.push(String::new());
         lines.len() - 2
     };
@@ -806,7 +1508,7 @@ fn action_append_feature_to_project_md(feature_name: &str, display_name: &str) -
         .map_err(|e| format!("failed to write {}: {}", PROJECT_MD_PATH, e))
 }
 
-fn flow_add_func(request_input: Option<String>) -> Result<String, String> {
+fn add_func(request_input: Option<String>) -> Result<String, String> {
     let project_md = fs::read_to_string(PROJECT_MD_PATH)
         .map_err(|e| format!("failed to read {}: {}", PROJECT_MD_PATH, e))?;
     let project_info = calc_extract_project_info(&project_md);
@@ -824,11 +1526,11 @@ fn flow_add_func(request_input: Option<String>) -> Result<String, String> {
     if objects.is_empty() {
         return Err("add-func parse failed: expected `# / > / -` format".to_string());
     }
-
     let mut created = Vec::new();
+    let mut created_features = Vec::new();
     for obj in &objects {
         let draft_prompt = format!(
-            "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 객체:\n- name: {}\n- step:\n{}\n- rule:\n{}\n\n다음 형식으로만 출력해:\nFEATURE_NAME: <camelCase>\n```yaml\nrule:\nfeatures:\n  domain: []\ntask:\n  - name: <snake_case>\n    type: action\n    domain: [util]\n    depends_on: []\n    scope:\n      - src/main.rs\n    rule:\n      - \"\"\n    step:\n      - \"\"\n```\n설명 문장 추가 금지.",
+            "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 객체:\n- name: {}\n- step:\n{}\n- rule:\n{}\n\n지시:\n- `draft.yaml`은 템플릿(`/home/tree/ai/skills/plan-drafts/references/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$feature-name-prompt-rules` 스킬을 사용해.\n출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
             project_info,
             project_rules.join("\n- "),
             obj.name,
@@ -849,13 +1551,20 @@ fn flow_add_func(request_input: Option<String>) -> Result<String, String> {
                     .map(|v| format!("- {}", v))
                     .collect::<Vec<_>>()
                     .join("\n")
-            },
+            }
         );
         let draft_raw = action_run_codex_exec_capture(&draft_prompt)?;
         let feature_name = calc_extract_feature_name(&draft_raw, &obj.name);
         let draft_yaml = calc_extract_yaml_block(&draft_raw);
-        let _: serde_yaml::Value = serde_yaml::from_str(&draft_yaml)
+        let draft_doc: DraftDoc = serde_yaml::from_str(&draft_yaml)
             .map_err(|e| format!("generated draft yaml invalid: {}", e))?;
+        let draft_issues = action_validate_draft_doc(&draft_doc);
+        if !draft_issues.is_empty() {
+            return Err(format!(
+                "generated draft yaml invalid: {}",
+                draft_issues.join(" | ")
+            ));
+        }
 
         let draft_path = ui::action_resolve_feature_draft_path(&feature_name);
         if let Some(parent) = draft_path.parent() {
@@ -865,73 +1574,107 @@ fn flow_add_func(request_input: Option<String>) -> Result<String, String> {
         fs::write(&draft_path, draft_yaml)
             .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
         action_append_feature_to_project_md(&feature_name, &obj.name)?;
-        flow_add_feature_to_planned(&feature_name)?;
+        add_feature_to_planned(&feature_name)?;
+        created_features.push(feature_name.clone());
         created.push(format!("{} -> {}", feature_name, draft_path.display()));
     }
+    let check_msg = action_run_check_code_after_draft_changes(&created_features, "add-function")?;
 
     Ok(format!(
-        "add-func completed: {} item(s)\n{}",
+        "add-func completed: {} item(s) | {}\n{}",
         created.len(),
+        check_msg,
         created.join("\n")
     ))
 }
 
-fn calc_default_project_name_from_cwd() -> Result<String, String> {
-    let cwd = env::current_dir().map_err(|e| format!("failed to read cwd: {}", e))?;
-    let name = cwd
-        .file_name()
-        .and_then(|v| v.to_str())
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-        .ok_or_else(|| "failed to infer project name from current directory".to_string())?;
-    Ok(name)
+fn add_plan(request_input: Option<String>) -> Result<String, String> {
+    let tasks_list_path = action_resolve_drafts_list_path(Path::new("."))?;
+    let mut doc = action_load_drafts_list(&tasks_list_path)?;
+    if !doc.planned.is_empty() {
+        return Ok("add-plan skipped: drafts_list.yaml.planned already exists".to_string());
+    }
+    let project_md = fs::read_to_string(PROJECT_MD_PATH)
+        .map_err(|e| format!("failed to read {}: {}", PROJECT_MD_PATH, e))?;
+    let project_info = calc_extract_project_info(&project_md);
+    let project_rules = calc_extract_project_rules(&project_md);
+    let request_hint = request_input.unwrap_or_default();
+    let features_text = if doc.features.is_empty() {
+        "- (none)".to_string()
+    } else {
+        doc.features
+            .iter()
+            .map(|v| format!("- {}", v))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let prompt = format!(
+        "너는 프로젝트의 초기 개발 계획을 잡는 planner다.\n\
+project info:\n{}\n\n\
+project rules:\n- {}\n\n\
+already features:\n{}\n\n\
+user hint:\n{}\n\n\
+`.project/drafts_list.yaml`의 planned에 넣을 key 목록만 생성해.\n\
+YAML/Markdown 참조 파일이 있으면 먼저 읽고 값을 채워야 할 헤더/속성을 정리한 뒤 형식에 맞게 추가해.\n\
+규칙은 `$plan-drafts-code` 스킬을 사용해.\n\
+출력은 YAML만:\n\
+planned:\n\
+  - <snake_case key>",
+        project_info,
+        project_rules.join("\n- "),
+        features_text,
+        request_hint
+    );
+    let raw = action_run_codex_exec_capture(&prompt)?;
+    let yaml = calc_extract_yaml_block(&raw);
+    #[derive(Debug, Deserialize)]
+    struct AddPlanDoc {
+        #[serde(default)]
+        planned: Vec<String>,
+    }
+    let parsed: AddPlanDoc =
+        serde_yaml::from_str(&yaml).map_err(|e| format!("add-plan yaml parse failed: {}", e))?;
+    let mut next_planned = Vec::new();
+    for item in parsed.planned {
+        let key = calc_feature_name_snake_like(&item);
+        if !calc_is_valid_snake_feature_key(&key)
+            || doc.features.iter().any(|v| v == &key)
+            || next_planned.iter().any(|v| v == &key)
+        {
+            continue;
+        }
+        next_planned.push(key);
+    }
+    if next_planned.is_empty() {
+        return Err("add-plan produced empty planned list".to_string());
+    }
+    doc.planned = next_planned;
+    action_save_drafts_list(&tasks_list_path, &doc)?;
+    Ok(format!(
+        "add-plan completed: {} item(s) added to drafts_list.yaml.planned",
+        doc.planned.len()
+    ))
 }
 
-fn flow_plan_project(llm: Option<&str>) -> Result<String, String> {
-    flow_plan_init(None, None, None, llm)
+fn plan_project(llm: Option<&str>) -> Result<String, String> {
+    let _ = llm;
+    Err("plan-project removed. use `create-project <name> [path] [description]`".to_string())
 }
 
-fn flow_plan_init(
-    name: Option<&str>,
-    description: Option<&str>,
-    spec: Option<&str>,
+fn action_generate_project_plan(
+    project_root: &Path,
+    project_name: &str,
+    description: &str,
+    spec: &str,
+    goal: &str,
+    user_rules: &[String],
+    feature_request: &str,
     llm: Option<&str>,
 ) -> Result<String, String> {
     let llm_bin_owned = llm
         .map(|v| v.to_string())
         .unwrap_or_else(action_default_model_bin);
     let llm_bin = llm_bin_owned.as_str();
-    let default_name = calc_default_project_name_from_cwd()?;
-    let project_name = match name {
-        Some(v) if !v.trim().is_empty() => v.trim().to_string(),
-        _ => {
-            let name_input = action_read_one_line(&format!(
-                "project name (기본값: {}): ",
-                default_name
-            ))?;
-            if name_input.trim().is_empty() {
-                default_name
-            } else {
-                name_input.trim().to_string()
-            }
-        }
-    };
-    let description = match description {
-        Some(v) if !v.trim().is_empty() => v.trim().to_string(),
-        _ => action_read_multiline_until_blank("description:")?,
-    };
-    let spec = match spec {
-        Some(v) if !v.trim().is_empty() => v.trim().to_string(),
-        _ => action_read_multiline_until_blank("spec(기술스택/환경):")?,
-    };
-    let goal = action_read_multiline_until_blank("goal:")?;
-    let rule_raw = action_read_multiline_until_blank("rule(여러 개는 ; 로 구분):")?;
-    let user_rules: Vec<String> = rule_raw
-        .split([';', '\n'])
-        .map(|v| v.trim())
-        .filter(|v| !v.is_empty())
-        .map(|v| v.to_string())
-        .collect();
     let rules_text = if user_rules.is_empty() {
         "- (작성 필요)".to_string()
     } else {
@@ -941,27 +1684,72 @@ fn flow_plan_init(
             .collect::<Vec<_>>()
             .join("\n")
     };
-
     let prompt = format!(
-        "너는 project.md 생성기다.\n다음 사용자 입력을 기반으로 `.project/project.md` 전체 초안을 작성해.\n\n입력:\n- name: {}\n- description: {}\n- spec: {}\n- goal: {}\n- rules:\n{}\n\n제약:\n1) 출력은 markdown 본문만, 코드펜스/설명문 금지\n2) 반드시 아래 섹션 순서 유지:\n# info\n## rule\n## features\n## structure\n# Domains\n# Flow\n# Step\n# Constraints\n# Verification\n# Gate Checklist\n3) `# info`에는 name/description/spec/goal을 bullet로 채운다.\n4) `## rule`은 입력 rule을 반영한다.\n5) `## features`는 우선 3개 내외의 초기 항목으로 채운다.\n6) 나머지 섹션은 빈값 대신 최소 1개 이상의 초안 bullet/문장으로 채운다.",
+        "너는 project.md 생성기다.\n입력:\n- name: {}\n- description: {}\n- spec: {}\n- goal: {}\n- rules:\n{}\n\n지시:\n- 템플릿(`/home/tree/ai/skills/plan-project-code/references/project.md`)을 `.project/project.md`에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-project-code`, `$build_domain` 스킬을 사용해.\n- `## plan`에는 최소 5개의 기능 항목을 반드시 작성해.\n- 최종 출력은 markdown 본문만.",
         project_name, description, spec, goal, rules_text
     );
     let generated = action_run_llm_exec_capture(llm_bin, &prompt)?;
-    let project_md = calc_extract_markdown_block(&generated);
-
-    if let Some(parent) = Path::new(PROJECT_MD_PATH).parent() {
+    let mut project_md = calc_extract_markdown_block(&generated);
+    if !feature_request.trim().is_empty() {
+        let parsed_features = calc_parse_add_function_objects(&feature_request);
+        if !parsed_features.is_empty() {
+            let mut lines: Vec<String> = project_md.lines().map(|v| v.to_string()).collect();
+            let header_idx = lines
+                .iter()
+                .position(|line| line.trim().eq_ignore_ascii_case("## plan"));
+            let idx = if let Some(i) = header_idx {
+                i
+            } else {
+                lines.push(String::new());
+                lines.push("## plan".to_string());
+                lines.push(String::new());
+                lines.len() - 2
+            };
+            let mut end = idx + 1;
+            while end < lines.len() {
+                if lines[end].trim().starts_with('#') {
+                    break;
+                }
+                end += 1;
+            }
+            for obj in parsed_features {
+                let key = action_normalize_feature_key_with_llm(&obj.name);
+                let rule_text = if obj.rules.is_empty() {
+                    "(rule 없음)".to_string()
+                } else {
+                    obj.rules.join(", ")
+                };
+                let step_text = if obj.steps.is_empty() {
+                    "(step 없음)".to_string()
+                } else {
+                    obj.steps.join(" -> ")
+                };
+                lines.insert(end, format!("- {} : {} > {}", key, rule_text, step_text));
+                end += 1;
+            }
+            project_md = lines.join("\n");
+        }
+    }
+    action_validate_project_md_format(&project_md)?;
+    let project_md_path = project_root.join(PROJECT_MD_PATH);
+    if let Some(parent) = project_md_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
     }
-    fs::write(PROJECT_MD_PATH, &project_md)
-        .map_err(|e| format!("failed to write {}: {}", PROJECT_MD_PATH, e))?;
+    fs::write(&project_md_path, &project_md)
+        .map_err(|e| format!("failed to write {}: {}", project_md_path.display(), e))?;
+    let _ = action_sync_project_tasks_list_from_project_md(project_root)?;
+    let bootstrap_status =
+        ui::action_apply_bootstrap_by_spec(project_root, project_name, spec)?;
     Ok(format!(
-        "plan-init completed with {} -> {}",
-        llm_bin, PROJECT_MD_PATH
+        "create-project completed with {} -> {} | {}",
+        llm_bin,
+        project_md_path.display(),
+        bootstrap_status
     ))
 }
 
-fn flow_detail_project(llm: Option<&str>) -> Result<String, String> {
+fn detail_project(llm: Option<&str>) -> Result<String, String> {
     let llm_bin_owned = llm
         .map(|v| v.to_string())
         .unwrap_or_else(action_default_model_bin);
@@ -995,6 +1783,7 @@ fn flow_detail_project(llm: Option<&str>) -> Result<String, String> {
     }
     let generated = action_run_llm_exec_capture(llm_bin, &prompt)?;
     let project_md = calc_extract_markdown_block(&generated);
+    action_validate_project_md_format(&project_md)?;
     fs::write(PROJECT_MD_PATH, &project_md)
         .map_err(|e| format!("failed to write {}: {}", PROJECT_MD_PATH, e))?;
     Ok(format!(
@@ -1027,13 +1816,188 @@ fn calc_validate_task_dependencies(tasks: &[DraftTask]) -> (Vec<String>, Vec<Str
     (runnable, blocked)
 }
 
-fn flow_validate_tasks(feature_name: &str) -> Result<String, String> {
+fn validate_tasks(feature_name: &str) -> Result<String, String> {
     let tasks = action_parse_draft_tasks(feature_name)?;
     let (runnable, blocked) = calc_validate_task_dependencies(&tasks);
     Ok(ui::render_task_validation(&runnable, &blocked))
 }
 
-fn action_load_app_config() -> Option<config::AppConfig> {
+fn calc_is_auto_verifiable_rule(rule: &str) -> bool {
+    let s = rule.trim();
+    if s.is_empty() {
+        return false;
+    }
+    let ops = ["==", "!=", ">=", "<=", " matches ", " contains ", " exists("];
+    ops.iter().any(|op| s.contains(op))
+        || (s.contains(':') && (s.contains("must") || s.contains("should") || s.contains("check")))
+}
+
+fn calc_is_structured_constraint(contract: &str) -> bool {
+    let s = contract.trim();
+    if s.is_empty() {
+        return false;
+    }
+    let has_key_value = s.contains(':') || s.contains('=');
+    let has_operator = ["==", "!=", ">=", "<=", " in ", " matches ", " exists("]
+        .iter()
+        .any(|op| s.contains(op));
+    has_key_value && has_operator
+}
+
+fn action_validate_draft_doc(doc: &DraftDoc) -> Vec<String> {
+    let mut issues = Vec::new();
+    if doc.task.is_empty() {
+        issues.push("task is empty".to_string());
+        return issues;
+    }
+    let mut names = HashSet::new();
+    for (idx, task) in doc.task.iter().enumerate() {
+        let label = format!("task[{}]", idx);
+        if task.name.trim().is_empty() {
+            issues.push(format!("{label}: name is empty"));
+        }
+        if !task.name.trim().is_empty() && !names.insert(task.name.clone()) {
+            issues.push(format!("{label}: duplicated task name `{}`", task.name));
+        }
+        if !matches!(task.task_type.as_str(), "calc" | "action") {
+            issues.push(format!("{label}: type must be `calc` or `action`"));
+        }
+        if task.domain.is_empty() || task.domain.iter().all(|v| v.trim().is_empty()) {
+            issues.push(format!("{label}: domain is empty"));
+        }
+        if task.scope.is_empty() || task.scope.iter().all(|v| v.trim().is_empty()) {
+            issues.push(format!("{label}: scope is empty"));
+        }
+        if task.step.is_empty() || task.step.iter().all(|v| v.trim().is_empty()) {
+            issues.push(format!("{label}: step is empty"));
+        }
+        if task.rule.is_empty() {
+            issues.push(format!("{label}: rule is empty"));
+        } else {
+            for (ridx, rule) in task.rule.iter().enumerate() {
+                if !calc_is_auto_verifiable_rule(rule) {
+                    issues.push(format!(
+                        "{label}: rule[{ridx}] is not auto-verifiable (`{}`)",
+                        rule
+                    ));
+                }
+            }
+        }
+        for (cidx, contract) in task.contracts.iter().enumerate() {
+            if !calc_is_structured_constraint(contract) {
+                issues.push(format!(
+                    "{label}: contracts[{cidx}] is not structured (`{}`)",
+                    contract
+                ));
+            }
+        }
+    }
+    let known: HashSet<String> = doc.task.iter().map(|t| t.name.clone()).collect();
+    for task in &doc.task {
+        for dep in &task.depends_on {
+            if dep == &task.name {
+                issues.push(format!("task `{}` has self dependency", task.name));
+            } else if !known.contains(dep) {
+                issues.push(format!(
+                    "task `{}` has unknown depends_on `{}`",
+                    task.name, dep
+                ));
+            }
+        }
+    }
+    issues
+}
+
+fn action_resolve_draft_yaml_template_path() -> Option<PathBuf> {
+    let root = action_source_root();
+    let candidates = [
+        root.join("assets").join("code").join("templates").join("draft.yaml"),
+        PathBuf::from("assets").join("code").join("templates").join("draft.yaml"),
+        root.join("assets").join("templates").join("draft.yaml"),
+        PathBuf::from("assets").join("templates").join("draft.yaml"),
+    ];
+    candidates.into_iter().find(|p| p.exists())
+}
+
+fn action_fix_draft_with_llm(draft_path: &Path, raw: &str, issues: &[String]) -> Result<String, String> {
+    let template = action_resolve_draft_yaml_template_path()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .unwrap_or_default();
+    let prompt = format!(
+        "다음 draft.yaml을 검사 결과에 맞게 수정해.\n\
+지시:\n\
+- template YAML을 대상 draft 경로에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n\
+- 규칙은 `$plan-drafts-code`, `$check-code` 스킬을 사용해.\n\
+- 최종 출력은 YAML 본문만.\n\
+검사 결과:\n{}\n\n\
+template:\n{}\n\n\
+current:\n{}",
+        issues
+            .iter()
+            .map(|v| format!("- {}", v))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        template,
+        raw
+    );
+    let output = action_run_codex_exec_capture(&prompt)?;
+    let fixed = calc_extract_yaml_block(&output);
+    let _: DraftDoc = serde_yaml::from_str(&fixed)
+        .map_err(|e| format!("llm fixed draft parse failed {}: {}", draft_path.display(), e))?;
+    Ok(fixed)
+}
+
+pub(crate) fn action_check_and_improve_drafts_before_parallel() -> Result<String, String> {
+    let root = Path::new(".project").join("feature");
+    if !root.exists() {
+        return Ok("check-draft skipped: no feature directory".to_string());
+    }
+    let mut checked = 0usize;
+    let mut fixed = 0usize;
+    let entries =
+        fs::read_dir(&root).map_err(|e| format!("failed to read {}: {}", root.display(), e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("failed to read dir entry: {}", e))?;
+        if !entry
+            .file_type()
+            .map_err(|e| format!("failed to read file type: {}", e))?
+            .is_dir()
+        {
+            continue;
+        }
+        let dir = entry.path();
+        let draft_path = [dir.join("task.yaml"), dir.join("draft.yaml")]
+            .into_iter()
+            .find(|p| p.exists());
+        let Some(draft_path) = draft_path else { continue };
+        checked += 1;
+        let raw = fs::read_to_string(&draft_path)
+            .map_err(|e| format!("failed to read {}: {}", draft_path.display(), e))?;
+        let doc: DraftDoc = serde_yaml::from_str(&raw)
+            .map_err(|e| format!("failed to parse draft {}: {}", draft_path.display(), e))?;
+        let issues = action_validate_draft_doc(&doc);
+        if issues.is_empty() {
+            continue;
+        }
+        let fixed_yaml = action_fix_draft_with_llm(&draft_path, &raw, &issues)?;
+        let fixed_doc: DraftDoc = serde_yaml::from_str(&fixed_yaml)
+            .map_err(|e| format!("fixed draft parse failed {}: {}", draft_path.display(), e))?;
+        let remain = action_validate_draft_doc(&fixed_doc);
+        if !remain.is_empty() {
+            return Err(format!(
+                "check-draft unresolved {}: {}",
+                draft_path.display(),
+                remain.join(" | ")
+            ));
+        }
+        fs::write(&draft_path, &fixed_yaml)
+            .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
+        fixed += 1;
+    }
+    Ok(format!("check-draft done: checked={}, fixed={}", checked, fixed))
+}
+
+pub(crate) fn action_load_app_config() -> Option<config::AppConfig> {
     let root = action_source_root();
     let candidates = [
         root.join("configs.yaml"),
@@ -1117,41 +2081,17 @@ fn calc_extract_yaml_block(raw: &str) -> String {
     raw.trim().to_string()
 }
 
-fn calc_feature_name_camel_like(input: &str) -> String {
-    let mut out = String::new();
-    let mut cap_next = false;
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            if out.is_empty() {
-                out.push(ch.to_ascii_lowercase());
-            } else if cap_next {
-                out.push(ch.to_ascii_uppercase());
-                cap_next = false;
-            } else {
-                out.push(ch.to_ascii_lowercase());
-            }
-        } else {
-            cap_next = true;
-        }
-    }
-    if out.is_empty() {
-        "newFeature".to_string()
-    } else {
-        out
-    }
-}
-
 fn calc_extract_feature_name(raw: &str, fallback: &str) -> String {
     for line in raw.lines() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("FEATURE_NAME:") {
-            let candidate = calc_feature_name_camel_like(rest.trim());
+            let candidate = calc_feature_name_snake_like(rest.trim());
             if !candidate.is_empty() {
                 return candidate;
             }
         }
     }
-    calc_feature_name_camel_like(fallback)
+    calc_feature_name_snake_like(fallback)
 }
 
 fn action_load_drafts_list(path: &Path) -> Result<DraftsListDoc, String> {
@@ -1172,25 +2112,217 @@ fn action_save_drafts_list(path: &Path, doc: &DraftsListDoc) -> Result<(), Strin
     fs::write(path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
 }
 
-fn flow_add_feature_to_planned(feature_name: &str) -> Result<(), String> {
-    let path = Path::new(".project").join("drafts_list.yaml");
-    let mut doc = action_load_drafts_list(&path)?;
-    if !doc.feature.iter().any(|v| v == feature_name) && !doc.planned.iter().any(|v| v == feature_name) {
-        doc.planned.push(feature_name.to_string());
+fn action_collect_generated_draft_feature_names(project_root: &Path) -> Vec<String> {
+    let root = project_root.join(".project").join("feature");
+    let Ok(entries) = fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let dir = entry.path();
+        let has_task = [
+            dir.join("task.yaml"),
+            dir.join("tasks.yaml"),
+            dir.join("draft.yaml"),
+            dir.join("drafts.yaml"),
+        ]
+        .iter()
+        .any(|p| p.exists());
+        if !has_task {
+            continue;
+        }
+        if let Some(name) = entry.file_name().to_str() {
+            out.push(name.to_string());
+        }
     }
-    action_save_drafts_list(&path, &doc)
+    out.sort();
+    out
 }
 
-fn action_read_project_info() -> Result<String, String> {
-    let project_md = fs::read_to_string(PROJECT_MD_PATH)
-        .map_err(|e| format!("failed to read {}: {}", PROJECT_MD_PATH, e))?;
+fn action_sync_draft_state_doc(project_root: &Path, doc: &mut DraftsListDoc) {
+    let generated = action_collect_generated_draft_feature_names(project_root);
+    let generated_set: HashSet<&str> = generated.iter().map(String::as_str).collect();
+    let pending = doc
+        .planned
+        .iter()
+        .filter(|name| !generated_set.contains(name.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    doc.draft_state.generated = generated;
+    doc.draft_state.pending = pending;
+}
+
+fn action_resolve_project_md_path_for_flow() -> PathBuf {
+    PathBuf::from(PROJECT_MD_PATH)
+}
+
+fn action_preflight_draft_create(path: &Path) -> Result<String, String> {
+    let doc = action_load_drafts_list(path)?;
+    if doc.planned.is_empty() {
+        return Err("draft-preflight failed: drafts_list.yaml.planned is empty".to_string());
+    }
+    let features: HashSet<&str> = doc.features.iter().map(String::as_str).collect();
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut overlap = Vec::new();
+    let mut duplicate = Vec::new();
+    let mut invalid_name = Vec::new();
+    for name in &doc.planned {
+        if features.contains(name.as_str()) {
+            overlap.push(name.clone());
+        }
+        if !seen.insert(name.as_str()) {
+            duplicate.push(name.clone());
+        }
+        if !calc_is_valid_snake_feature_key(name) {
+            invalid_name.push(name.clone());
+        }
+    }
+    if !overlap.is_empty() || !duplicate.is_empty() || !invalid_name.is_empty() {
+        return Err(format!(
+            "draft-preflight failed: overlap={:?}, duplicate={:?}, invalid_name={:?}",
+            overlap, duplicate, invalid_name
+        ));
+    }
+    Ok(format!("draft-preflight ok: planned={}", doc.planned.len()))
+}
+
+pub(crate) fn action_preflight_parallel_build(path: &Path) -> Result<String, String> {
+    let doc = action_load_drafts_list(path)?;
+    if doc.planned.is_empty() {
+        return Err("parallel-preflight failed: drafts_list.yaml.planned is empty".to_string());
+    }
+    let mut missing = Vec::new();
+    for name in &doc.planned {
+        let dir = Path::new(".project").join("feature").join(name);
+        let has_task = [
+            dir.join("task.yaml"),
+            dir.join("tasks.yaml"),
+            dir.join("draft.yaml"),
+            dir.join("drafts.yaml"),
+        ]
+        .iter()
+        .any(|p| p.exists());
+        if !has_task {
+            missing.push(name.clone());
+        }
+    }
+    if !missing.is_empty() {
+        return Err(format!(
+            "parallel-preflight failed: missing draft/task file for planned={:?}",
+            missing
+        ));
+    }
+    Ok(format!(
+        "parallel-preflight ok: planned={} files_ready={}",
+        doc.planned.len(),
+        doc.planned.len()
+    ))
+}
+
+fn add_feature_to_planned(feature_name: &str) -> Result<(), String> {
+    let path = action_resolve_drafts_list_path(Path::new("."))?;
+    action_add_feature_to_planned_at(&path, feature_name)
+}
+
+fn action_add_feature_to_planned_doc(doc: &mut DraftsListDoc, feature_name: &str) -> bool {
+    let mut changed = false;
+    if !doc.features.iter().any(|v| v == feature_name) && !doc.planned.iter().any(|v| v == feature_name) {
+        doc.planned.push(feature_name.to_string());
+        changed = true;
+    }
+    if !doc.planned_items.iter().any(|v| v.name == feature_name) {
+        doc.planned_items.push(PlannedItem {
+            name: feature_name.to_string(),
+            value: feature_name.to_string(),
+        });
+        changed = true;
+    }
+    changed
+}
+
+fn action_add_feature_to_planned_at(path: &Path, feature_name: &str) -> Result<(), String> {
+    let mut doc = action_load_drafts_list(path)?;
+    if action_add_feature_to_planned_doc(&mut doc, feature_name) {
+        action_save_drafts_list(path, &doc)?;
+    }
+    Ok(())
+}
+
+fn action_promote_planned_to_features_doc(doc: &mut DraftsListDoc, items: &[String]) -> bool {
+    let mut changed = false;
+    for item in items {
+        if doc.planned.iter().any(|v| v == item) {
+            doc.planned.retain(|v| v != item);
+            doc.planned_items.retain(|v| v.name != *item);
+            changed = true;
+        }
+        if !doc.features.iter().any(|v| v == item) {
+            doc.features.push(item.clone());
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn action_promote_planned_to_features_at(path: &Path, items: &[String]) -> Result<(), String> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    let mut doc = action_load_drafts_list(path)?;
+    if action_promote_planned_to_features_doc(&mut doc, items) {
+        action_save_drafts_list(path, &doc)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn action_promote_planned_to_features(items: &[String]) -> Result<(), String> {
+    let path = action_resolve_drafts_list_path(Path::new("."))?;
+    action_promote_planned_to_features_at(&path, items)
+}
+
+pub(crate) fn action_read_project_info() -> Result<String, String> {
+    let path = action_resolve_project_md_path_for_flow();
+    let project_md = fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
     Ok(calc_extract_project_info(&project_md))
 }
 
+fn action_run_check_code_after_draft_changes(
+    feature_names: &[String],
+    trigger: &str,
+) -> Result<String, String> {
+    if feature_names.is_empty() {
+        return Ok("check-code follow-up skipped: no draft target".to_string());
+    }
+    let mut target_lines = Vec::new();
+    for name in feature_names {
+        target_lines.push(format!(
+            "- {}: .project/feature/{}/task.yaml (or draft.yaml)",
+            name, name
+        ));
+    }
+    let prompt = format!(
+        "트리거: {}\n대상:\n{}\n\n지시:\n- `$check-code` 스킬을 사용해 점검/수정을 수행해.\n- YAML/Markdown 참조 파일이 있으면 먼저 읽고 값을 채워야 할 헤더/속성을 정리한 뒤 형식에 맞게 반영해.\n- 문제가 없으면 `NO_CHANGE`를 출력.",
+        trigger,
+        target_lines.join("\n")
+    );
+    let raw = action_run_codex_exec_capture(&prompt)?;
+    let line = raw.lines().next().unwrap_or("").trim();
+    if line.is_empty() {
+        Ok("check-code follow-up executed".to_string())
+    } else {
+        Ok(format!("check-code follow-up: {}", line))
+    }
+}
+
 fn action_source_root() -> PathBuf {
-    if let Ok(exe) = env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            return parent.to_path_buf();
+    if let Ok(explicit) = env::var("ORC_HOME") {
+        let path = PathBuf::from(explicit.trim());
+        if !path.as_os_str().is_empty() {
+            return path;
         }
     }
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1207,6 +2339,11 @@ fn action_legacy_registry_path() -> PathBuf {
 fn action_resolve_project_template_path() -> Result<PathBuf, String> {
     let root = action_source_root();
     let candidates = [
+        root.join("assets").join("code").join("templates").join("project.md"),
+        PathBuf::from("assets")
+            .join("code")
+            .join("templates")
+            .join("project.md"),
         root.join("assets").join("templates").join("project.md"),
         PathBuf::from("assets").join("templates").join("project.md"),
         root.join("src").join("assets").join("templates").join("project.md"),
@@ -1226,6 +2363,14 @@ fn action_resolve_project_template_path() -> Result<PathBuf, String> {
 fn action_resolve_drafts_list_template_path() -> Result<PathBuf, String> {
     let root = action_source_root();
     let candidates = [
+        root.join("assets")
+            .join("code")
+            .join("templates")
+            .join("drafts_list.yaml"),
+        PathBuf::from("assets")
+            .join("code")
+            .join("templates")
+            .join("drafts_list.yaml"),
         root.join("assets").join("templates").join("drafts_list.yaml"),
         PathBuf::from("assets").join("templates").join("drafts_list.yaml"),
         root.join("src").join("assets").join("templates").join("drafts_list.yaml"),
@@ -1245,6 +2390,22 @@ fn action_resolve_drafts_list_template_path() -> Result<PathBuf, String> {
 fn action_resolve_detail_project_prompt_path() -> Result<PathBuf, String> {
     let root = action_source_root();
     let candidates = [
+        root.join("assets")
+            .join("code")
+            .join("prompt")
+            .join("detail-project.txt"),
+        root.join("assets")
+            .join("code")
+            .join("prompts")
+            .join("detail-project.txt"),
+        PathBuf::from("assets")
+            .join("code")
+            .join("prompt")
+            .join("detail-project.txt"),
+        PathBuf::from("assets")
+            .join("code")
+            .join("prompts")
+            .join("detail-project.txt"),
         root.join("assets").join("prompt").join("detail-project.txt"),
         root.join("assets").join("prompts").join("detail-project.txt"),
         PathBuf::from("assets").join("prompt").join("detail-project.txt"),
@@ -1265,9 +2426,29 @@ fn action_resolve_detail_project_prompt_path() -> Result<PathBuf, String> {
     ))
 }
 
-fn action_resolve_task_template_path() -> Result<PathBuf, String> {
+pub(crate) fn action_resolve_task_template_path() -> Result<PathBuf, String> {
     let root = action_source_root();
     let candidates = [
+        root.join("assets").join("code").join("prompt").join("tasks.txt"),
+        root.join("assets").join("code").join("prompts").join("tasks.txt"),
+        root.join("assets")
+            .join("code")
+            .join("templates")
+            .join("prompts")
+            .join("tasks.txt"),
+        PathBuf::from("assets")
+            .join("code")
+            .join("prompt")
+            .join("tasks.txt"),
+        PathBuf::from("assets")
+            .join("code")
+            .join("prompts")
+            .join("tasks.txt"),
+        PathBuf::from("assets")
+            .join("code")
+            .join("templates")
+            .join("prompts")
+            .join("tasks.txt"),
         root.join("assets").join("templates").join("prompts").join("tasks.txt"),
         PathBuf::from("assets").join("templates").join("prompts").join("tasks.txt"),
         root.join("src").join("assets").join("templates").join("prompts").join("tasks.txt"),
@@ -1290,7 +2471,7 @@ fn action_is_directory_empty(path: &Path) -> Result<bool, String> {
     Ok(entries.next().is_none())
 }
 
-fn action_initialize_parallel_workspace_if_empty(path: &Path) -> Result<Option<String>, String> {
+pub(crate) fn action_initialize_parallel_workspace_if_empty(path: &Path) -> Result<Option<String>, String> {
     if !action_is_directory_empty(path)? {
         return Ok(None);
     }
@@ -1301,10 +2482,14 @@ fn action_initialize_parallel_workspace_if_empty(path: &Path) -> Result<Option<S
     fs::create_dir_all(project_dir.join("clear"))
         .map_err(|e| format!("failed to create {}: {}", project_dir.display(), e))?;
 
-    let template = action_resolve_project_template_path()
-        .ok()
-        .and_then(|p| fs::read_to_string(p).ok())
-        .unwrap_or_else(|| DEFAULT_PROJECT_MD.to_string());
+    let project_template_path = action_resolve_project_template_path()?;
+    let template = fs::read_to_string(&project_template_path).map_err(|e| {
+        format!(
+            "failed to read project template {}: {}",
+            project_template_path.display(),
+            e
+        )
+    })?;
     fs::write(project_dir.join("project.md"), template).map_err(|e| {
         format!(
             "failed to write {}: {}",
@@ -1312,12 +2497,17 @@ fn action_initialize_parallel_workspace_if_empty(path: &Path) -> Result<Option<S
             e
         )
     })?;
+    let _ = action_sync_project_tasks_list_from_project_md(path)?;
 
     let drafts_list_path = project_dir.join("drafts_list.yaml");
-    let draft_template = action_resolve_drafts_list_template_path()
-        .ok()
-        .and_then(|p| fs::read_to_string(p).ok())
-        .unwrap_or_else(|| serde_yaml::to_string(&DraftsListDoc::default()).unwrap_or_default());
+    let drafts_template_path = action_resolve_drafts_list_template_path()?;
+    let draft_template = fs::read_to_string(&drafts_template_path).map_err(|e| {
+        format!(
+            "failed to read drafts_list template {}: {}",
+            drafts_template_path.display(),
+            e
+        )
+    })?;
     fs::write(&drafts_list_path, draft_template)
         .map_err(|e| format!("failed to write {}: {}", drafts_list_path.display(), e))?;
 
@@ -1327,7 +2517,7 @@ fn action_initialize_parallel_workspace_if_empty(path: &Path) -> Result<Option<S
     )))
 }
 
-fn action_collect_parallel_feature_tasks() -> Result<Vec<ParallelFeatureTask>, String> {
+pub(crate) fn action_collect_parallel_feature_tasks() -> Result<Vec<ParallelFeatureTask>, String> {
     let root = Path::new(".project").join("feature");
     if !root.exists() {
         return Ok(Vec::new());
@@ -1345,7 +2535,12 @@ fn action_collect_parallel_feature_tasks() -> Result<Vec<ParallelFeatureTask>, S
             continue;
         }
         let feature_dir = entry.path();
-        let draft_candidates = [feature_dir.join("drafts.yaml"), feature_dir.join("draft.yaml")];
+        let draft_candidates = [
+            feature_dir.join("task.yaml"),
+            feature_dir.join("tasks.yaml"),
+            feature_dir.join("drafts.yaml"),
+            feature_dir.join("draft.yaml"),
+        ];
         let draft_path = match draft_candidates.into_iter().find(|p| p.exists()) {
             Some(path) => path,
             None => continue,
@@ -1358,17 +2553,27 @@ fn action_collect_parallel_feature_tasks() -> Result<Vec<ParallelFeatureTask>, S
             .file_name()
             .map(|v| v.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown".to_string());
+        let mut depends_on = doc.depends_on.clone();
+        if depends_on.is_empty() {
+            for t in &doc.task {
+                for dep in &t.depends_on {
+                    if !depends_on.iter().any(|v| v == dep) {
+                        depends_on.push(dep.clone());
+                    }
+                }
+            }
+        }
         out.push(ParallelFeatureTask {
             name,
             draft_path,
-            depends_on: doc.depends_on,
+            depends_on,
         });
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(out)
 }
 
-fn action_build_task_prompt(
+pub(crate) fn action_build_task_prompt(
     task_template: &str,
     project_info: &str,
     draft_path: &Path,
@@ -1396,179 +2601,8 @@ fn action_build_task_prompt(
     Ok(rendered)
 }
 
-fn calc_update_task_status(
-    statuses: &[(String, ui::TaskRuntimeState)],
-    target: &str,
-    state: ui::TaskRuntimeState,
-) -> Vec<(String, ui::TaskRuntimeState)> {
-    statuses
-        .iter()
-        .map(|(name, old)| {
-            if name == target {
-                (name.clone(), state)
-            } else {
-                (name.clone(), *old)
-            }
-        })
-        .collect()
-}
-
-fn action_print_parallel_modal(statuses: &[(String, ui::TaskRuntimeState)]) {
+pub(crate) fn action_print_parallel_modal(statuses: &[(String, ui::TaskRuntimeState)]) {
     println!("{}", ui::render_parallel_modal(statuses));
-}
-
-async fn action_run_one_parallel_task(
-    semaphore: Arc<Semaphore>,
-    model_bin: String,
-    task_name: String,
-    prompt: String,
-    timeout_sec: u64,
-    _auto_yes: bool,
-    dangerous_bypass: bool,
-) -> Result<String, String> {
-    let _permit = semaphore
-        .acquire_owned()
-        .await
-        .map_err(|e| format!("failed to acquire semaphore: {}", e))?;
-    let mut cmd = tokio::process::Command::new(&model_bin);
-    cmd.arg("exec");
-    if dangerous_bypass && calc_model_supports_dangerous_flag(&model_bin) {
-        cmd.arg("--dangerously-bypass-approvals-and-sandbox");
-    }
-    cmd.arg(prompt);
-    let run_fut = cmd.status();
-    let status = tokio::time::timeout(Duration::from_secs(timeout_sec), run_fut)
-        .await
-        .map_err(|_| format!("timeout ({timeout_sec}s) for {task_name}"))?
-        .map_err(|e| format!("failed to run command for {task_name}: {}", e))?;
-    if status.success() {
-        Ok(task_name)
-    } else {
-        Err(format!(
-            "{} failed with exit code {:?}",
-            task_name,
-            status.code()
-        ))
-    }
-}
-
-async fn flow_run_parallel_build_code() -> Result<String, String> {
-    let cwd = env::current_dir().map_err(|e| format!("failed to read cwd: {}", e))?;
-    if let Some(init_msg) = action_initialize_parallel_workspace_if_empty(&cwd)? {
-        println!("{}", init_msg);
-    }
-
-    let app_conf = action_load_app_config();
-    let max_parallel = app_conf.as_ref().map_or(10, config::AppConfig::default_max_parallel);
-    let timeout_sec = app_conf.as_ref().map_or(1800, config::AppConfig::default_timeout_sec);
-    let auto_yes = app_conf.as_ref().is_none_or(config::AppConfig::auto_yes_enabled);
-    let dangerous_bypass = app_conf
-        .as_ref()
-        .is_none_or(config::AppConfig::dangerous_bypass_enabled);
-    let model_bin = action_default_model_bin();
-
-    let project_info = action_read_project_info()?;
-    let task_template_path = action_resolve_task_template_path()?;
-    let task_template = fs::read_to_string(&task_template_path)
-        .map_err(|e| format!("failed to read {}: {}", task_template_path.display(), e))?;
-    let mut pending = action_collect_parallel_feature_tasks()?;
-    if pending.is_empty() {
-        return Ok("no feature draft to run".to_string());
-    }
-
-    let mut statuses: Vec<(String, ui::TaskRuntimeState)> = pending
-        .iter()
-        .map(|t| (t.name.clone(), ui::TaskRuntimeState::Inactive))
-        .collect();
-    action_print_parallel_modal(&statuses);
-
-    let semaphore = Arc::new(Semaphore::new(max_parallel));
-    let mut finished: HashSet<String> = HashSet::new();
-    let mut success = 0usize;
-    let mut failed = 0usize;
-
-    loop {
-        if pending.is_empty() {
-            break;
-        }
-        let runnable_names: HashSet<String> = pending
-            .iter()
-            .filter(|task| task.depends_on.iter().all(|dep| finished.contains(dep)))
-            .map(|task| task.name.clone())
-            .collect();
-
-        if runnable_names.is_empty() {
-            for task in pending {
-                failed += 1;
-                let reason = format!("blocked by unresolved depends_on: {:?}", task.depends_on);
-                let _ = action_append_failure_log(&task.name, &reason);
-            }
-            break;
-        }
-
-        let mut round = Vec::new();
-        let mut remain = Vec::new();
-        for task in pending {
-            if runnable_names.contains(&task.name) {
-                round.push(task);
-            } else {
-                remain.push(task);
-            }
-        }
-        pending = remain;
-
-        let mut handles = Vec::new();
-        for task in round {
-            statuses = calc_update_task_status(&statuses, &task.name, ui::TaskRuntimeState::Active);
-            action_print_parallel_modal(&statuses);
-            let prompt = action_build_task_prompt(&task_template, &project_info, &task.draft_path)?;
-            handles.push(tokio::spawn(action_run_one_parallel_task(
-                semaphore.clone(),
-                model_bin.clone(),
-                task.name.clone(),
-                prompt,
-                timeout_sec,
-                auto_yes,
-                dangerous_bypass,
-            )));
-        }
-
-        for handle in handles {
-            match handle.await {
-                Ok(Ok(name)) => {
-                    success += 1;
-                    finished.insert(name.clone());
-                    statuses = calc_update_task_status(&statuses, &name, ui::TaskRuntimeState::Clear);
-                    action_print_parallel_modal(&statuses);
-                }
-                Ok(Err(reason)) => {
-                    failed += 1;
-                    let task_name = reason.split_whitespace().next().unwrap_or("parallel_task");
-                    let _ = action_append_failure_log(task_name, &reason);
-                }
-                Err(join_err) => {
-                    failed += 1;
-                    let _ = action_append_failure_log("parallel_task", &join_err.to_string());
-                }
-            }
-        }
-    }
-    Ok(format!(
-        "run_parallel_build_code finished: success={}, failed={}",
-        success, failed
-    ))
-}
-
-async fn flow_press_key(key: &str) -> Result<String, String> {
-    let config = action_load_app_config();
-    let run_parallel_key = config
-        .as_ref()
-        .map_or("p", config::AppConfig::run_parallel_key);
-    if key == run_parallel_key {
-        flow_run_parallel_build_code().await
-    } else {
-        Err(format!("unmapped key: {} (run_parallel key: {})", key, run_parallel_key))
-    }
 }
 
 #[tokio::main]
@@ -1577,16 +2611,311 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
     let program = cli::calc_program_name(&args);
     if cli::calc_is_help_command(&args) {
-        cli::flow_print_usage(program);
+        cli::print_usage(program);
         return;
     }
 
-    match cli::flow_execute_cli(&args).await {
+    match cli::execute_cli(&args).await {
         Ok(output) => println!("{}", output),
         Err(err) => {
             eprintln!("{}", err);
-            cli::flow_print_usage(program);
+            cli::print_usage(program);
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_temp_dir(prefix: &str) -> PathBuf {
+        let base = std::env::temp_dir();
+        let uniq = format!(
+            "{}_{}_{}",
+            prefix,
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        let dir = base.join(uniq);
+        fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    #[test]
+    fn sync_project_md_to_tasks_list_populates_planned_and_items() {
+        let root = make_temp_dir("orc_sync");
+        let project_dir = root.join("project");
+        let meta = project_dir.join(".project");
+        fs::create_dir_all(&meta).expect("create project meta");
+        let md = r#"# info
+- name: sample
+
+## features
+- existingFeature
+
+## plan
+- promptPreprocessCli
+- fileLogHelper
+"#;
+        fs::write(meta.join("project.md"), md).expect("write project.md");
+
+        let changed =
+            action_sync_project_tasks_list_from_project_md(&project_dir).expect("sync tasks_list");
+        assert!(changed);
+
+        let doc = action_load_drafts_list(&meta.join("drafts_list.yaml")).expect("load drafts_list");
+        let features_key = calc_feature_name_snake_like("existing_feature");
+        let planned_a = calc_feature_name_snake_like("prompt_preprocess_cli");
+        let planned_b = calc_feature_name_snake_like("file_log_helper");
+        assert!(doc.features.iter().any(|v| v == &features_key));
+        assert!(doc.planned.iter().any(|v| v == &planned_a));
+        assert!(doc.planned.iter().any(|v| v == &planned_b));
+        assert!(
+            doc.planned_items
+                .iter()
+                .any(|v| v.name == planned_a)
+        );
+        assert!(
+            doc.planned_items
+                .iter()
+                .any(|v| v.name == planned_b)
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn extract_project_md_list_prefers_action_segment_before_pipe() {
+        let md = r#"# info
+- name: sample
+
+## plan
+- 플레이어 입력 처리 구성 | src/input/playerInput.ts, src/game/updateLoop.ts | 입력 이벤트 전달
+- 버튼 클릭 점프: cube를 누르면 점프한다 | src/features/jump/controller.tsx | 점프 실행
+"#;
+        let list = calc_extract_project_md_list_by_header(md, "## plan");
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0], "플레이어 입력 처리 구성");
+        assert_eq!(list[1], "버튼 클릭 점프");
+    }
+
+    #[test]
+    fn feature_key_like_rejects_fileish_path_style_names() {
+        assert!(calc_is_feature_key_like("render_cube"));
+        assert!(!calc_is_feature_key_like("src_features_game_start_handlers_ts"));
+        assert!(!calc_is_feature_key_like("easing_src_features_game_start_transition_ts"));
+    }
+
+    #[test]
+    fn sync_project_md_overrides_placeholder_initialized_tasks_list() {
+        let root = make_temp_dir("orc_sync_placeholder");
+        let project_dir = root.join("project");
+        let meta = project_dir.join(".project");
+        fs::create_dir_all(&meta).expect("create project meta");
+        let md = r#"# info
+- name: sample
+
+## features
+1. task 생성 | src-tauri/src/commands/create_task.rs | 신규 task row 저장
+2. task 삭제 | src-tauri/src/commands/delete_task.rs | task row 제거
+"#;
+        fs::write(meta.join("project.md"), md).expect("write project.md");
+        let placeholder = DraftsListDoc {
+            planned: vec![
+                "project_project_md".to_string(),
+                "features_project_md_features".to_string(),
+                "features_project_features_work_draft_yaml".to_string(),
+                "draft_yaml".to_string(),
+            ],
+            planned_items: vec![
+                PlannedItem {
+                    name: "project_project_md".to_string(),
+                    value: "프로젝트 정보 입력 | .project/project.md 생성 | 설계 기준 문서 확보".to_string(),
+                },
+                PlannedItem {
+                    name: "features_project_md_features".to_string(),
+                    value: "features 리스트 입력 | project.md features 항목 업데이트 | 구현 범위 확정"
+                        .to_string(),
+                },
+                PlannedItem {
+                    name: "features_project_features_work_draft_yaml".to_string(),
+                    value: "features 항목 분석 | .project/features/work/기능이름/draft.yaml 생성 | 기능별 구현 명세 확보"
+                        .to_string(),
+                },
+                PlannedItem {
+                    name: "draft_yaml".to_string(),
+                    value: "draft.yaml 읽기 | 각 기능 폴더 내 코드 파일 생성/수정 | 기능 구현 완료"
+                        .to_string(),
+                },
+            ],
+            sync_initialized: true,
+            ..Default::default()
+        };
+        action_save_drafts_list(&meta.join("drafts_list.yaml"), &placeholder)
+            .expect("write placeholder drafts_list");
+
+        let changed =
+            action_sync_project_tasks_list_from_project_md(&project_dir).expect("sync tasks_list");
+        assert!(changed);
+
+        let doc = action_load_drafts_list(&meta.join("drafts_list.yaml")).expect("load drafts_list");
+        assert!(!doc.planned.iter().any(|v| v == "project_project_md"));
+        assert_eq!(doc.planned.len(), 2);
+        assert_eq!(doc.planned_items.len(), 2);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sync_project_md_overrides_stale_template_like_tasks_list() {
+        let root = make_temp_dir("orc_sync_stale_template");
+        let project_dir = root.join("project");
+        let meta = project_dir.join(".project");
+        fs::create_dir_all(&meta).expect("create project meta");
+        let md = r#"# info
+- name: sample
+
+## features
+1. click-cube-jump | src/domains/player/jump.ts | jump
+2. count-100-win | src/domains/system/win-condition.ts | win
+
+## plan
+1. cube 클릭 점프 액션을 구현한다.
+2. 100회 점프 승리 조건을 구현한다.
+"#;
+        fs::write(meta.join("project.md"), md).expect("write project.md");
+        let stale = DraftsListDoc {
+            planned: vec![
+                "plan_feature_e6740374".to_string(),
+                "features".to_string(),
+                "draft_yaml".to_string(),
+            ],
+            planned_items: vec![
+                PlannedItem {
+                    name: "plan_feature_e6740374".to_string(),
+                    value: "프로젝트 정보 입력".to_string(),
+                },
+                PlannedItem {
+                    name: "features".to_string(),
+                    value: "features 리스트 입력".to_string(),
+                },
+                PlannedItem {
+                    name: "draft_yaml".to_string(),
+                    value: "draft.yaml 읽기".to_string(),
+                },
+            ],
+            sync_initialized: true,
+            ..Default::default()
+        };
+        action_save_drafts_list(&meta.join("drafts_list.yaml"), &stale)
+            .expect("write stale drafts_list");
+
+        let changed =
+            action_sync_project_tasks_list_from_project_md(&project_dir).expect("sync tasks_list");
+        assert!(changed);
+        let doc = action_load_drafts_list(&meta.join("drafts_list.yaml")).expect("load drafts_list");
+        assert!(!doc.planned.iter().any(|v| v == "plan_feature_e6740374"));
+        assert!(!doc.planned.iter().any(|v| v == "features"));
+        assert!(!doc.planned.iter().any(|v| v == "draft_yaml"));
+        assert!(!doc.features.is_empty());
+        assert!(!doc.planned.is_empty());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sync_draft_state_doc_tracks_generated_and_pending() {
+        let root = make_temp_dir("orc_draft_state");
+        let project_dir = root.join("project");
+        let meta = project_dir.join(".project");
+        fs::create_dir_all(meta.join("feature").join("alpha_feature"))
+            .expect("create generated feature dir");
+        fs::write(
+            meta.join("feature").join("alpha_feature").join("task.yaml"),
+            "task:\n- name: alpha\n",
+        )
+        .expect("write generated task");
+
+        let mut doc = DraftsListDoc {
+            planned: vec!["alpha_feature".to_string(), "beta_feature".to_string()],
+            ..Default::default()
+        };
+        action_sync_draft_state_doc(&project_dir, &mut doc);
+        assert_eq!(doc.draft_state.generated, vec!["alpha_feature".to_string()]);
+        assert_eq!(doc.draft_state.pending, vec!["beta_feature".to_string()]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn add_feature_to_planned_doc_keeps_items_in_sync() {
+        let mut doc = DraftsListDoc::default();
+        let changed = action_add_feature_to_planned_doc(&mut doc, "new_feature");
+        assert!(changed);
+        assert_eq!(doc.planned, vec!["new_feature".to_string()]);
+        assert_eq!(doc.planned_items.len(), 1);
+        assert_eq!(doc.planned_items[0].name, "new_feature");
+        assert_eq!(doc.planned_items[0].value, "new_feature");
+    }
+
+    #[test]
+    fn promote_planned_to_features_doc_removes_planned_items() {
+        let mut doc = DraftsListDoc {
+            features: vec![],
+            planned: vec!["alpha_feature".to_string(), "beta_feature".to_string()],
+            planned_items: vec![
+                PlannedItem {
+                    name: "alpha_feature".to_string(),
+                    value: "alpha feature value".to_string(),
+                },
+                PlannedItem {
+                    name: "beta_feature".to_string(),
+                    value: "beta feature value".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let changed = action_promote_planned_to_features_doc(&mut doc, &["alpha_feature".to_string()]);
+        assert!(changed);
+        assert!(doc.features.iter().any(|v| v == "alpha_feature"));
+        assert!(!doc.planned.iter().any(|v| v == "alpha_feature"));
+        assert!(!doc.planned_items.iter().any(|v| v.name == "alpha_feature"));
+        assert!(doc.planned_items.iter().any(|v| v.name == "beta_feature"));
+    }
+
+    #[test]
+    fn preflight_draft_create_rejects_invalid_planned_name() {
+        let root = make_temp_dir("orc_preflight_draft");
+        let tasks_path = root.join(".project").join("drafts_list.yaml");
+        fs::create_dir_all(tasks_path.parent().expect("parent")).expect("create parent");
+        let doc = DraftsListDoc {
+            planned: vec!["문장형 기능".to_string()],
+            ..Default::default()
+        };
+        action_save_drafts_list(&tasks_path, &doc).expect("save drafts_list");
+        let err = action_preflight_draft_create(&tasks_path).expect_err("should fail");
+        assert!(err.contains("invalid_name"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn preflight_parallel_build_rejects_missing_task_files() {
+        let root = make_temp_dir("orc_preflight_parallel");
+        let old_cwd = env::current_dir().expect("cwd");
+        fs::create_dir_all(root.join(".project")).expect("create .project");
+        let tasks_path = root.join(".project").join("drafts_list.yaml");
+        let doc = DraftsListDoc {
+            planned: vec!["sample_feature".to_string()],
+            ..Default::default()
+        };
+        action_save_drafts_list(&tasks_path, &doc).expect("save drafts_list");
+        env::set_current_dir(&root).expect("enter temp root");
+        let err = action_preflight_parallel_build(Path::new(".project").join("drafts_list.yaml").as_path())
+            .expect_err("should fail");
+        assert!(err.contains("missing draft/task file"));
+        env::set_current_dir(old_cwd).expect("restore cwd");
+        let _ = fs::remove_dir_all(root);
     }
 }

@@ -1,0 +1,6 @@
+presets:
+  - name: three-fiber-baseline
+    libraries:
+      - three
+      - "@react-three/fiber"
+      - "@react-three/drei"
