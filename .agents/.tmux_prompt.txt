@@ -1,0 +1,21 @@
+# Implementation Doc
+
+## Task
+- bootstrap 실행 기준 보강(react: 웹 hello world, rust: cargo run hello world)
+- /tmp 재현 기준으로 three fiber spec 반영 확인 및 누락 보정
+- Project tab load preset 기능을 assets/presets/project.yaml과 연결
+- preset 내용은 spec 라이브러리 기본 목록만 허용
+
+## Files
+- src/ui/mod.rs
+- assets/presets/project.yaml (new)
+- .agents/log.md
+
+## Checks
+- cargo test
+- /tmp 재현 점검: three fiber spec => package.json에 three/@react-three/fiber/@react-three/drei 포함
+- rust bootstrap 결과 main.rs println!("hello world") 확인
+- Project tab에서 l 키로 preset 로드 시 spec 필드 반영 확인
+
+---
+구현 문서가 누락 없이 타당한지 검토해줘.

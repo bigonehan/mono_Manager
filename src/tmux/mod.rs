@@ -42,3 +42,16 @@ pub fn action_rename_pane(pane_id: &str, name: &str) -> Result<(), String> {
     action_run_tmux(&["rename-pane", "-t", pane_id, name])?;
     Ok(())
 }
+
+pub fn tsend(pane_id: &str, msg: &str, option: &str) -> Result<String, String> {
+    let send_option = match option {
+        "raw" => SendOption::Raw,
+        "enter" => SendOption::Enter,
+        _ => return Err("tsend option must be `enter` or `raw`".to_string()),
+    };
+    action_send_keys(pane_id, msg, send_option)?;
+    Ok(format!(
+        "tsend done: pane={} option={} msg={}",
+        pane_id, option, msg
+    ))
+}

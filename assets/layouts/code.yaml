@@ -1,0 +1,39 @@
+grid:
+  columns: 10
+  rows: 10
+panels:
+  - id: project
+    name: Project
+    type: info
+    selected_view: project_meta
+    shortcut: enter: move-detail
+    cell_start: 1
+    cell_end: 27
+  - id: rule
+    name: Rule
+    type: list
+    selected_view: rule_list
+    shortcut: enter: edit-rule
+    cell_start: 31
+    cell_end: 64
+  - id: constraint
+    name: Constraint
+    type: list
+    selected_view: constraint_list
+    shortcut: enter: edit-constraint
+    cell_start: 35
+    cell_end: 67
+  - id: features
+    name: Features
+    type: list
+    selected_view: feature_list
+    shortcut: enter: edit-feature
+    cell_start: 71
+    cell_end: 97
+  - id: drafts
+    name: Drafts
+    type: runtime
+    selected_view: parallel_status
+    shortcut: b: create-draft/enter-parallel
+    cell_start: 8
+    cell_end: 100

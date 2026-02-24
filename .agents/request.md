@@ -1,0 +1,4 @@
+- [ ] bootstrap 완료 기준 반영 확인(react 웹 hello world, rust cargo run hello world)
+- [ ] /tmp 검토 및 three fiber spec 미반영 원인 확인/수정 검증
+- [ ] Project tab preset 로더 + assets/presets 파일 추가
+- [ ] preset 내용은 spec 라이브러리 기본 목록만 사용

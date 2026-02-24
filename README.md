@@ -7,14 +7,13 @@
 ## Main Commands (orc)
 - `orc help`
 - `orc list-projects`
-- `orc plan-init [-n name] [-d description] [-s spec] [--llm llm]`
 - `orc create-project <name> [path] [description]`
-- `orc add-project <name> <path> [description]`
 - `orc select-project <name>`
 - `orc delete-project <name>`
 - `orc plan-project [llm]`
 - `orc detail-project [llm]`
 - `orc create-draft`
+- `orc add-plan [hint]`
 - `orc add-draft <feature_name> [request]`
 - `orc delete-draft <feature_name>`
 - `orc validate-tasks <feature_name>`
