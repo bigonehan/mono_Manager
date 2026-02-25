@@ -661,6 +661,27 @@ fn calc_extract_project_md_list_by_header(project_md: &str, header: &str) -> Vec
     out
 }
 
+fn calc_extract_project_md_domain_names(project_md: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in project_md.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("- **name**:") {
+            continue;
+        }
+        let mut value = trimmed
+            .trim_start_matches("- **name**:")
+            .trim()
+            .trim_matches('`')
+            .to_ascii_lowercase();
+        value = calc_feature_name_snake_like(&value);
+        if value.is_empty() || out.iter().any(|v| v == &value) {
+            continue;
+        }
+        out.push(value);
+    }
+    out
+}
+
 fn calc_is_fileish_feature_key(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     lower.starts_with("src_")
@@ -748,7 +769,7 @@ fn calc_fallback_feature_key(raw: &str) -> String {
             hash ^= *b as u32;
             hash = hash.wrapping_mul(16777619);
         }
-        key = format!("plan_feature_{:08x}", hash);
+        key = format!("func_{:08x}", hash);
     }
     key
 }
@@ -815,7 +836,10 @@ fn action_normalize_feature_key_with_llm(raw: &str) -> String {
     }
 }
 
-fn action_generate_planned_items_with_llm(raw_items: &[String]) -> Vec<PlannedItem> {
+fn action_generate_planned_items_with_llm(
+    raw_items: &[String],
+    available_domains: &[String],
+) -> Vec<PlannedItem> {
     let inputs: Vec<String> = raw_items
         .iter()
         .map(|v| v.trim())
@@ -841,17 +865,33 @@ fn action_generate_planned_items_with_llm(raw_items: &[String]) -> Vec<PlannedIt
         .map(|v| format!("- {}", v))
         .collect::<Vec<_>>()
         .join("\n");
+    let domains_text = if available_domains.is_empty() {
+        "- (none)".to_string()
+    } else {
+        available_domains
+            .iter()
+            .map(|v| format!("- {}", v))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     let prompt = format!(
         "다음 planned 기능 후보를 코드 구현 단위로 정리해.\n\
 출력은 반드시 YAML만:\n\
 planned_items:\n\
   - name: <verb_noun snake_case 영문 키>\n\
     value: <원문 의미를 유지한 한 줄 설명>\n\
+생성 절차:\n\
+1) 한국어 문장을 자연스러운 영문 문장으로 변환\n\
+2) 영문 문장을 2~4개 핵심 토큰으로 축약\n\
+3) 현재 가능한 도메인 목록에서 가장 적절한 도메인을 고름\n\
+4) name은 `<domain>_<verb>_<noun>` 또는 `<verb>_<noun>` 형태로 생성\n\
 규칙:\n\
 1) name은 중복 없이 영문 소문자 snake_case(동사_명사)\n\
 2) value는 한국어 가능, 1줄\n\
 3) 불필요한 설명문 금지\n\
+현재 가능한 도메인 목록:\n{}\n\
 입력:\n{}",
+        domains_text,
         bullet
     );
     let Ok(raw) = action_run_codex_exec_capture(&prompt) else {
@@ -962,6 +1002,7 @@ pub(crate) fn action_sync_project_tasks_list_from_project_md(project_root: &Path
     };
     let plan_keys = calc_extract_project_md_list_by_header(&project_md, "## plan");
     let feature_keys = calc_extract_project_md_list_by_header(&project_md, "## features");
+    let mut domain_keys = calc_extract_project_md_domain_names(&project_md);
     let (features_keys, planned_keys) = if !plan_keys.is_empty() {
         // new format: features=features, plan=planned
         (feature_keys, plan_keys)
@@ -971,6 +1012,13 @@ pub(crate) fn action_sync_project_tasks_list_from_project_md(project_root: &Path
     };
     let drafts_list_path = action_resolve_drafts_list_path(project_root)?;
     let mut doc = action_load_drafts_list(&drafts_list_path)?;
+    for domain in &doc.domains {
+        let key = calc_feature_name_snake_like(domain);
+        if key.is_empty() || domain_keys.iter().any(|v| v == &key) {
+            continue;
+        }
+        domain_keys.push(key);
+    }
     let force_resync = calc_should_force_tasks_list_resync(&doc)
         || calc_should_force_tasks_list_resync_by_md(&doc, &features_keys, &planned_keys);
     if doc.sync_initialized
@@ -1022,7 +1070,7 @@ pub(crate) fn action_sync_project_tasks_list_from_project_md(project_root: &Path
         .filter(|raw| !calc_is_feature_key_like(raw))
         .cloned()
         .collect();
-    for item in action_generate_planned_items_with_llm(&md_sentence_items) {
+    for item in action_generate_planned_items_with_llm(&md_sentence_items, &domain_keys) {
         planned_items_map.insert(item.name, item.value);
     }
 
@@ -2711,6 +2759,21 @@ mod tests {
     }
 
     #[test]
+    fn extract_project_md_domain_names_reads_domain_blocks() {
+        let md = r#"# Domains
+### domain
+- **name**: `player`
+- **description**: d
+
+### domain
+- **name**: `system`
+- **description**: d
+"#;
+        let domains = calc_extract_project_md_domain_names(md);
+        assert_eq!(domains, vec!["player".to_string(), "system".to_string()]);
+    }
+
+    #[test]
     fn sync_project_md_overrides_placeholder_initialized_tasks_list() {
         let root = make_temp_dir("orc_sync_placeholder");
         let project_dir = root.join("project");
@@ -2789,13 +2852,13 @@ mod tests {
         fs::write(meta.join("project.md"), md).expect("write project.md");
         let stale = DraftsListDoc {
             planned: vec![
-                "plan_feature_e6740374".to_string(),
+                "func_e6740374".to_string(),
                 "features".to_string(),
                 "draft_yaml".to_string(),
             ],
             planned_items: vec![
                 PlannedItem {
-                    name: "plan_feature_e6740374".to_string(),
+                    name: "func_e6740374".to_string(),
                     value: "프로젝트 정보 입력".to_string(),
                 },
                 PlannedItem {
@@ -2817,7 +2880,7 @@ mod tests {
             action_sync_project_tasks_list_from_project_md(&project_dir).expect("sync tasks_list");
         assert!(changed);
         let doc = action_load_drafts_list(&meta.join("drafts_list.yaml")).expect("load drafts_list");
-        assert!(!doc.planned.iter().any(|v| v == "plan_feature_e6740374"));
+        assert!(!doc.planned.iter().any(|v| v == "func_e6740374"));
         assert!(!doc.planned.iter().any(|v| v == "features"));
         assert!(!doc.planned.iter().any(|v| v == "draft_yaml"));
         assert!(!doc.features.is_empty());
