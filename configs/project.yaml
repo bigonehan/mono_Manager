@@ -1,9 +1,9 @@
-recentActivepane: AR8h
+recentActivepane: ipal
 projects:
-- id: AR8h
+- id: ipal
   name: temp
   path: /home/tree/temp
-  description: threefiber와 react, zustand를 이용한 game
-  created_at: '1771942237'
-  updated_at: '1771942744'
+  description: threefiber를 이용한 cube game
+  created_at: '1771944328'
+  updated_at: '1771944910'
   selected: true

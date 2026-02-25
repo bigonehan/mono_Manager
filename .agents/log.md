@@ -928,3 +928,21 @@
   - 레거시 `tasks_list.yaml` 상수/마이그레이션/미러 저장 로직 제거.
   - draft list 로더 fallback에서 `tasks_list.yaml` 제거, `drafts_list.yaml` 단일 로딩으로 변경.
 - 검증: `cargo test` 전체 통과(20 passed).
+
+## 2026-02-24 - 작업한일
+- planned name 생성 경로에 "한글 기능문장 -> 영문 축약 -> 도메인 기반 네이밍" 절차를 반영함.
+- `project.md`의 `# Domains` 블록에서 도메인명(`- **name**:`)을 추출하는 함수(`calc_extract_project_md_domain_names`)를 추가함.
+- planned item 생성 LLM 프롬프트를 강화:
+  - 한국어 문장 영문화
+  - 2~4 토큰 축약
+  - 현재 가능한 도메인 목록 기반 도메인 선택
+  - `<domain>_<verb>_<noun>` 또는 `<verb>_<noun>` 네이밍 규칙 명시
+- sync 경로에서 project.md 도메인 + drafts list 도메인을 합쳐 planned item 생성에 전달하도록 연결함.
+- 회귀 테스트 추가: `extract_project_md_domain_names_reads_domain_blocks`.
+- 검증: `cargo test` 전체 통과(21 passed).
+
+## 2026-02-24 - 작업한일
+- LLM 비활성/실패 fallback 시 planned key 접두사를 `plan_feature_`에서 `func_`로 변경함.
+- 적용 함수: `calc_fallback_feature_key` (`func_<8hex>` 형식).
+- 관련 테스트 fixture 문자열도 `func_` 접두사로 동기화함.
+- 검증: `cargo test` 전체 통과(21 passed).
