@@ -1193,7 +1193,12 @@ fn action_apply_draft_create_via_cli(
         .output()
         .map_err(|e| format!("failed to run create-draft: {}", e))?;
     if output.status.success() {
-        app.status_line = "draft create requested (create-draft)".to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        app.status_line = if stdout.is_empty() {
+            "draft create requested (create-draft)".to_string()
+        } else {
+            stdout
+        };
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();

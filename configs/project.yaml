@@ -1,9 +1,9 @@
-recentActivepane: ipal
+recentActivepane: dEX4
 projects:
-- id: ipal
+- id: dEX4
   name: temp
   path: /home/tree/temp
-  description: threefiber를 이용한 cube game
-  created_at: '1771944328'
-  updated_at: '1771944910'
+  description: three fiber를 이용한 홈페이지
+  created_at: '1772196461'
+  updated_at: '1772196461'
   selected: true
