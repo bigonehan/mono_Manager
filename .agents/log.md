@@ -946,3 +946,11 @@
 - 적용 함수: `calc_fallback_feature_key` (`func_<8hex>` 형식).
 - 관련 테스트 fixture 문자열도 `func_` 접두사로 동기화함.
 - 검증: `cargo test` 전체 통과(21 passed).
+
+## 2026-02-27 - 작업한일
+- `main.rs`의 프로젝트/드래프트/플랜 커맨드 핸들러를 분리하기 위해 `src/project.rs`, `src/draft.rs`, `src/plan.rs`를 추가하고, `auto_mode/create-project/select-project/delete-project/create-draft/add-draft/delete-draft/add-plan` 로직을 해당 모듈로 이동함.
+- `create-draft`가 `planned_items.value`를 설명 입력으로 사용하고, 폴더/feature key는 `planned`의 name을 그대로 사용하도록 변경해 단일 이름으로 뭉개지는 문제를 방지함.
+- 한국어 기능 문장에서 해시 키(`func_xxx`)만 생성되던 fallback을 보완하기 위해 키워드 기반 snake_case 매핑을 추가함.
+- `action_sync_project_tasks_list_from_project_md` 저장 직전에 `draft_state.generated/pending`를 재계산하도록 수정해 planned 대비 pending 상태가 stale로 남지 않게 함.
+- UI에서 `create-draft` 실행 후 status line이 고정 문구만 보이던 동작을 개선해 CLI stdout 결과를 그대로 표시하도록 수정함.
+- 검증: `cargo test` 통과(21 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
