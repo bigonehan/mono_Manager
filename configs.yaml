@@ -1,7 +1,10 @@
 max_parallel: 10
-timeout_sec: 1800
+timeout_sec: 300
 auto_yes: true
 dangerous_bypass: true
+debug: true
+draft_retry_on_fail: true
+llm_retry_count: 2
 keymap:
   run_parallel: p
 ai:

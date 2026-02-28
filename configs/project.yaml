@@ -1,9 +1,23 @@
-recentActivepane: dEX4
+recentActivepane: LCts
 projects:
-- id: dEX4
+- id: g1SH
+  name: tree
+  path: /home/tree
+  description: todo manager app
+  created_at: '1772265581'
+  updated_at: '1772265581'
+  selected: false
+- id: 501S
   name: temp
   path: /home/tree/temp
-  description: three fiber를 이용한 홈페이지
-  created_at: '1772196461'
-  updated_at: '1772196461'
+  description: todo app
+  created_at: '1772265929'
+  updated_at: '1772282911'
+  selected: false
+- id: LCts
+  name: temp2
+  path: /home/tree/temp2
+  description: calculator app
+  created_at: '1772286223'
+  updated_at: '1772288543'
   selected: true

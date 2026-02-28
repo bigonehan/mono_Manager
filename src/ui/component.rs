@@ -10,6 +10,7 @@ pub(crate) fn render_tab_header(
     tab_index: usize,
     active_color: Color,
     inactive_color: Color,
+    border_color: Color,
     right_hint: &str,
 ) {
     let header = Line::from(vec![
@@ -38,7 +39,7 @@ pub(crate) fn render_tab_header(
     let header_block = Block::default()
         .title("Current Pane")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(active_color));
+        .border_style(Style::default().fg(border_color));
     let header_inner = header_block.inner(area);
     f.render_widget(header_block, area);
     let header_layout = Layout::default()

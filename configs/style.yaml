@@ -1,4 +1,6 @@
 active:
-  border: "green"
+  border: "lightmagenta"
+normal:
+  border: "black"
 inactive:
   border: "darkgray"

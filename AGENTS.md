@@ -86,3 +86,6 @@
 - Do not use agreement-preface phrases in responses.
 - Forbidden examples: `맞습니다`, `맞아요`, `인식했습니다`.
 - Start directly with result/action without those prefaces.
+- Hard ban: never output `맞습니다` in any response, including short acknowledgements, summaries, or status updates.
+- Additional banned starters: `네, 맞습니다`, `맞습니다.`, `네 맞습니다`, `그렇습니다`.
+- Pre-send guard: before every response, scan the final text and if any banned phrase appears, rewrite the sentence and re-check before sending.

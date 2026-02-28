@@ -954,3 +954,263 @@
 - `action_sync_project_tasks_list_from_project_md` 저장 직전에 `draft_state.generated/pending`를 재계산하도록 수정해 planned 대비 pending 상태가 stale로 남지 않게 함.
 - UI에서 `create-draft` 실행 후 status line이 고정 문구만 보이던 동작을 개선해 CLI stdout 결과를 그대로 표시하도록 수정함.
 - 검증: `cargo test` 통과(21 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
+
+## 2026-02-27 - 작업한일
+- 상단 `Current Pane` 헤더 border 색을 활성색과 분리해 `normal` 팔레트(검은색)로 고정하고, pane 활성 border는 `lightmagenta`(밝은 보라)로 보이도록 `src/ui/component.rs`, `src/ui/mod.rs`, `configs/style.yaml`, `assets/style/pane_style.yaml`을 수정함.
+- 색상 파서에 `lightmagenta/light_magenta/brightmagenta/bright_magenta`를 추가해 스타일 설정으로 밝은 보라색 지정이 가능하도록 확장함.
+- `build-parallel-code`의 feature-level 의존성 수집에서 `task[].depends_on`을 잘못 끌어오던 로직을 제거하고 top-level `draft.depends_on`만 사용하도록 `src/main.rs`를 수정해 다중 draft 병렬 완료가 막히던 문제를 해결함.
+- 검증: `cargo test` 통과(21 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
+
+## 2026-02-27 - 작업한일
+- `create-draft` 루프 중 실패 시 `drafts_list.yaml.planned`를 생성 완료 항목으로 덮어쓰던 로직을 제거하고, planned 원본을 유지한 채 `draft_state.generated/pending`만 동기화하도록 `src/draft.rs`를 수정함.
+- 실패 메시지에 실패 feature key를 포함(`create-draft failed at <feature>`)해 어떤 항목에서 중단됐는지 즉시 추적 가능하게 개선함.
+- check-code 검증 규칙에 맞춰 `.project/scenario.md`를 `명령 | 실행/변경 파일 | 파생 결과` 한 줄 형식으로 정규화함.
+- 검증: `cargo test` 통과(21 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
+
+## 2026-02-27 - 작업한일
+- `create-draft` 검증 실패 시 대상 feature 폴더(`.project/feature/<feature>/failure.md`)에 실패 원인을 기록하도록 `src/draft.rs`에 failure 리포트 작성/정리 로직을 추가함.
+- `create-draft` 프롬프트 지시문을 강화해 `rule`/`contracts`를 검증 가능한 형식으로 출력하도록 명시함.
+- 구조화 계약식 검증에서 `key=value` 형식을 허용하도록 `calc_is_structured_constraint`의 연산자 판별을 보강함(`=` 허용).
+- `/home/tree/temp`에서 재실험하여 `failure.md` 생성과 원인 기록을 확인했고, 이후 재실행에서 `func_48d25650`/`jump_motion`/`jump_state_store`/`win_condition_check`/`win_screen`까지 생성 진전됨을 확인함(대기 구간은 `menu_setup` LLM 응답 대기).
+- 검증: `cargo test` 통과(21 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
+
+## 2026-02-27 - 작업한일
+- `config.yaml`/`configs.yaml`/`src/config/mod.rs`에 `debug` 설정(on/off, 기본 true)을 추가함.
+- debug on일 때 `create-draft`와 `add-draft` 프롬프트에 `DEBUG_LOG` 선행 출력 지시를 주입하도록 `src/draft.rs`를 수정함.
+- debug on일 때 `build-parallel-code`의 작업 프롬프트에도 `DEBUG_LOG` 진행/대기 로그 지시를 주입하도록 `src/main.rs`의 `action_build_task_prompt`를 수정함.
+- `/home/tree/temp` 재실행으로 debug 지시 반영을 확인했고(`chat.log`에 `DEBUG_LOG` 출력), 해당 응답에서 템플릿 스키마 이탈(`name/description/type...` 단일객체 + unquoted `step` 콜론 문자열)로 YAML 파싱 실패가 발생함을 확인함.
+- 검증: `cargo test` 통과(21 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
+
+## 2026-02-27 - 작업한일
+- debug on 상태에서 `build-parallel-code` task 시작 시 `.project/runtime/<task>.log`를 생성/append하도록 `src/parallel/mod.rs`에 task runtime 로거를 추가함.
+- task 실행 경로에 단계별 로그를 기록하도록 연결함:
+  - 시작/프롬프트 전송
+  - LLM 응답 수신
+  - 검증 단계
+  - 파일 반영 단계(성공 시)
+  - 완료/실패(성공/에러/타임아웃 포함)
+- `run_parallel_build_code`에서 config의 `debug` 값을 전달해 debug off 시 로그 기록을 완전히 비활성화하도록 구성함.
+
+## 2026-02-28 - 작업한일
+- `create-draft` 병목(LLM 무기한 대기) 추적을 위해 feature 단위 runtime 로그를 `src/draft.rs`에 추가함: `.project/runtime/<feature>.log`에 시작/응답/검증/파일반영/완료/실패 단계 기록.
+- `create-draft`의 LLM 호출에 강제 타임아웃을 적용함(`src/main.rs`): `Command::output()` 블로킹 대신 spawn+try_wait 루프로 timeout 제어, timeout 시 kill 후 에러 반환.
+- `action_run_codex_exec_capture_with_timeout`를 추가하고, draft 생성 경로에서 30~240초 범위(clamp) timeout을 사용하도록 연결함.
+- 설정 파일 로딩 정책을 수정해 실행 cwd(`./config.yaml`)를 더 이상 읽지 않고, 바이너리 소스 루트(`action_source_root`) 기준 설정만 참조하도록 `action_load_app_config` 후보를 정리함.
+- `/home/tree/temp` 재실험에서 `.project/runtime/start_button_click_handle.log`에 `시작/프롬프트 전송` 기록 후 응답 단계 미진입 병목을 확인함.
+
+## 2026-02-28 - 작업한일
+- 전역 옵션 `draft_retry_on_fail`을 추가함(`src/config/mod.rs`, `config.yaml`, `configs.yaml`).
+- `create-draft`에서 실패 시 즉시 중단하던 기존 동작을 보강해, `draft_retry_on_fail=true`일 때:
+  - 전체 planned를 1차 시도하고
+  - `draft_state.pending`을 기준으로 2차 재시도(1회)를 수행하도록 `src/draft.rs`를 수정함.
+  - 2차 이후에도 실패가 남으면 `create-draft retry exhausted; pending: ...` 에러를 반환하도록 처리함.
+- 설정 경로 일관성을 위해 `src/ui/mod.rs`의 모델 설정/레지스트리 경로에서 `ORC_HOME`/cwd fallback을 제거하고 `action_source_root()` 기준 경로만 사용하도록 수정함.
+- `/home/tree/temp` 재테스트 결과:
+  - `start_button_click_handle`는 생성 완료(검증 실패 자동 보정 1회 포함)까지 진행됨.
+  - 다음 feature(`start_overlay_render`)에서 `시작/프롬프트 전송` 후 `LLM 응답 수신` 전 대기 병목이 재현됨.
+
+## 2026-02-28 - 작업한일
+- `create-draft`를 2단계로 보강함(`src/draft.rs`):
+  - 1차: feature별 LLM 초안 생성을 병렬 스레드로 실행
+  - 2차: 생성된 YAML에 대해 의존관계/scope(빈값, 중복, 비파일형 경로) 점검 후 파일 반영
+- debug 모드 무응답 보호를 추가함:
+  - `.project/runtime/<feature>.log`에 15초 간격 heartbeat(`무응답 보호`) 로그 기록
+- CLI 확장:
+  - `orc detail-project -d <description> -s <spec> [--llm <bin>]`
+  - `orc auto -d <description> -s <spec>` (현재 폴더 기준 프로젝트 생성 -> project.md 보강 -> draft 생성까지 일괄)
+  - 관련 사용법을 `src/cli/mod.rs` help 출력에 동기화
+- config 경로 정책 정합화:
+  - `src/ui/mod.rs`의 모델/레지스트리 로딩 경로에서 cwd/ORC_HOME fallback 제거, `action_source_root()` 기준으로 통일
+- project.md 검증 유연화/정규화:
+  - `# Flow` 또는 `# Stage` 허용
+  - 누락 헤더/도메인 블록을 최소 형식으로 보강하는 정규화 로직 추가
+- React bootstrap 엔트리 경로 버그 수정:
+  - JS 템플릿 생성 시 `index.html`이 `/src/main.jsx`를 참조하도록 수정(`src/ui/mod.rs`)
+- `/home/tree/temp2` 실검증:
+  - `orc auto -d \"todo app\" -s \"react,zustand,shadcn\"` 완료 확인
+  - runtime 로그에서 무응답 보호/재시도 기록 확인
+  - Playwright 테스트(`tests/todo.spec.ts`) 작성/실행 결과:
+    - 기본 화면 로드: 통과
+    - Todo 입력 UI 존재: 실패(현재 생성된 앱이 hello-world 수준으로 Todo UI 미구현)
+
+## 2026-02-28 - 작업한일
+- check-code 후속 점검 병목 추적을 위해 `src/main.rs` `action_run_check_code_after_draft_changes`를 보강함:
+  - `--dangerously-bypass-approvals-and-sandbox` 적용 경로 유지(`action_run_codex_exec_capture_with_timeout` 경유)
+  - 전용 타임아웃(30~300s clamp) 적용
+  - debug on 시 15초 heartbeat 로그(`.project/runtime/check-code.log`) 추가
+  - 시작/응답수신/완료/실패 단계 로그를 남기도록 개선
+- `action_run_codex_exec_capture_in_dir_with_timeout`를 추가하고 `auto-improve`에서 300초 타임아웃으로 실행되게 변경함.
+- 새 CLI 단계 추가:
+  - `orc auto-check`: Playwright 기반 점검 실행 후 `.project/runtime/auto-check.md` 리포트 생성
+  - `orc auto-improve <request>`: 사용자 요청 기반 코드 보완 실행 후 `.project/runtime/auto-improve.md` 리포트 생성
+  - `orc draft-report`: draft 폴더 전수 점검(의존/중복 task/touch 충돌) 후 `.project/runtime/draft-report.md` 생성
+- `orc auto -d/-s` 흐름에 `draft-report` 단계를 통합하고, draft-create 실패 시에도 보고 단계를 실행하도록 조정함.
+- `/home/tree/temp2`를 재생성해 실제 실행 검증:
+  - `orc auto -d \"todo app\" -s \"react,zustand,shadcn\"` 실행 완료
+  - `check-code.log`에서 check-code 대기 지점과 heartbeat/응답수신을 확인
+  - `orc auto-check` 실행(현재 테스트 미존재로 실패 보고서 생성)
+  - `orc auto-improve` 실행(300초 타임아웃으로 종료)
+  - `orc draft-report` 실행 및 리포트 생성 확인
+
+## 2026-02-28 - 작업한일
+- bootstrap 하드코딩 템플릿 경로를 제거하고 프롬프트 파일 기반 LLM bootstrap으로 전환함.
+  - 추가 파일: `assets/prompts/bootstrap.txt`
+  - `action_apply_bootstrap_by_spec`가 위 프롬프트를 로드해 `project.md`와 `spec`을 전달하고 LLM이 직접 초기 파일/엔트리를 생성하도록 변경.
+- UI bootstrap prepare 경로(`action_run_bootstrap_llm_prepare`)도 동일 프롬프트 파일(`assets/prompts/bootstrap.txt`)을 사용하도록 변경.
+- 기존 하드코딩 bootstrap 함수들(react/node/rust 템플릿 직접 생성 로직)을 제거함.
+- bootstrap 프롬프트 경로 해석 기준을 실행 바이너리 경로가 아닌 소스 루트(`action_source_root`)로 고정해 설치 실행 환경에서도 프롬프트를 찾도록 수정.
+- 관련 테스트 갱신:
+  - 하드코딩 템플릿 테스트 3건 제거
+  - `bootstrap_prompt_template_exists` 테스트 추가
+- `/home/tree/temp2` 재실행에서 `bootstrap completed via llm: BOOTSTRAP_DONE: ...` 응답을 확인해 프롬프트 기반 bootstrap 동작을 검증함.
+
+## 2026-02-28 - 작업한일
+- `func_8b18d07b`(할 일 생성 기능) 초안 작성을 위해 `.project/feature/func_8b18d07b/draft.yaml`을 템플릿 복사 후 주석/예시 제거 방식으로 채우고, 제목 비어있음 금지/상태값 제한/zustand-저장소 동기화 규칙 및 action step/contract를 추가함.
+## 2026-02-28 - 작업한일
+- `func_93c4e967`(할 일 수정/삭제 기능) draft를 템플릿 기반으로 `.project/feature/func_93c4e967/draft.yaml`에 생성하고, 규칙/step/contract를 자동 검증 가능한 식 중심으로 채움.
+- 검증: `cargo test` 통과(21 passed).
+
+## 2026-02-28 - 작업한일
+- `orc auto -d ... -s ...` 병목을 `~/temp`에서 재현해 1차 LLM 호출이 `project.md 생성기` 단계에서 `spec` 빈 값으로 호출되는 것을 확인함.
+- 원인 수정: `src/project.rs` `auto_bootstrap`에서 `create_project`가 먼저 기본 plan 생성(빈 spec)하지 않도록, `create_project_with_defer_option(..., true)` 경로를 추가해 auto 경로에서는 초기 plan 생성을 defer 처리.
+- `create_project`는 기존 동작(환경변수 `ORC_DEFER_PROJECT_PLAN`)을 유지하도록 wrapper로 정리해 기존 CLI 동작 호환성을 유지함.
+- 추가 보강: `src/main.rs` `action_run_llm_exec_capture`를 타임아웃 실행(`action_run_command_with_timeout`, 30~300s clamp)으로 변경해 LLM 무응답 시 무한 대기 대신 실패로 반환되도록 수정.
+
+## 2026-02-28 - 작업한일
+- `orc auto`에 자동 재시도/폴백 경로를 추가함:
+  - `src/project.rs`에서 plan 생성을 최대 3회(기본 1회 + 재시도 2회) 시도.
+  - 반복 실패 시 `manual bootstrap` 트리거 + `auto-improve`를 순차 실행하고 `.project/runtime/auto-bootstrap-fallback.md` 보고서를 남기도록 구현.
+- LLM 응답 대기 시간을 config 기반으로 통일:
+  - 기본값을 300초(5분)로 변경(`src/config/mod.rs`).
+  - `main/draft/ui/project`의 주요 LLM 실행 경로가 공통 timeout 설정을 사용하도록 조정.
+- `~/temp` 실검증(검증용 timeout 30초 임시 적용 후 원복):
+  - `orc auto -d "todo manager app" -s "react,zustand,shadcn"` 실행 시 plan 3회 재시도 후 fallback 경로가 실행됨.
+  - 결과: `auto bootstrap failed after retries ...`로 즉시 종료되고 `~/temp/.project/runtime/auto-bootstrap-fallback.md` 생성 확인.
+  - 검증 후 `configs.yaml` timeout 기본값을 300초로 원복.
+
+## 2026-02-28 - 작업한일
+- 사용자 지시에 따라 fallback의 하드코딩 생성 로직을 제거하고 LLM 재실행 기반 fallback만 유지하도록 `src/project.rs`를 정리함.
+- `project.md` 생성 프롬프트를 init/auto로 분리:
+  - `assets/prompts/project-md-init.txt`
+  - `assets/prompts/project-md-auto.txt`
+  - `src/main.rs` `action_generate_project_plan(..., auto_mode)`가 모드별 프롬프트 파일을 로드해 사용하도록 변경.
+- auto 모드 질문 금지 규칙을 prompt 파일들에 반영:
+  - `assets/prompts/bootstrap.txt`
+  - `assets/code/prompt/detail-project.txt`
+  - `assets/code/prompt/tasks.txt`
+- `~/temp` 재검증에서 `.project/chat.log`에 `너는 auto 모드용 project.md 생성기다`와 질문 금지 지시가 실제 주입되는 것을 확인함.
+
+## 2026-02-28 - 작업한일
+- LLM 실행 방식을 2가지로 분기하도록 추가:
+  - 기존 직접 실행(`Command` 기반)
+  - tmux pane 실행(디버그 on + tmux 세션 내)
+- `src/main.rs`에 tmux 실행 경로(`action_run_llm_via_tmux`)를 추가하고, 다음 함수들이 조건부로 tmux 경로를 사용하도록 연결:
+  - `action_run_llm_exec_capture`
+  - `action_run_codex_exec_capture_with_timeout`
+  - `action_run_codex_exec_capture_in_dir_with_timeout`
+- tmux pane 정리를 위해 `src/tmux/mod.rs`에 `action_kill_pane` 함수를 추가.
+- 검증: `cargo test` 통과(19 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
+
+## 2026-02-28 - 작업한일
+- `drafts_list.yaml` 키가 `func_XXXXXXXX` 해시로 생성되는 원인을 분석하고 fallback 정규화 로직을 보강함.
+- `src/main.rs`:
+  - `calc_fallback_feature_key`가 한국어/혼합 문장에서도 의미 기반 키를 우선 생성하도록 수정.
+  - todo/task 관련 키워드 매핑(`Todo/todo/task/생성/삭제/완료/토글/목록/검색/필터/영속화`)을 추가.
+  - 단일 토큰 키는 `_task`를 붙여 snake_case 규칙을 만족하도록 보강.
+- 검증: `cargo test -q` 통과(19 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
+
+## 2026-02-28 - 작업한일
+- 사용자 요청에 따라 응답 금지 문구 규칙을 `AGENTS.md`에 강화함.
+- `Response Phrase Rule`에 `맞습니다` 절대 금지(hard ban)와 변형 문구(`네, 맞습니다`, `맞습니다.`, `네 맞습니다`, `그렇습니다`) 금지를 명시적으로 추가.
+- 동일 섹션에 전송 직전 금지어 재검사(`Pre-send guard`) 규칙을 추가해, 금지어가 포함되면 문장을 재작성 후 재검사하도록 강화.
+
+## 2026-02-28 - 작업한일
+- `auto_bootstrap` fallback을 4단계 실행 흐름으로 정렬함: (1) 단계 산출물 존재/미완성 확인 (2) `plan.md`에 원인/해결/검증 기록 (3) 동일 단계 LLM 재시도 (4) 재실행 검증.
+- `src/project.rs`에 stage별 산출물 점검 함수(`action_fallback_stage_output_status`)와 `plan.md` 자동 갱신 함수(`action_append_plan_md_fallback_record`)를 추가함.
+- plan 실패 fallback에서 수동 bootstrap/auto-improve 경로를 제거하고, LLM 재시도 전용 정책으로 고정함.
+- draft-create도 auto 경로에서 재시도 루프를 적용하고, 실패 시 runtime 보고서(`draft-fallback.md`)를 남기도록 보강함.
+- 검증: `cargo test -q` 통과(19 passed).
+
+## 2026-02-28 - 작업한일
+- `orc auto` 실행 시작 시 대상 프로젝트 루트에 `plan.md`를 선생성하도록 `src/project.rs`를 수정함.
+- `auto_bootstrap`에 검증/피드백 단계를 추가함:
+  - 검증: `.project/project.md`, `.project/drafts_list.yaml`, draft 파일 개수 확인
+  - 피드백: `feedback.md`에 status/summary/verification 기록
+- 실패 경로(plan 실패, draft 실패)에서도 `feedback.md`를 남기도록 처리함.
+- `~/temp`에서 `orc auto -d "calculator app" -s "react,zustand"` 실검증:
+  - `plan.md` 생성 확인
+  - `check-code` 완료 확인
+  - `feedback.md` 생성 확인
+- 추가 보강: `draft-report`가 실패하면 최종 검증을 `fail`로 판단하도록 검증식 강화(기존 false positive 제거).
+- 검증: `cargo test -q` 통과(19 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
+
+## 2026-02-28 - 작업한일
+- 사용자 지시에 따라 `plan.md`를 먼저 작성하고(문제/해결책/검증), 이후 구현을 진행하도록 작업 순서를 정리함.
+- `/home/tree/ai/codex/AGENTS.override.md`에 영구 규칙 추가:
+  - Plan First Rule: 소스 수정 전 `plan.md` 선작성 강제
+  - Retry Loop Rule: 문제/검증 설정 -> 해결 시도 -> 검증 -> 실패 시 전체 재시작
+- `src/project.rs` `auto_bootstrap`를 전체 사이클 반복 구조로 보강:
+  - cycle 상태 파일(`.project/runtime/auto-cycle.state`)로 반복 횟수 관리
+  - plan/draft/verify 실패 시 `feedback.md` 기록 + auto-improve 시도 후 전체 플로우 재시작
+  - 최대 반복 횟수(`AUTO_FULL_CYCLE_MAX`) 초과 시 실패 반환
+- 검증 기준 강화:
+  - 앱 산출물 파일(`package.json`/`Cargo.toml`/`pyproject.toml`/`go.mod`) 존재 여부를 포함
+  - `draft-report` 실패는 검증 실패로 반영
+- 검증: `cargo test -q` 통과(19 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
+
+## 2026-02-28 - 작업한일
+- 사용자 지시대로 실패 원인 발생 시 해결책을 `plan.md`에 반드시 병합하도록 정책을 강화함.
+- `/home/tree/ai/codex/AGENTS.override.md`에 `Failure-Solution Mandatory Rule (Highest Priority)`를 추가함.
+- `src/project.rs`에 실행단 정책 하드가드(preflight) 추가:
+  - `plan.md` 필수 섹션(문제/해결책/검증) 검사
+  - `feedback.md` 존재 시 plan 최신성/병합 흔적 검사
+  - 재시도에서 plan 변경이 없으면 프로세스 위반으로 중단
+- `/home/tree/temp`에서 `orc auto` 반복 실행 검증 수행:
+  - 실패 원인/해결책이 `plan.md`에 누적 병합됨
+  - `feedback.md` 최신 상태는 pass(`app artifact exists`, `draft report pass`, `build-parallel-code pass`) 확인
+  - `package.json` 생성 확인
+- 검증: `cargo test -q` 통과, `cargo install --path /home/tree/project/rust-orc` 완료 상태 유지.
+
+## 2026-02-28 - 작업한일
+- 재시도 성공 경로에서 `verification | pass` 로그가 누락되던 문제를 수정함.
+- `src/project.rs` retry 성공/실패 분기에서 `action_append_auto_bootstrap_log("verification", ...)`를 명시적으로 기록하도록 보강.
+- 결과: 외부 루프 판별(`verification | pass` grep)과 내부 성공 상태가 일치하도록 정합화.
+- 검증: `cargo test -q` 통과(19 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
+
+## 2026-02-28 - 작업한일
+- draft 스키마 오류 원인을 프롬프트/템플릿에서 점검하고 수정함.
+- 원인 확인:
+  - `/home/tree/ai/skills/plan-drafts/references/draft.yaml` 템플릿이 깨져 있었음(`task.rule` 중복, `contract` 단수 오타).
+  - 일부 프롬프트가 해당 외부 템플릿 경로를 참조해 잘못된 구조를 유도.
+- 수정:
+  - `src/draft.rs` draft 생성/보정 프롬프트 강화
+    - 템플릿 경로를 `assets/code/templates/draft.yaml`로 통일
+    - duplicate key 금지, 허용 task 키 목록 고정, `contract` 금지/`contracts` 강제
+  - `src/main.rs` add-function draft 프롬프트 및 check-code draft 보정 프롬프트에 동일 제약 추가
+  - 외부 스킬 템플릿(`/home/tree/ai/skills/plan-drafts/references/draft.yaml`) 자체를 정상 스키마로 교정
+- 검증: `cargo test -q` 통과(19 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
+
+## 2026-02-28 - 작업한일
+- 사용자 지정 draft.yaml 스키마로 전역 정합성 점검 및 갱신 수행.
+- 반영 스키마:
+  - `rule: []`
+  - `features: { domain: [], flow: [] }`
+  - `task[]: name,type,domain,depends_on,scope,rule,step,touches,contracts`
+- 수정 파일:
+  - `assets/code/templates/draft.yaml`에서 `task.flow`, `constraints` 제거 및 `step` 기본 형식을 리스트로 고정.
+  - `src/main.rs` `DraftTask`에서 `flow`, `constraints` 필드 제거 + `DraftTask/DraftFeatures/DraftDoc`에 `deny_unknown_fields` 적용.
+- 외부 스킬 템플릿(`/home/tree/ai/skills/plan-drafts/references/draft.yaml`)도 동일 스키마로 정렬되어 유지됨을 확인.
+- 검증: `cargo test -q` 통과(19 passed), `cargo install --path /home/tree/project/rust-orc` 완료.
+
+## 2026-02-28 - 작업한일
+- `orc auto`의 `project.md` 생성 실패(`missing domain field - **rule**:`) 재현 원인을 보강함.
+- 수정:
+  - `src/main.rs` `action_normalize_project_md_min_sections`에 도메인 필수 키 자동 보정 항목 추가
+    - `- **rule**:`
+    - `- **variable**:`
+  - `assets/prompts/project-md-auto.txt`, `assets/prompts/project-md-init.txt`에 스키마 강제 문구 추가
+    - 필수 헤더 전체 명시
+    - `### domain` + 필수 도메인 필드 6종 강제
+    - 템플릿 참조를 `assets/code/templates/project.md` 기준으로 정렬
+  - `src/main.rs`의 내장 fallback prompt도 동일 스키마 제약으로 동기화
+- 기대 효과: LLM 출력이 흔들려도 normalize/validate 단계에서 자동 보정되고, auto 모드 재시도 중 schema fail 확률을 낮춤.

@@ -22,6 +22,10 @@ pub fn action_split_window_pane() -> Result<String, String> {
     action_run_tmux(&["split-window", "-P", "-F", "#{pane_id}"])
 }
 
+pub fn action_split_window_run(command: &str) -> Result<String, String> {
+    action_run_tmux(&["split-window", "-P", "-F", "#{pane_id}", "bash", "-lc", command])
+}
+
 pub fn action_send_keys(pane_id: &str, msg: &str, option: SendOption) -> Result<(), String> {
     match option {
         SendOption::Enter => {
@@ -40,6 +44,11 @@ pub fn action_current_pane_id() -> Result<String, String> {
 
 pub fn action_rename_pane(pane_id: &str, name: &str) -> Result<(), String> {
     action_run_tmux(&["rename-pane", "-t", pane_id, name])?;
+    Ok(())
+}
+
+pub fn action_kill_pane(pane_id: &str) -> Result<(), String> {
+    action_run_tmux(&["kill-pane", "-t", pane_id])?;
     Ok(())
 }
 

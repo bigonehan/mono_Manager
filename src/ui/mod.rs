@@ -555,6 +555,9 @@ fn calc_parse_color(name: Option<&str>, fallback: Color) -> Color {
         "yellow" => Color::Yellow,
         "blue" => Color::Blue,
         "magenta" => Color::Magenta,
+        "lightmagenta" | "light_magenta" | "brightmagenta" | "bright_magenta" => {
+            Color::LightMagenta
+        }
         "cyan" => Color::Cyan,
         "white" => Color::White,
         "gray" | "grey" => Color::Gray,
@@ -618,13 +621,7 @@ fn action_binary_root() -> PathBuf {
 }
 
 fn action_ui_registry_path() -> PathBuf {
-    if let Ok(explicit) = env::var("ORC_HOME") {
-        let path = PathBuf::from(explicit.trim());
-        if !path.as_os_str().is_empty() {
-            return path.join(UI_REGISTRY_PATH);
-        }
-    }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(UI_REGISTRY_PATH)
+    crate::action_source_root().join(UI_REGISTRY_PATH)
 }
 
 fn action_reload_projects_from_registry(
@@ -1089,16 +1086,12 @@ fn action_sync_project_md_files(project_root: &Path) -> Result<bool, String> {
 }
 
 fn action_ui_model_bin() -> String {
-    let root = action_binary_root();
+    let root = crate::action_source_root();
     let candidates = [
         root.join("configs.yaml"),
         root.join("config.yaml"),
         root.join("assets").join("config").join("config.yaml"),
         root.join("src").join("assets").join("config").join("config.yaml"),
-        PathBuf::from("configs.yaml"),
-        PathBuf::from("config.yaml"),
-        PathBuf::from("assets").join("config").join("config.yaml"),
-        PathBuf::from("src").join("assets").join("config").join("config.yaml"),
     ];
     for path in candidates {
         let Ok(raw) = fs::read_to_string(&path) else {
@@ -1691,284 +1684,27 @@ fn action_load_bootstrap_rule_for_spec(spec: &str) -> Option<BootstrapRule> {
     None
 }
 
-fn calc_spec_contains(spec_lc: &str, keys: &[&str]) -> bool {
-    keys.iter().any(|k| spec_lc.contains(k))
-}
-
-fn action_collect_node_bootstrap_dependencies(spec: &str) -> (Vec<(&'static str, &'static str)>, Vec<(&'static str, &'static str)>) {
-    let spec_lc = spec.to_ascii_lowercase();
-    let mut deps: Vec<(&'static str, &'static str)> = Vec::new();
-    let mut dev_deps: Vec<(&'static str, &'static str)> = Vec::new();
-    let has_three_fiber = calc_spec_contains(
-        &spec_lc,
-        &[
-            "three fiber",
-            "react three fiber",
-            "react-three-fiber",
-            "@react-three/fiber",
-            "r3f",
-            "threejs",
-            "three.js",
-            "three",
-        ],
-    );
-    if calc_spec_contains(&spec_lc, &["next"]) {
-        deps.push(("next", "^14.2.0"));
-        deps.push(("react", "^18.3.1"));
-        deps.push(("react-dom", "^18.3.1"));
-    } else if calc_spec_contains(&spec_lc, &["react"]) {
-        deps.push(("react", "^18.3.1"));
-        deps.push(("react-dom", "^18.3.1"));
-    } else if has_three_fiber {
-        deps.push(("react", "^18.3.1"));
-        deps.push(("react-dom", "^18.3.1"));
-    }
-    if calc_spec_contains(&spec_lc, &["typescript", "ts"]) {
-        dev_deps.push(("typescript", "^5.6.2"));
-        dev_deps.push(("@types/node", "^22.7.4"));
-        dev_deps.push(("@types/react", "^18.3.5"));
-        dev_deps.push(("@types/react-dom", "^18.3.0"));
-    }
-    if calc_spec_contains(&spec_lc, &["vite"]) || has_three_fiber {
-        dev_deps.push(("vite", "^5.4.8"));
-        dev_deps.push(("@vitejs/plugin-react", "^4.3.2"));
-    }
-    if calc_spec_contains(&spec_lc, &["axios"]) {
-        deps.push(("axios", "^1.7.7"));
-    }
-    if calc_spec_contains(&spec_lc, &["zod"]) {
-        deps.push(("zod", "^3.23.8"));
-    }
-    if calc_spec_contains(&spec_lc, &["zustand"]) {
-        deps.push(("zustand", "^5.0.0"));
-    }
-    if calc_spec_contains(&spec_lc, &["tanstack query", "react query"]) {
-        deps.push(("@tanstack/react-query", "^5.59.0"));
-    }
-    if calc_spec_contains(&spec_lc, &["tailwind"]) {
-        dev_deps.push(("tailwindcss", "^3.4.13"));
-        dev_deps.push(("postcss", "^8.4.47"));
-        dev_deps.push(("autoprefixer", "^10.4.20"));
-    }
-    if has_three_fiber {
-        deps.push(("three", "^0.169.0"));
-        deps.push(("@react-three/fiber", "^8.17.10"));
-        deps.push(("@react-three/drei", "^9.115.0"));
-    }
-    (deps, dev_deps)
-}
-
-fn action_render_json_map(entries: &[(&str, &str)], indent: usize) -> String {
-    let pad = " ".repeat(indent);
-    let mut lines = Vec::new();
-    for (i, (name, version)) in entries.iter().enumerate() {
-        let comma = if i + 1 == entries.len() { "" } else { "," };
-        lines.push(format!("{pad}\"{name}\": \"{version}\"{comma}"));
-    }
-    lines.join("\n")
-}
-
-fn action_apply_bootstrap_node_template(project_root: &Path, project_name: &str, spec: &str) -> Result<(), String> {
-    let pkg = project_root.join("package.json");
-    if !pkg.exists() {
-        let name = project_name.replace(' ', "-").to_ascii_lowercase();
-        let spec_lc = spec.to_ascii_lowercase();
-        let (deps, dev_deps) = action_collect_node_bootstrap_dependencies(spec);
-        let use_next = spec_lc.contains("next");
-        let use_vite = spec_lc.contains("vite") || !use_next;
-        let use_ts = calc_spec_contains(&spec_lc, &["typescript", "ts"]);
-        let scripts = if use_next {
-            "    \"dev\": \"next dev\",\n    \"build\": \"next build\",\n    \"start\": \"next start\"".to_string()
-        } else if use_vite {
-            "    \"dev\": \"vite\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview\"".to_string()
-        } else {
-            "    \"dev\": \"echo setup dev\",\n    \"build\": \"echo setup build\"".to_string()
-        };
-        let mut raw = format!(
-            "{{\n  \"name\": \"{}\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"scripts\": {{\n{}\n  }}",
-            name, scripts
-        );
-        if !deps.is_empty() {
-            raw.push_str(&format!(
-                ",\n  \"dependencies\": {{\n{}\n  }}",
-                action_render_json_map(&deps, 4)
-            ));
-        }
-        if !dev_deps.is_empty() {
-            raw.push_str(&format!(
-                ",\n  \"devDependencies\": {{\n{}\n  }}",
-                action_render_json_map(&dev_deps, 4)
-            ));
-        }
-        raw.push_str("\n}\n");
-        fs::write(&pkg, raw).map_err(|e| format!("failed to write {}: {}", pkg.display(), e))?;
-
-        if use_next {
-            let app_dir = project_root.join("app");
-            fs::create_dir_all(&app_dir)
-                .map_err(|e| format!("failed to create app dir: {}", e))?;
-            let page = app_dir.join("page.tsx");
-            fs::write(
-                &page,
-                "export default function Page() {\n  return <main>hello world</main>;\n}\n",
-            )
-            .map_err(|e| format!("failed to write {}: {}", page.display(), e))?;
-        } else {
-            let src_dir = project_root.join("src");
-            fs::create_dir_all(&src_dir)
-                .map_err(|e| format!("failed to create src dir: {}", e))?;
-            let (main_file, app_file, vite_file) = if use_ts {
-                (src_dir.join("main.tsx"), src_dir.join("App.tsx"), project_root.join("vite.config.ts"))
-            } else {
-                (src_dir.join("main.jsx"), src_dir.join("App.jsx"), project_root.join("vite.config.js"))
-            };
-            let main_body = if use_ts {
-                "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>,\n);\n"
-            } else {
-                "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\n\nReactDOM.createRoot(document.getElementById('root')).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>,\n);\n"
-            };
-            let app_body = "export default function App() {\n  return <main>hello world</main>;\n}\n";
-            let vite_body = if use_ts {
-                "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\n\nexport default defineConfig({\n  plugins: [react()],\n});\n"
-            } else {
-                "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\n\nexport default defineConfig({\n  plugins: [react()],\n});\n"
-            };
-            fs::write(&main_file, main_body)
-                .map_err(|e| format!("failed to write {}: {}", main_file.display(), e))?;
-            fs::write(&app_file, app_body)
-                .map_err(|e| format!("failed to write {}: {}", app_file.display(), e))?;
-            fs::write(&vite_file, vite_body)
-                .map_err(|e| format!("failed to write {}: {}", vite_file.display(), e))?;
-            let index_html = project_root.join("index.html");
-            fs::write(
-                &index_html,
-                "<!doctype html>\n<html>\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>hello world</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n",
-            )
-            .map_err(|e| format!("failed to write {}: {}", index_html.display(), e))?;
-        }
-    }
-    fs::create_dir_all(project_root.join("src"))
-        .map_err(|e| format!("failed to create src: {}", e))?;
-    Ok(())
-}
-
-fn action_install_js_dependencies(project_root: &Path) -> Result<(), String> {
-    let try_cmd = |cmd: &str, args: &[&str]| -> Result<(), String> {
-        let output = Command::new(cmd)
-            .current_dir(project_root)
-            .args(args)
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .output();
-        match output {
-            Ok(out) if out.status.success() => Ok(()),
-            Ok(out) => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
-            Err(e) => Err(e.to_string()),
-        }
-    };
-    let attempts: [(&str, &[&str]); 4] = [
-        ("bun", &["install"]),
-        ("pnpm", &["install"]),
-        ("npm", &["install"]),
-        ("yarn", &["install"]),
+fn action_resolve_bootstrap_prompt_path() -> Result<PathBuf, String> {
+    let root = crate::action_source_root();
+    let candidates = [
+        root.join("assets").join("prompts").join("bootstrap.txt"),
+        root.join("assets").join("prompt").join("bootstrap.txt"),
+        PathBuf::from("assets").join("prompts").join("bootstrap.txt"),
+        PathBuf::from("assets").join("prompt").join("bootstrap.txt"),
+        root.join("src").join("assets").join("prompts").join("bootstrap.txt"),
+        root.join("src").join("assets").join("prompt").join("bootstrap.txt"),
+        PathBuf::from("src").join("assets").join("prompts").join("bootstrap.txt"),
+        PathBuf::from("src").join("assets").join("prompt").join("bootstrap.txt"),
     ];
-    let mut last_err = String::new();
-    for (cmd, args) in attempts {
-        match try_cmd(cmd, args) {
-            Ok(()) => return Ok(()),
-            Err(e) => {
-                last_err = format!("{} {}", cmd, e);
-            }
+    for candidate in candidates {
+        if candidate.exists() {
+            return Ok(candidate);
         }
     }
     Err(format!(
-        "failed to install JS dependencies (tried bun/pnpm/npm/yarn): {}",
-        last_err
+        "bootstrap prompt not found (source root: {})",
+        root.display()
     ))
-}
-
-fn action_apply_bootstrap_react_native_template(
-    project_root: &Path,
-    project_name: &str,
-) -> Result<(), String> {
-    let pkg = project_root.join("package.json");
-    let name = project_name.replace(' ', "-").to_ascii_lowercase();
-    let raw = format!(
-        "{{\n  \"name\": \"{}\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"main\": \"index.js\",\n  \"scripts\": {{\n    \"start\": \"expo start\",\n    \"android\": \"expo start --android\",\n    \"ios\": \"expo start --ios\",\n    \"web\": \"expo start --web\"\n  }},\n  \"dependencies\": {{\n    \"expo\": \"~52.0.0\",\n    \"react\": \"18.3.1\",\n    \"react-native\": \"0.76.3\"\n  }},\n  \"devDependencies\": {{\n    \"@babel/core\": \"^7.25.2\"\n  }}\n}}\n",
-        name
-    );
-    fs::write(&pkg, raw).map_err(|e| format!("failed to write {}: {}", pkg.display(), e))?;
-
-    let app_json = project_root.join("app.json");
-    let app_raw = format!(
-        "{{\n  \"expo\": {{\n    \"name\": \"{}\",\n    \"slug\": \"{}\",\n    \"version\": \"1.0.0\"\n  }}\n}}\n",
-        project_name, name
-    );
-    fs::write(&app_json, app_raw)
-        .map_err(|e| format!("failed to write {}: {}", app_json.display(), e))?;
-
-    let app_js = project_root.join("App.js");
-    if !app_js.exists() {
-        fs::write(
-            &app_js,
-            "import { StatusBar } from 'expo-status-bar';\nimport { StyleSheet, Text, View } from 'react-native';\n\nexport default function App() {\n  return (\n    <View style={styles.container}>\n      <Text>Hello React Native</Text>\n      <StatusBar style=\"auto\" />\n    </View>\n  );\n}\n\nconst styles = StyleSheet.create({\n  container: {\n    flex: 1,\n    backgroundColor: '#fff',\n    alignItems: 'center',\n    justifyContent: 'center',\n  },\n});\n",
-        )
-        .map_err(|e| format!("failed to write {}: {}", app_js.display(), e))?;
-    }
-
-    let gitignore = project_root.join(".gitignore");
-    if !gitignore.exists() {
-        fs::write(
-            &gitignore,
-            "node_modules/\n.expo/\n.expo-shared/\nweb-build/\n",
-        )
-        .map_err(|e| format!("failed to write {}: {}", gitignore.display(), e))?;
-    }
-
-    action_install_js_dependencies(project_root)
-}
-
-fn action_collect_rust_bootstrap_dependencies(spec: &str) -> Vec<(&'static str, &'static str)> {
-    let spec_lc = spec.to_ascii_lowercase();
-    let mut deps: Vec<(&'static str, &'static str)> = Vec::new();
-    if calc_spec_contains(&spec_lc, &["tokio"]) {
-        deps.push(("tokio", "{ version = \"1\", features = [\"full\"] }"));
-    }
-    if calc_spec_contains(&spec_lc, &["serde"]) {
-        deps.push(("serde", "{ version = \"1\", features = [\"derive\"] }"));
-        deps.push(("serde_json", "\"1\""));
-    }
-    if calc_spec_contains(&spec_lc, &["reqwest"]) {
-        deps.push(("reqwest", "{ version = \"0.12\", features = [\"json\", \"rustls-tls\"] }"));
-    }
-    if calc_spec_contains(&spec_lc, &["axum"]) {
-        deps.push(("axum", "\"0.7\""));
-    }
-    deps
-}
-
-fn action_apply_bootstrap_rust_template(project_root: &Path, project_name: &str, spec: &str) -> Result<(), String> {
-    let cargo_toml = project_root.join("Cargo.toml");
-    if !cargo_toml.exists() {
-        let name = project_name.replace(' ', "-").to_ascii_lowercase();
-        let mut raw = format!(
-            "[package]\nname = \"{}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n",
-            name
-        );
-        for (dep_name, dep_version) in action_collect_rust_bootstrap_dependencies(spec) {
-            raw.push_str(&format!("{dep_name} = {dep_version}\n"));
-        }
-        fs::write(&cargo_toml, raw)
-            .map_err(|e| format!("failed to write {}: {}", cargo_toml.display(), e))?;
-    }
-    let src_dir = project_root.join("src");
-    fs::create_dir_all(&src_dir).map_err(|e| format!("failed to create src: {}", e))?;
-    let main_rs = src_dir.join("main.rs");
-    if !main_rs.exists() {
-        fs::write(&main_rs, "fn main() {\n    println!(\"hello world\");\n}\n")
-            .map_err(|e| format!("failed to write {}: {}", main_rs.display(), e))?;
-    }
-    Ok(())
 }
 
 pub(crate) fn action_apply_bootstrap_by_spec(
@@ -1979,71 +1715,29 @@ pub(crate) fn action_apply_bootstrap_by_spec(
     if !calc_is_bootstrap_target_empty(project_root)? {
         return Ok("bootstrap skipped: target folder is not empty".to_string());
     }
-    if let Some(rule) = action_load_bootstrap_rule_for_spec(spec) {
-        match rule.template.trim().to_ascii_lowercase().as_str() {
-            "react-native" | "react_native" | "expo" => {
-                action_apply_bootstrap_react_native_template(project_root, project_name)?;
-                return Ok(format!(
-                    "bootstrap completed: {}",
-                    if rule.name.trim().is_empty() {
-                        "react-native"
-                    } else {
-                        rule.name.trim()
-                    }
-                ));
-            }
-            "node-react" | "node" | "react" => {
-                action_apply_bootstrap_node_template(project_root, project_name, spec)?;
-                return Ok(format!(
-                    "bootstrap completed: {}",
-                    if rule.name.trim().is_empty() {
-                        "node/react"
-                    } else {
-                        rule.name.trim()
-                    }
-                ));
-            }
-            "rust" => {
-                action_apply_bootstrap_rust_template(project_root, project_name, spec)?;
-                return Ok(format!(
-                    "bootstrap completed: {}",
-                    if rule.name.trim().is_empty() {
-                        "rust"
-                    } else {
-                        rule.name.trim()
-                    }
-                ));
-            }
-            other => {
-                action_write_bootstrap_note(
-                    project_root,
-                    spec,
-                    &format!("unknown template in configs/bootstrap.md: {}", other),
-                )?;
-                return Ok("bootstrap note created (manual required)".to_string());
-            }
-        }
+    let template_path = action_resolve_bootstrap_prompt_path()?;
+    let template = fs::read_to_string(&template_path)
+        .map_err(|e| format!("failed to read {}: {}", template_path.display(), e))?;
+    let project_md_path = project_root.join(".project").join("project.md");
+    let project_md = fs::read_to_string(&project_md_path)
+        .map_err(|e| format!("failed to read {}: {}", project_md_path.display(), e))?;
+    let prompt = template
+        .replace("{{project_name}}", project_name)
+        .replace("{{project_root}}", &project_root.display().to_string())
+        .replace("{{spec}}", spec)
+        .replace("{{project_md}}", &project_md);
+    let timeout_sec = crate::action_load_app_config()
+        .as_ref()
+        .map_or(300, crate::config::AppConfig::default_timeout_sec)
+        .max(30);
+    let raw =
+        crate::action_run_codex_exec_capture_in_dir_with_timeout(project_root, &prompt, timeout_sec)?;
+    let first_line = raw.lines().next().unwrap_or("").trim();
+    if first_line.is_empty() {
+        Ok("bootstrap completed via llm".to_string())
+    } else {
+        Ok(format!("bootstrap completed via llm: {}", first_line))
     }
-    let spec_lc = spec.to_ascii_lowercase();
-    if spec_lc.contains("react native") || spec_lc.contains("react-native") || spec_lc.contains("expo") {
-        action_apply_bootstrap_react_native_template(project_root, project_name)?;
-        return Ok("bootstrap completed: react-native template".to_string());
-    }
-    if spec_lc.contains("react")
-        || spec_lc.contains("next")
-        || spec_lc.contains("node")
-        || spec_lc.contains("typescript")
-        || spec_lc.contains("javascript")
-    {
-        action_apply_bootstrap_node_template(project_root, project_name, spec)?;
-        return Ok("bootstrap completed: node/react template".to_string());
-    }
-    if spec_lc.contains("rust") {
-        action_apply_bootstrap_rust_template(project_root, project_name, spec)?;
-        return Ok("bootstrap completed: rust template".to_string());
-    }
-    action_write_bootstrap_note(project_root, spec, "no matching bootstrap rule")?;
-    Ok("bootstrap note created (manual required)".to_string())
 }
 
 fn calc_is_bootstrap_target_empty(project_root: &Path) -> Result<bool, String> {
@@ -2065,29 +1759,12 @@ fn calc_is_bootstrap_target_empty(project_root: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
-fn action_write_bootstrap_note(
-    project_root: &Path,
-    spec: &str,
-    reason: &str,
-) -> Result<(), String> {
-    let note = project_root.join(".project").join("bootstrap.md");
-    fs::write(
-        &note,
-        format!(
-            "spec 기반 수동 bootstrap 필요\n\nreason: {}\nspec: {}\n",
-            reason, spec
-        ),
-    )
-    .map_err(|e| format!("failed to write {}: {}", note.display(), e))?;
-    Ok(())
-}
-
 fn action_run_bootstrap_llm_prepare(
     project: &ProjectRecord,
     project_root: &Path,
     spec: &str,
     preset: &str,
-) -> Result<(), String> {
+    ) -> Result<(), String> {
     let model_bin = action_ui_model_bin();
     let info_block = {
         let candidates = [
@@ -2125,20 +1802,18 @@ fn action_run_bootstrap_llm_prepare(
             extracted
         }
     };
-    let prompt = format!(
-        "너는 bootstrap 구현기다.\n\
-프로젝트 이름: {}\n\
-선택 preset: {}\n\
-project.md #info:\n{}\n\
-확정 spec(= #info.spec): {}\n\
-요구:\n\
-- 이 프로젝트에서 지금 바로 hello world가 실행/표시 가능한 최소 빌드 초기화를 구현한다.\n\
-- spec과 preset을 기준으로 필요한 파일/의존성/실행 엔트리를 생성 또는 수정한다.\n\
-- rust면 `cargo run` 시 `hello world`가 출력되도록 한다.\n\
-- react 계열이면 실행 시 화면에 `hello world`가 보이도록 한다.\n\
-- 작업 후 변경 요약만 짧게 출력한다.",
-        project.name, preset, info_block, spec
-    );
+    let template_path = action_resolve_bootstrap_prompt_path()?;
+    let template = fs::read_to_string(&template_path)
+        .map_err(|e| format!("failed to read {}: {}", template_path.display(), e))?;
+    let project_md = fs::read_to_string(project_root.join(".project").join("project.md"))
+        .unwrap_or_default();
+    let prompt = template
+        .replace("{{project_name}}", &project.name)
+        .replace("{{project_root}}", &project_root.display().to_string())
+        .replace("{{spec}}", spec)
+        .replace("{{project_md}}", &project_md)
+        .replace("{{preset}}", preset)
+        .replace("{{info_block}}", &info_block);
     action_append_project_chat_log(&project.path, "LLM_PROMPT", &prompt);
     let mut cmd = Command::new(&model_bin);
     cmd.arg("exec");
@@ -4226,37 +3901,11 @@ mod tests {
     }
 
     #[test]
-    fn node_bootstrap_reflects_spec_dependencies() {
-        let dir = make_temp_dir("orc_ui_node_bootstrap");
-        action_apply_bootstrap_node_template(&dir, "sample", "next typescript axios")
-            .expect("apply node bootstrap");
-        let pkg = fs::read_to_string(dir.join("package.json")).expect("read package.json");
-        assert!(pkg.contains("\"next\""));
-        assert!(pkg.contains("\"typescript\""));
-        assert!(pkg.contains("\"axios\""));
-        let _ = fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn node_bootstrap_adds_three_fiber_dependencies_from_spec() {
-        let dir = make_temp_dir("orc_ui_three_fiber_bootstrap");
-        action_apply_bootstrap_node_template(&dir, "sample", "react three fiber")
-            .expect("apply node bootstrap");
-        let pkg = fs::read_to_string(dir.join("package.json")).expect("read package.json");
-        assert!(pkg.contains("\"three\""));
-        assert!(pkg.contains("\"@react-three/fiber\""));
-        assert!(pkg.contains("\"@react-three/drei\""));
-        let _ = fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn rust_bootstrap_writes_hello_world_main_rs() {
-        let dir = make_temp_dir("orc_ui_rust_bootstrap");
-        action_apply_bootstrap_rust_template(&dir, "sample", "rust tokio")
-            .expect("apply rust bootstrap");
-        let main_rs = fs::read_to_string(dir.join("src").join("main.rs")).expect("read main.rs");
-        assert!(main_rs.contains("println!(\"hello world\")"));
-        let _ = fs::remove_dir_all(dir);
+    fn bootstrap_prompt_template_exists() {
+        let path = action_resolve_bootstrap_prompt_path().expect("bootstrap prompt path");
+        let raw = fs::read_to_string(path).expect("read bootstrap prompt");
+        assert!(raw.contains("{{spec}}"));
+        assert!(raw.contains("{{project_md}}"));
     }
 
     #[test]
@@ -5287,6 +4936,7 @@ pub fn run_ui(
                 app.tab_index,
                 palette.active,
                 palette.inactive,
+                palette.normal,
                 "switch : tab",
             );
 

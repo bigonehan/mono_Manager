@@ -18,6 +18,7 @@ pub fn print_usage(program: &str) {
     println!("usage:");
     println!("  {program} plan-project [llm]");
     println!("  {program} detail-project [llm]");
+    println!("  {program} detail-project -d <description> -s <spec> [--llm <bin>]");
     println!("  {program} list-projects");
     println!("  {program} create-project <name> [path] [description]");
     println!("  {program} select-project <name>");
@@ -30,6 +31,10 @@ pub fn print_usage(program: &str) {
     println!("  {program} add-function");
     println!("  {program} open-ui");
     println!("  {program} run-auto [project_name]");
+    println!("  {program} auto -d <description> -s <spec>");
+    println!("  {program} auto-check");
+    println!("  {program} auto-improve <request>");
+    println!("  {program} draft-report");
     println!("  {program} send-tmux <pane_id> <msg...> [enter|raw]");
     println!("  {program} build-parallel-code");
     println!("  {program} press-key <key>");
@@ -46,8 +51,36 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             super::plan_project(llm)
         }
         "detail-project" => {
-            let llm = args.get(2).map(String::as_str);
-            super::detail_project(llm)
+            let mut description: Option<&str> = None;
+            let mut spec: Option<&str> = None;
+            let mut llm: Option<&str> = None;
+            let mut i = 2usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "-d" => {
+                        i += 1;
+                        description = args.get(i).map(String::as_str);
+                    }
+                    "-s" => {
+                        i += 1;
+                        spec = args.get(i).map(String::as_str);
+                    }
+                    "--llm" => {
+                        i += 1;
+                        llm = args.get(i).map(String::as_str);
+                    }
+                    other if !other.starts_with('-') && llm.is_none() => {
+                        llm = Some(other);
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+            if let (Some(d), Some(s)) = (description, spec) {
+                super::detail_project_with_inputs(d, s, llm)
+            } else {
+                super::detail_project(llm)
+            }
         }
         "list-projects" | "list" => super::list_projects(),
         "create-project" => {
@@ -118,9 +151,52 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             super::add_func(request)
         }
         "open-ui" | "ui" => super::ui(),
-        "run-auto" | "auto" => {
+        "run-auto" => {
             let project_name = args.get(2).map(String::as_str);
             super::auto_mode(project_name)
+        }
+        "auto" => {
+            let mut description: Option<&str> = None;
+            let mut spec: Option<&str> = None;
+            let mut i = 2usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "-d" => {
+                        i += 1;
+                        description = args.get(i).map(String::as_str);
+                    }
+                    "-s" => {
+                        i += 1;
+                        spec = args.get(i).map(String::as_str);
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+            if let (Some(d), Some(s)) = (description, spec) {
+                super::auto_bootstrap(d, s)
+            } else {
+                let project_name = args.get(2).map(String::as_str);
+                super::auto_mode(project_name)
+            }
+        }
+        "auto-check" => {
+            if args.len() != 2 {
+                return Err("auto-check does not accept arguments".to_string());
+            }
+            super::auto_check()
+        }
+        "auto-improve" => {
+            if args.len() < 3 {
+                return Err("auto-improve requires <request>".to_string());
+            }
+            super::auto_improve(&args[2..].join(" "))
+        }
+        "draft-report" => {
+            if args.len() != 2 {
+                return Err("draft-report does not accept arguments".to_string());
+            }
+            super::draft_report()
         }
         "send-tmux" | "tsend" => {
             if args.len() < 4 {
