@@ -1,5 +1,5 @@
 active:
-  border: "green"
+  border: "lightmagenta"
   title: "bold"
 normal:
   border: "black"

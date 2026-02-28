@@ -24,6 +24,9 @@ pub struct AppConfig {
     pub timeout_sec: Option<u64>,
     pub auto_yes: Option<bool>,
     pub dangerous_bypass: Option<bool>,
+    pub debug: Option<bool>,
+    pub draft_retry_on_fail: Option<bool>,
+    pub llm_retry_count: Option<u32>,
     pub keymap: Option<KeymapConfig>,
     pub ai: Option<AiConfig>,
     pub performance: Option<PerformanceConfig>,
@@ -45,7 +48,7 @@ impl AppConfig {
     pub fn default_timeout_sec(&self) -> u64 {
         self.timeout_sec
             .or_else(|| self.performance.as_ref().and_then(|v| v.timeout_sec))
-            .unwrap_or(1800)
+            .unwrap_or(300)
     }
 
     pub fn run_parallel_key(&self) -> &str {
@@ -61,5 +64,17 @@ impl AppConfig {
 
     pub fn dangerous_bypass_enabled(&self) -> bool {
         self.dangerous_bypass.unwrap_or(true)
+    }
+
+    pub fn debug_enabled(&self) -> bool {
+        self.debug.unwrap_or(true)
+    }
+
+    pub fn draft_retry_on_fail_enabled(&self) -> bool {
+        self.draft_retry_on_fail.unwrap_or(false)
+    }
+
+    pub fn llm_retry_count(&self) -> u32 {
+        self.llm_retry_count.unwrap_or(2)
     }
 }

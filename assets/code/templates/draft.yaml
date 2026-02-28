@@ -6,13 +6,12 @@ task:
   - name: ""
     type: ""
     domain: []
-    flow: ""
     depends_on: []
     scope:
       - ""
     rule:
       - ""
-    step: []
+    step:
+      - ""
     touches: []
-    constraints: []
     contracts: []

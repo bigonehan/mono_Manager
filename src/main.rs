@@ -14,8 +14,11 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::{Command, Output, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const REGISTRY_PATH: &str = "configs/project.yaml";
 const LEGACY_REGISTRY_PATH: &str = "configs/Project.yaml";
@@ -46,14 +49,13 @@ struct ProjectRegistry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct DraftTask {
     name: String,
     #[serde(default, rename = "type")]
     task_type: String,
     #[serde(default)]
     domain: Vec<String>,
-    #[serde(default)]
-    flow: String,
     #[serde(default)]
     depends_on: Vec<String>,
     #[serde(default)]
@@ -65,12 +67,11 @@ struct DraftTask {
     #[serde(default)]
     touches: Vec<String>,
     #[serde(default)]
-    constraints: Vec<String>,
-    #[serde(default)]
     contracts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct DraftFeatures {
     #[serde(default)]
     domain: Vec<String>,
@@ -79,6 +80,7 @@ struct DraftFeatures {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct DraftDoc {
     #[serde(default)]
     rule: Vec<String>,
@@ -270,87 +272,405 @@ fn action_append_chat_log(project_root: &Path, role: &str, message: &str) {
     }
 }
 
-fn action_run_codex_exec_capture(prompt: &str) -> Result<String, String> {
-    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    action_append_chat_log(&cwd, "LLM_PROMPT", prompt);
-    let model_bin = action_default_model_bin();
-    let mut command = Command::new(&model_bin);
-    command.arg("exec");
-    if calc_model_supports_dangerous_flag(&model_bin) {
-        command.arg(CODEX_DANGEROUS_FLAG);
-    }
-    let output = command
-        .arg(prompt)
-        .output()
-        .map_err(|e| format!("failed to execute {}: {}", model_bin, e))?;
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
-        Ok(stdout)
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        action_append_chat_log(&cwd, "LLM_ERROR", &stderr);
-        Err(stderr)
+fn calc_codex_exec_timeout_sec() -> u64 {
+    action_load_app_config()
+        .as_ref()
+        .map_or(300, config::AppConfig::default_timeout_sec)
+        .max(1)
+}
+
+fn action_run_command_with_timeout(
+    mut command: Command,
+    timeout_sec: u64,
+    timeout_label: &str,
+) -> Result<Output, String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("failed to spawn {}: {}", timeout_label, e))?;
+    let started = Instant::now();
+    loop {
+        match child
+            .try_wait()
+            .map_err(|e| format!("failed while waiting {}: {}", timeout_label, e))?
+        {
+            Some(_) => {
+                return child
+                    .wait_with_output()
+                    .map_err(|e| format!("failed to collect output for {}: {}", timeout_label, e));
+            }
+            None => {
+                if started.elapsed() >= Duration::from_secs(timeout_sec) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "{} timed out after {}s",
+                        timeout_label, timeout_sec
+                    ));
+                }
+                thread::sleep(Duration::from_millis(200));
+            }
+        }
     }
 }
 
+#[derive(Debug, Clone)]
+struct LlmExecResult {
+    success: bool,
+    stdout: String,
+    stderr: String,
+}
+
+fn calc_should_use_tmux_for_llm() -> bool {
+    let debug_enabled = action_load_app_config()
+        .as_ref()
+        .is_none_or(config::AppConfig::debug_enabled);
+    debug_enabled && env::var("TMUX").map(|v| !v.trim().is_empty()).unwrap_or(false)
+}
+
+fn calc_llm_retry_count() -> u32 {
+    action_load_app_config()
+        .as_ref()
+        .map_or(2, config::AppConfig::llm_retry_count)
+        .max(1)
+}
+
+fn calc_quote_sh(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn action_run_llm_via_tmux(
+    dir: &Path,
+    llm_bin: &str,
+    prompt: &str,
+    timeout_sec: u64,
+    add_yes_flag: bool,
+    add_dangerous_flag: bool,
+    timeout_label: &str,
+) -> Result<LlmExecResult, String> {
+    let runtime = dir.join(".project").join("runtime");
+    fs::create_dir_all(&runtime)
+        .map_err(|e| format!("failed to create runtime dir {}: {}", runtime.display(), e))?;
+    let stamp = calc_now_unix();
+    let token = format!("{}_{}", stamp, std::process::id());
+    let prompt_path = runtime.join(format!("tmux-llm-{}.prompt.txt", token));
+    let script_path = runtime.join(format!("tmux-llm-{}.sh", token));
+    let stdout_path = runtime.join(format!("tmux-llm-{}.stdout.log", token));
+    let stderr_path = runtime.join(format!("tmux-llm-{}.stderr.log", token));
+    let code_path = runtime.join(format!("tmux-llm-{}.code", token));
+    fs::write(&prompt_path, prompt)
+        .map_err(|e| format!("failed to write {}: {}", prompt_path.display(), e))?;
+
+    let mut flags = Vec::new();
+    if add_yes_flag {
+        flags.push("-y".to_string());
+    }
+    if add_dangerous_flag {
+        flags.push(CODEX_DANGEROUS_FLAG.to_string());
+    }
+    let flags_joined = if flags.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", flags.join(" "))
+    };
+    let script = format!(
+        "#!/usr/bin/env bash\n\
+cd {dir}\n\
+{llm} exec{flags} \"$(cat {prompt})\" > {stdout} 2> {stderr}\n\
+status=$?\n\
+printf \"%s\" \"$status\" > {code}\n",
+        dir = calc_quote_sh(&dir.display().to_string()),
+        llm = calc_quote_sh(llm_bin),
+        flags = flags_joined,
+        prompt = calc_quote_sh(&prompt_path.display().to_string()),
+        stdout = calc_quote_sh(&stdout_path.display().to_string()),
+        stderr = calc_quote_sh(&stderr_path.display().to_string()),
+        code = calc_quote_sh(&code_path.display().to_string()),
+    );
+    fs::write(&script_path, script)
+        .map_err(|e| format!("failed to write {}: {}", script_path.display(), e))?;
+
+    let script_cmd = format!("bash {}", calc_quote_sh(&script_path.display().to_string()));
+    let pane_id = tmux::action_split_window_run(&script_cmd)
+        .map_err(|e| format!("{} (tmux split/run failed: {})", timeout_label, e))?;
+    let _ = tmux::action_rename_pane(&pane_id, "llm-debug");
+
+    let started = Instant::now();
+    while !code_path.exists() {
+        if started.elapsed() >= Duration::from_secs(timeout_sec) {
+            let _ = tmux::action_kill_pane(&pane_id);
+            return Err(format!("{} timed out after {}s", timeout_label, timeout_sec));
+        }
+        thread::sleep(Duration::from_millis(200));
+    }
+    let _ = tmux::action_kill_pane(&pane_id);
+
+    let code_raw = fs::read_to_string(&code_path)
+        .map_err(|e| format!("failed to read {}: {}", code_path.display(), e))?;
+    let code = code_raw.trim().parse::<i32>().unwrap_or(1);
+    let stdout = fs::read_to_string(&stdout_path).unwrap_or_default();
+    let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
+    Ok(LlmExecResult {
+        success: code == 0,
+        stdout,
+        stderr: stderr.trim().to_string(),
+    })
+}
+
+pub(crate) fn action_run_codex_exec_capture_with_timeout(
+    prompt: &str,
+    timeout_sec: u64,
+) -> Result<String, String> {
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    action_append_chat_log(&cwd, "LLM_PROMPT", prompt);
+    let model_bin = action_default_model_bin();
+    let dangerous = calc_model_supports_dangerous_flag(&model_bin);
+    let total_attempts = calc_llm_retry_count();
+    let mut last_error = "unknown llm error".to_string();
+    for attempt in 1..=total_attempts {
+        if calc_should_use_tmux_for_llm() {
+            match action_run_llm_via_tmux(
+                &cwd,
+                &model_bin,
+                prompt,
+                timeout_sec,
+                false,
+                dangerous,
+                &format!("{} exec", model_bin),
+            ) {
+                Ok(result) => {
+                    if result.success {
+                        action_append_chat_log(&cwd, "LLM_RESPONSE", &result.stdout);
+                        return Ok(result.stdout);
+                    }
+                    last_error = result.stderr;
+                }
+                Err(e) => {
+                    last_error = e;
+                }
+            }
+        } else {
+            let mut command = Command::new(&model_bin);
+            command.arg("exec");
+            if dangerous {
+                command.arg(CODEX_DANGEROUS_FLAG);
+            }
+            command.arg(prompt);
+            match action_run_command_with_timeout(
+                command,
+                timeout_sec,
+                &format!("{} exec", model_bin),
+            ) {
+                Ok(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                    action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
+                    return Ok(stdout);
+                }
+                Ok(output) => {
+                    last_error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                }
+                Err(e) => {
+                    last_error = e;
+                }
+            }
+        }
+        action_append_chat_log(
+            &cwd,
+            "LLM_RETRY",
+            &format!("attempt {}/{} failed: {}", attempt, total_attempts, last_error),
+        );
+    }
+    action_append_chat_log(&cwd, "LLM_ERROR", &last_error);
+    Err(last_error)
+}
+
+fn action_run_codex_exec_capture(prompt: &str) -> Result<String, String> {
+    action_run_codex_exec_capture_with_timeout(prompt, calc_codex_exec_timeout_sec())
+}
+
 fn action_run_codex_exec_capture_in_dir(dir: &Path, prompt: &str) -> Result<String, String> {
+    action_run_codex_exec_capture_in_dir_with_timeout(dir, prompt, calc_codex_exec_timeout_sec())
+}
+
+pub(crate) fn action_run_codex_exec_capture_in_dir_with_timeout(
+    dir: &Path,
+    prompt: &str,
+    timeout_sec: u64,
+) -> Result<String, String> {
     action_append_chat_log(dir, "LLM_PROMPT", prompt);
     let model_bin = action_default_model_bin();
-    let mut command = Command::new(&model_bin);
-    command.current_dir(dir).arg("exec");
-    if calc_model_supports_dangerous_flag(&model_bin) {
-        command.arg(CODEX_DANGEROUS_FLAG);
+    let dangerous = calc_model_supports_dangerous_flag(&model_bin);
+    let total_attempts = calc_llm_retry_count();
+    let mut last_error = "unknown llm error".to_string();
+    for attempt in 1..=total_attempts {
+        if calc_should_use_tmux_for_llm() {
+            match action_run_llm_via_tmux(
+                dir,
+                &model_bin,
+                prompt,
+                timeout_sec,
+                false,
+                dangerous,
+                &format!("{} exec in {}", model_bin, dir.display()),
+            ) {
+                Ok(result) => {
+                    if result.success {
+                        action_append_chat_log(dir, "LLM_RESPONSE", &result.stdout);
+                        return Ok(result.stdout);
+                    }
+                    last_error = result.stderr;
+                }
+                Err(e) => {
+                    last_error = e;
+                }
+            }
+        } else {
+            let mut command = Command::new(&model_bin);
+            command.current_dir(dir).arg("exec");
+            if dangerous {
+                command.arg(CODEX_DANGEROUS_FLAG);
+            }
+            command.arg(prompt);
+            match action_run_command_with_timeout(
+                command,
+                timeout_sec,
+                &format!("{} exec in {}", model_bin, dir.display()),
+            ) {
+                Ok(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                    action_append_chat_log(dir, "LLM_RESPONSE", &stdout);
+                    return Ok(stdout);
+                }
+                Ok(output) => {
+                    last_error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                }
+                Err(e) => {
+                    last_error = e;
+                }
+            }
+        }
+        action_append_chat_log(
+            dir,
+            "LLM_RETRY",
+            &format!("attempt {}/{} failed: {}", attempt, total_attempts, last_error),
+        );
     }
-    let output = command
-        .arg(prompt)
-        .output()
-        .map_err(|e| format!("failed to execute {} in {}: {}", model_bin, dir.display(), e))?;
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        action_append_chat_log(dir, "LLM_RESPONSE", &stdout);
-        Ok(stdout)
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        action_append_chat_log(dir, "LLM_ERROR", &stderr);
-        Err(stderr)
-    }
+    action_append_chat_log(dir, "LLM_ERROR", &last_error);
+    Err(last_error)
 }
 
 fn action_run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, String> {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     action_append_chat_log(&cwd, "LLM_PROMPT", prompt);
-    let output = Command::new(llm)
-        .arg("exec")
-        .arg("-y")
-        .arg(prompt)
-        .output()
-        .map_err(|e| format!("failed to execute {}: {}", llm, e))?;
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
-        return Ok(stdout);
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if stderr.contains("unexpected argument '-y'") {
-        let retry = Command::new(llm)
-            .arg("exec")
-            .arg(prompt)
-            .output()
-            .map_err(|e| format!("failed to execute {} retry: {}", llm, e))?;
-        if retry.status.success() {
-            let stdout = String::from_utf8_lossy(&retry.stdout).to_string();
-            action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
-            return Ok(stdout);
+    let timeout_sec = calc_codex_exec_timeout_sec().max(30);
+    let use_dangerous = calc_model_supports_dangerous_flag(llm);
+    let total_attempts = calc_llm_retry_count();
+    let mut last_error = "unknown llm error".to_string();
+    for attempt in 1..=total_attempts {
+        if calc_should_use_tmux_for_llm() {
+            match action_run_llm_via_tmux(
+                &cwd,
+                llm,
+                prompt,
+                timeout_sec,
+                true,
+                use_dangerous,
+                &format!("{} exec -y", llm),
+            ) {
+                Ok(result) if result.success => {
+                    action_append_chat_log(&cwd, "LLM_RESPONSE", &result.stdout);
+                    return Ok(result.stdout);
+                }
+                Ok(result) if result.stderr.contains("unexpected argument '-y'") => {
+                    match action_run_llm_via_tmux(
+                        &cwd,
+                        llm,
+                        prompt,
+                        timeout_sec,
+                        false,
+                        use_dangerous,
+                        &format!("{} exec", llm),
+                    ) {
+                        Ok(retry) if retry.success => {
+                            action_append_chat_log(&cwd, "LLM_RESPONSE", &retry.stdout);
+                            return Ok(retry.stdout);
+                        }
+                        Ok(retry) => {
+                            last_error = retry.stderr;
+                        }
+                        Err(e) => {
+                            last_error = e;
+                        }
+                    }
+                }
+                Ok(result) => {
+                    last_error = result.stderr;
+                }
+                Err(e) => {
+                    last_error = e;
+                }
+            }
+        } else {
+            let mut command = Command::new(llm);
+            command.arg("exec").arg("-y");
+            if use_dangerous {
+                command.arg(CODEX_DANGEROUS_FLAG);
+            }
+            command.arg(prompt);
+            match action_run_command_with_timeout(
+                command,
+                timeout_sec,
+                &format!("{} exec -y", llm),
+            ) {
+                Ok(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                    action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
+                    return Ok(stdout);
+                }
+                Ok(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    if stderr.contains("unexpected argument '-y'") {
+                        let mut retry_command = Command::new(llm);
+                        retry_command.arg("exec");
+                        if use_dangerous {
+                            retry_command.arg(CODEX_DANGEROUS_FLAG);
+                        }
+                        retry_command.arg(prompt);
+                        match action_run_command_with_timeout(
+                            retry_command,
+                            timeout_sec,
+                            &format!("{} exec", llm),
+                        ) {
+                            Ok(retry) if retry.status.success() => {
+                                let stdout = String::from_utf8_lossy(&retry.stdout).to_string();
+                                action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
+                                return Ok(stdout);
+                            }
+                            Ok(retry) => {
+                                last_error =
+                                    String::from_utf8_lossy(&retry.stderr).trim().to_string();
+                            }
+                            Err(e) => {
+                                last_error = e;
+                            }
+                        }
+                    } else {
+                        last_error = stderr;
+                    }
+                }
+                Err(e) => {
+                    last_error = e;
+                }
+            }
         }
-        let retry_err = String::from_utf8_lossy(&retry.stderr).trim().to_string();
-        action_append_chat_log(&cwd, "LLM_ERROR", &retry_err);
-        return Err(retry_err);
+        action_append_chat_log(
+            &cwd,
+            "LLM_RETRY",
+            &format!("attempt {}/{} failed: {}", attempt, total_attempts, last_error),
+        );
     }
-
-    action_append_chat_log(&cwd, "LLM_ERROR", &stderr);
-    Err(stderr)
+    action_append_chat_log(&cwd, "LLM_ERROR", &last_error);
+    Err(last_error)
 }
 
 fn calc_extract_markdown_block(raw: &str) -> String {
@@ -374,7 +694,6 @@ fn action_validate_project_md_format(project_md: &str) -> Result<(), String> {
         "## features",
         "## structure",
         "# Domains",
-        "# Flow",
         "# UI",
         "# Step",
         "# Constraints",
@@ -385,6 +704,15 @@ fn action_validate_project_md_format(project_md: &str) -> Result<(), String> {
         if !project_md.lines().any(|line| line.trim().eq_ignore_ascii_case(header)) {
             return Err(format!("project.md format invalid: missing header `{}`", header));
         }
+    }
+    let has_flow = project_md
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case("# Flow"));
+    let has_stage = project_md
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case("# Stage"));
+    if !has_flow && !has_stage {
+        return Err("project.md format invalid: missing header `# Flow` or `# Stage`".to_string());
     }
     for banned in ["- 제안 도메인:", "- 근거:", "- 책임:"] {
         if project_md.contains(banned) {
@@ -413,6 +741,56 @@ fn action_validate_project_md_format(project_md: &str) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn action_normalize_project_md_min_sections(project_md: &str) -> String {
+    let mut out = project_md.trim().to_string();
+    let required_headers = [
+        "# info",
+        "## rule",
+        "## plan",
+        "## features",
+        "## structure",
+        "# Domains",
+        "# UI",
+        "# Step",
+        "# Constraints",
+        "# Verification",
+        "# Gate Checklist",
+    ];
+    for header in required_headers {
+        if !out.lines().any(|line| line.trim().eq_ignore_ascii_case(header)) {
+            out.push_str(&format!("\n\n{}\n- TODO\n", header));
+        }
+    }
+    let has_flow = out
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case("# Flow"));
+    let has_stage = out
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case("# Stage"));
+    if !has_flow && !has_stage {
+        out.push_str("\n\n# Flow\n- TODO\n");
+    }
+    if !out.contains("### domain") {
+        out.push_str(
+            "\n\n### domain\n- **name**: `core`\n- **description**: 기본 도메인\n- **state**: 초안\n- **action**: 생성\n",
+        );
+    } else {
+        for required in [
+            "- **name**:",
+            "- **description**:",
+            "- **state**:",
+            "- **action**:",
+            "- **rule**:",
+            "- **variable**:",
+        ] {
+            if !out.contains(required) {
+                out.push_str(&format!("\n{}\n- TODO\n", required));
+            }
+        }
+    }
+    out
 }
 
 fn calc_render_template_pairs(template: &str, pairs: &[(&str, &str)]) -> String {
@@ -646,7 +1024,7 @@ fn calc_extract_project_md_list_by_header(project_md: &str, header: &str) -> Vec
         if body.is_empty() {
             continue;
         }
-        let key = body
+        let mut key = body
             .split('|')
             .next()
             .unwrap_or(&body)
@@ -654,7 +1032,22 @@ fn calc_extract_project_md_list_by_header(project_md: &str, header: &str) -> Vec
             .next()
             .unwrap_or(&body)
             .trim();
+        if key.starts_with("func_")
+            && key.len() == 13
+            && key
+                .chars()
+                .skip(5)
+                .all(|ch| ch.is_ascii_hexdigit())
+            && body.contains(':')
+        {
+            if let Some((_, right)) = body.split_once(':') {
+                key = right.trim();
+            }
+        }
         if key.is_empty() {
+            continue;
+        }
+        if body.trim().eq_ignore_ascii_case("todo") {
             continue;
         }
         if !out.iter().any(|v| v == key) {
@@ -765,13 +1158,21 @@ fn calc_is_valid_snake_feature_key(value: &str) -> bool {
 }
 
 fn calc_fallback_feature_key(raw: &str) -> String {
-    let mut key = calc_feature_name_snake_like(raw);
-    if key == "new_feature" {
-        if let Some(mapped) = calc_map_korean_feature_keywords(raw) {
-            key = mapped;
-        }
+    let mut key = calc_map_korean_feature_keywords(raw).unwrap_or_else(|| calc_feature_name_snake_like(raw));
+    if key != "new_feature"
+        && key
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        && !key.contains('_')
+    {
+        key = format!("{}_task", key);
     }
     if key == "new_feature" || !calc_is_valid_snake_feature_key(&key) {
+        if let Some(mapped) = calc_map_korean_feature_keywords(raw) {
+            if calc_is_valid_snake_feature_key(&mapped) {
+                return mapped;
+            }
+        }
         let mut hash: u32 = 2166136261;
         for b in raw.as_bytes() {
             hash ^= *b as u32;
@@ -784,6 +1185,22 @@ fn calc_fallback_feature_key(raw: &str) -> String {
 
 fn calc_map_korean_feature_keywords(raw: &str) -> Option<String> {
     let mappings = [
+        ("Task", "task"),
+        ("task", "task"),
+        ("Todo", "todo"),
+        ("todo", "todo"),
+        ("생성", "create"),
+        ("목록", "list"),
+        ("상태", "state"),
+        ("표시", "render"),
+        ("완료", "complete"),
+        ("토글", "toggle"),
+        ("수정", "update"),
+        ("삭제", "delete"),
+        ("필터", "filter"),
+        ("검색", "search"),
+        ("영속화", "persist"),
+        ("저장소", "store"),
         ("시작", "start"),
         ("오버레이", "overlay"),
         ("렌더링", "render"),
@@ -1211,6 +1628,22 @@ fn auto_mode(project_name: Option<&str>) -> Result<String, String> {
     project::auto_mode(project_name)
 }
 
+fn auto_bootstrap(description: &str, spec: &str) -> Result<String, String> {
+    project::auto_bootstrap(description, spec)
+}
+
+fn auto_check() -> Result<String, String> {
+    project::auto_check()
+}
+
+fn auto_improve(request: &str) -> Result<String, String> {
+    project::auto_improve(request)
+}
+
+fn draft_report() -> Result<String, String> {
+    project::draft_report()
+}
+
 fn create_project(name: &str, path: Option<&str>, description: &str) -> Result<String, String> {
     project::create_project(name, path, description)
 }
@@ -1373,7 +1806,7 @@ fn add_func(request_input: Option<String>) -> Result<String, String> {
     let mut created_features = Vec::new();
     for obj in &objects {
         let draft_prompt = format!(
-            "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 객체:\n- name: {}\n- step:\n{}\n- rule:\n{}\n\n지시:\n- `draft.yaml`은 템플릿(`/home/tree/ai/skills/plan-drafts/references/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$feature-name-prompt-rules` 스킬을 사용해.\n출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
+            "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 객체:\n- name: {}\n- step:\n{}\n- rule:\n{}\n\n지시:\n- `draft.yaml`은 템플릿(`assets/code/templates/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$feature-name-prompt-rules` 스킬을 사용해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
             project_info,
             project_rules.join("\n- "),
             obj.name,
@@ -1449,6 +1882,7 @@ fn action_generate_project_plan(
     user_rules: &[String],
     feature_request: &str,
     llm: Option<&str>,
+    auto_mode: bool,
 ) -> Result<String, String> {
     let llm_bin_owned = llm
         .map(|v| v.to_string())
@@ -1463,10 +1897,25 @@ fn action_generate_project_plan(
             .collect::<Vec<_>>()
             .join("\n")
     };
-    let prompt = format!(
-        "너는 project.md 생성기다.\n입력:\n- name: {}\n- description: {}\n- spec: {}\n- goal: {}\n- rules:\n{}\n\n지시:\n- 템플릿(`/home/tree/ai/skills/plan-project-code/references/project.md`)을 `.project/project.md`에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-project-code`, `$build_domain` 스킬을 사용해.\n- `## plan`에는 최소 5개의 기능 항목을 반드시 작성해.\n- 최종 출력은 markdown 본문만.",
-        project_name, description, spec, goal, rules_text
-    );
+    let prompt = match action_resolve_project_md_prompt_path(auto_mode)
+        .ok()
+        .and_then(|path| fs::read_to_string(path).ok())
+    {
+        Some(template) => calc_render_template_pairs(
+            &template,
+            &[
+                ("project_name", project_name),
+                ("description", description),
+                ("spec", spec),
+                ("goal", goal),
+                ("rules_text", &rules_text),
+            ],
+        ),
+        None => format!(
+            "너는 project.md 생성기다.\n입력:\n- name: {}\n- description: {}\n- spec: {}\n- goal: {}\n- rules:\n{}\n\n지시:\n- 템플릿(`assets/code/templates/project.md`) 구조를 정확히 따른다.\n- 필수 헤더를 모두 포함한다: `# info`, `## rule`, `## plan`, `## features`, `## structure`, `# Domains`, `# Flow`(또는 `# Stage`), `# UI`, `# Step`, `# Constraints`, `# Verification`, `# Gate Checklist`.\n- `# Domains`에는 `### domain` 블록을 최소 1개 포함하고, 각 블록에 `- **name**:`, `- **description**:`, `- **state**:`, `- **action**:`, `- **rule**:`, `- **variable**:`를 모두 포함한다.\n- 규칙은 `$plan-project-code`, `$build_domain` 스킬을 사용해.\n- `## plan`에는 최소 5개의 기능 항목을 반드시 작성해.\n- 최종 출력은 markdown 본문만.",
+            project_name, description, spec, goal, rules_text
+        ),
+    };
     let generated = action_run_llm_exec_capture(llm_bin, &prompt)?;
     let mut project_md = calc_extract_markdown_block(&generated);
     if !feature_request.trim().is_empty() {
@@ -1509,6 +1958,7 @@ fn action_generate_project_plan(
             project_md = lines.join("\n");
         }
     }
+    project_md = action_normalize_project_md_min_sections(&project_md);
     action_validate_project_md_format(&project_md)?;
     let project_md_path = project_root.join(PROJECT_MD_PATH);
     if let Some(parent) = project_md_path.parent() {
@@ -1571,6 +2021,30 @@ fn detail_project(llm: Option<&str>) -> Result<String, String> {
     ))
 }
 
+fn detail_project_with_inputs(
+    description: &str,
+    spec: &str,
+    llm: Option<&str>,
+) -> Result<String, String> {
+    let cwd = env::current_dir().map_err(|e| format!("failed to read cwd: {}", e))?;
+    let inferred_name = cwd
+        .file_name()
+        .and_then(|v| v.to_str())
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or("project");
+    action_generate_project_plan(
+        Path::new("."),
+        inferred_name,
+        description,
+        spec,
+        description,
+        &[],
+        "",
+        llm,
+        false,
+    )
+}
+
 fn action_parse_draft_tasks(feature_name: &str) -> Result<Vec<DraftTask>, String> {
     let draft_path = ui::action_resolve_feature_draft_path(feature_name);
     let raw = fs::read_to_string(&draft_path)
@@ -1617,10 +2091,11 @@ fn calc_is_structured_constraint(contract: &str) -> bool {
         return false;
     }
     let has_key_value = s.contains(':') || s.contains('=');
-    let has_operator = ["==", "!=", ">=", "<=", " in ", " matches ", " exists("]
+    let has_membership_form = s.contains(" in [");
+    let has_operator = ["==", "!=", ">=", "<=", "=", " in ", " matches ", " exists("]
         .iter()
         .any(|op| s.contains(op));
-    has_key_value && has_operator
+    (has_key_value || has_membership_form) && has_operator
 }
 
 fn action_validate_draft_doc(doc: &DraftDoc) -> Vec<String> {
@@ -1676,7 +2151,7 @@ fn action_validate_draft_doc(doc: &DraftDoc) -> Vec<String> {
         for dep in &task.depends_on {
             if dep == &task.name {
                 issues.push(format!("task `{}` has self dependency", task.name));
-            } else if !known.contains(dep) {
+            } else if !known.contains(dep) && !calc_is_valid_snake_feature_key(dep) {
                 issues.push(format!(
                     "task `{}` has unknown depends_on `{}`",
                     task.name, dep
@@ -1707,6 +2182,10 @@ fn action_fix_draft_with_llm(draft_path: &Path, raw: &str, issues: &[String]) ->
 지시:\n\
 - template YAML을 대상 draft 경로에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n\
 - 규칙은 `$plan-drafts-code`, `$check-code` 스킬을 사용해.\n\
+- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts` 중복 금지).\n\
+- `task` 객체 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 사용.\n\
+- `contract`(단수) 키는 사용 금지, 반드시 `contracts`(복수)만 사용.\n\
+- `contracts` 각 항목은 `key=value` 또는 `key: value`만 허용.\n\
 - 최종 출력은 YAML 본문만.\n\
 검사 결과:\n{}\n\n\
 template:\n{}\n\n\
@@ -1783,10 +2262,6 @@ pub(crate) fn action_load_app_config() -> Option<config::AppConfig> {
         root.join("config.yaml"),
         root.join("assets").join("config").join("config.yaml"),
         root.join("src").join("assets").join("config").join("config.yaml"),
-        PathBuf::from("configs.yaml"),
-        PathBuf::from("config.yaml"),
-        PathBuf::from("assets").join("config").join("config.yaml"),
-        PathBuf::from("src").join("assets").join("config").join("config.yaml"),
     ];
     for candidate in candidates {
         if let Ok(conf) = config::AppConfig::load_from_path(&candidate) {
@@ -2069,6 +2544,24 @@ pub(crate) fn action_read_project_info() -> Result<String, String> {
     Ok(calc_extract_project_info(&project_md))
 }
 
+fn calc_check_code_timeout_sec() -> u64 {
+    action_load_app_config()
+        .as_ref()
+        .map_or(300, config::AppConfig::default_timeout_sec)
+        .max(30)
+}
+
+fn action_append_check_code_runtime_log(stage: &str, detail: &str) {
+    let runtime = Path::new(".project").join("runtime");
+    if fs::create_dir_all(&runtime).is_err() {
+        return;
+    }
+    let path = runtime.join("check-code.log");
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "[{}] {} | {}", calc_now_unix(), stage, detail);
+    }
+}
+
 fn action_run_check_code_after_draft_changes(
     feature_names: &[String],
     trigger: &str,
@@ -2088,22 +2581,58 @@ fn action_run_check_code_after_draft_changes(
         trigger,
         target_lines.join("\n")
     );
-    let raw = action_run_codex_exec_capture(&prompt)?;
+    let timeout_sec = calc_check_code_timeout_sec();
+    action_append_check_code_runtime_log(
+        "시작/프롬프트 전송",
+        &format!("trigger={} timeout={}s", trigger, timeout_sec),
+    );
+    let debug_enabled = action_load_app_config()
+        .as_ref()
+        .is_none_or(config::AppConfig::debug_enabled);
+    let wait_stop = Arc::new(AtomicBool::new(false));
+    let heartbeat = if debug_enabled {
+        let stop = Arc::clone(&wait_stop);
+        Some(thread::spawn(move || {
+            let mut elapsed = 0u64;
+            while !stop.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_secs(15));
+                elapsed += 15;
+                if stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                action_append_check_code_runtime_log(
+                    "무응답 보호",
+                    &format!("check-code LLM 응답 대기 중 ({}s)", elapsed),
+                );
+            }
+        }))
+    } else {
+        None
+    };
+    let raw_result = action_run_codex_exec_capture_with_timeout(&prompt, timeout_sec);
+    wait_stop.store(true, Ordering::Relaxed);
+    if let Some(handle) = heartbeat {
+        let _ = handle.join();
+    }
+    let raw = match raw_result {
+        Ok(v) => v,
+        Err(e) => {
+            action_append_check_code_runtime_log("완료/실패", &format!("실패: {}", e));
+            return Err(e);
+        }
+    };
+    action_append_check_code_runtime_log("LLM 응답 수신", "check-code 응답 수신");
     let line = raw.lines().next().unwrap_or("").trim();
     if line.is_empty() {
+        action_append_check_code_runtime_log("완료/실패", "완료");
         Ok("check-code follow-up executed".to_string())
     } else {
+        action_append_check_code_runtime_log("완료/실패", &format!("완료: {}", line));
         Ok(format!("check-code follow-up: {}", line))
     }
 }
 
-fn action_source_root() -> PathBuf {
-    if let Ok(explicit) = env::var("ORC_HOME") {
-        let path = PathBuf::from(explicit.trim());
-        if !path.as_os_str().is_empty() {
-            return path;
-        }
-    }
+pub(crate) fn action_source_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
@@ -2201,6 +2730,35 @@ fn action_resolve_detail_project_prompt_path() -> Result<PathBuf, String> {
     }
     Err(format!(
         "detail-project prompt not found (source root: {})",
+        root.display()
+    ))
+}
+
+pub(crate) fn action_resolve_project_md_prompt_path(auto_mode: bool) -> Result<PathBuf, String> {
+    let root = action_source_root();
+    let file_name = if auto_mode {
+        "project-md-auto.txt"
+    } else {
+        "project-md-init.txt"
+    };
+    let candidates = [
+        root.join("assets").join("prompts").join(file_name),
+        root.join("assets").join("prompt").join(file_name),
+        PathBuf::from("assets").join("prompts").join(file_name),
+        PathBuf::from("assets").join("prompt").join(file_name),
+        root.join("assets").join("code").join("prompts").join(file_name),
+        root.join("assets").join("code").join("prompt").join(file_name),
+        PathBuf::from("assets").join("code").join("prompts").join(file_name),
+        PathBuf::from("assets").join("code").join("prompt").join(file_name),
+    ];
+    for candidate in candidates {
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "project-md prompt not found: {} (source root: {})",
+        file_name,
         root.display()
     ))
 }
@@ -2332,16 +2890,7 @@ pub(crate) fn action_collect_parallel_feature_tasks() -> Result<Vec<ParallelFeat
             .file_name()
             .map(|v| v.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown".to_string());
-        let mut depends_on = doc.depends_on.clone();
-        if depends_on.is_empty() {
-            for t in &doc.task {
-                for dep in &t.depends_on {
-                    if !depends_on.iter().any(|v| v == dep) {
-                        depends_on.push(dep.clone());
-                    }
-                }
-            }
-        }
+        let depends_on = doc.depends_on.clone();
         out.push(ParallelFeatureTask {
             name,
             draft_path,
@@ -2377,7 +2926,16 @@ pub(crate) fn action_build_task_prompt(
             unresolved.join(", ")
         ));
     }
-    Ok(rendered)
+    let debug_enabled = action_load_app_config()
+        .as_ref()
+        .is_none_or(config::AppConfig::debug_enabled);
+    if !debug_enabled {
+        return Ok(rendered);
+    }
+    Ok(format!(
+        "DEBUG MODE(on) 지시:\n- 응답 시작에 `DEBUG_LOG:` 한 줄을 먼저 작성해 현재 작업 단계와 대기 중이면 대기 사유를 기록해.\n- 장시간 작업이면 주요 진행 전환 시점마다 `DEBUG_LOG:`를 한 줄씩 추가해.\n\n{}",
+        rendered
+    ))
 }
 
 pub(crate) fn action_print_parallel_modal(statuses: &[(String, ui::TaskRuntimeState)]) {
