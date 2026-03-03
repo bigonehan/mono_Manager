@@ -1,0 +1,39 @@
+rule:
+- matches(session_id, '^[A-Za-z0-9]{8}$') == true
+- llm_id == session_id
+- users.sender_id == session_id
+features:
+  domain:
+  - chat
+  flow:
+  - bind_llm_id_to_interactive_sender
+task:
+- name: bind_llm_id_to_interactive_sender
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/chat.rs
+  - src/chat/session.rs
+  - src/cli/chat.rs
+  rule:
+  - 'check: build_llm_id() returns 8-char session_id should hold'
+  - llm_id == session_id
+  - interactive_enter == true => users.sender_id == session_id
+  - chat_context.llm_id_store_path != ""
+  step:
+  - 'input: build_llm_id() call -> output: 8-char random session_id'
+  - 'input: generated session_id -> output: llm_id saved in chat execution context store path'
+  - 'input: interactive enter event and sender_id=session_id -> output: users list updated with sender_id'
+  touches:
+  - build_llm_id
+  - session_id
+  - llm_id
+  - chat_execution_context.llm_id
+  - users.sender_id
+  contracts:
+  - session_id_format=matches('^[A-Za-z0-9]{8}$')
+  - llm_id_equals_session_id=llm_id==session_id
+  - interactive_sender_binding=interactive_enter==true => users.sender_id==session_id
+  - llm_id_store_path_exists=chat_context.llm_id_store_path!=''

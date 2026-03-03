@@ -1,0 +1,60 @@
+rule:
+- command == 'orc chat -n <name> -m <message> [-i <receiver_id>] [--data <data>]'
+- arg_required('-n') == true
+- arg_required('-m') == true
+- arg_optional('-i') == true
+- arg_optional('--data') == true
+- omitted('-i') => receiver == null
+- omitted('--data') => data == null
+- append(messages, {message_id, command, data, receiver, sender_id, created_at}) == true
+features:
+  domain:
+  - chat
+  flow:
+  - parse_send_mode_options
+  - generate_sender_and_message_ids
+  - append_message_entry_to_yaml
+task:
+- name: process_chat_message_send
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/cli/mod.rs
+  - src/cli/chat.rs
+  - src/chat/*.rs
+  - .temp/*.yaml
+  rule:
+  - has('-m') == true
+  - parse('-m') != ''
+  - parse('-i') == null or is_string(parse('-i')) == true
+  - parse('--data') == null or is_string(parse('--data')) == true
+  - len(sender_id) == 8
+  - llm_id == sender_id
+  - message_id != sender_id
+  - messages[-1].command == input.message
+  - messages[-1].receiver == null when input.receiver_id is omitted
+  - messages[-1].data == null when input.data is omitted
+  - has_key(messages[-1], 'created_at') == true
+  step:
+  - 'input: `orc chat -n <name> -m <message> [-i <receiver_id>] [--data <data>]` -> output: validated send mode args'
+  - 'input: validated args -> output: sender_id 8-char random string and llm_id assignment'
+  - 'input: send context -> output: new message_id issuance'
+  - 'input: message fields -> output: append YAML messages entry with created_at'
+  touches:
+  - cli.chat.args
+  - runtime.llm_id
+  - messages[].message_id
+  - messages[].command
+  - messages[].receiver
+  - messages[].data
+  - messages[].sender_id
+  - messages[].created_at
+  contracts:
+  - sender_id_format=matches('^[A-Za-z0-9]{8}$')==true
+  - llm_id_equals_sender_id=llm_id==sender_id
+  - message_id_unique=unique(message_id)==true
+  - receiver_nullable=receiver==null or is_string(receiver)==true
+  - data_nullable=data==null or is_string(data)==true
+  - message_append_has_created_at=has_key(messages[-1],'created_at')==true

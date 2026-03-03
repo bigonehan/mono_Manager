@@ -1,0 +1,10 @@
+sessions:
+- session_key: ppid:78255|tty:/dev/null
+  sender_id: z8EVUbIZ
+  updated_at: 1772531368Z
+- session_key: tmux-pane:%8
+  sender_id: Zpd4EZCC
+  updated_at: 1772533001Z
+- session_key: tmux-pane:%7
+  sender_id: c22D4dLX
+  updated_at: 1772533133Z

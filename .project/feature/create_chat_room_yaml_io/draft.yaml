@@ -1,0 +1,56 @@
+rule:
+- room_name.type == string
+- users.type == array
+- messages.type == array
+- messages[*].message_id.type == string
+- messages[*].command.type == string
+- messages[*].data.type in [null, any]
+- messages[*].receiver.type in [null, any]
+- messages[*].sender_id.type == string
+- messages[*].created_at.type == string
+features:
+  domain:
+  - chat_room
+  flow:
+  - load_update_save_chat_room_yaml
+task:
+- name: manage_chat_room_yaml_io
+  type: action
+  domain:
+  - chat_room
+  depends_on: []
+  scope:
+  - src/chat_room/yaml_model.rs
+  - src/chat_room/yaml_io.rs
+  - tests/chat_room_yaml_io.rs
+  - .temp/<name>.yaml
+  rule:
+  - yaml_deserialize_success == true
+  - required_keys_present == true
+  - nullable_fields_limited_to_data_and_receiver == true
+  - users_messages_update_applied == true
+  - yaml_serialize_success == true
+  - atomic_write_success == true
+  step:
+  - 'input: room yaml text -> output: chat_room struct with room_name users messages fields'
+  - 'input: chat_room struct -> output: message schema with message_id command data receiver sender_id created_at fields'
+  - 'input: .temp/<name>.yaml path -> output: loaded chat_room object or io error'
+  - 'input: users update and messages update -> output: updated chat_room object'
+  - 'input: updated chat_room object -> output: serialized yaml with data and receiver nullable'
+  - 'input: serialized yaml and .temp/<name>.yaml path -> output: safely persisted yaml file'
+  touches:
+  - chat_room
+  - user
+  - message
+  contracts:
+  - room_name:type==string
+  - users:type==array
+  - messages:type==array
+  - messages[*].message_id:type==string
+  - messages[*].command:type==string
+  - messages[*].data:type in [null, any]
+  - messages[*].receiver:type in [null, any]
+  - messages[*].sender_id:type==string
+  - messages[*].created_at:type==string
+  - io.path:matches(^\\.temp\\/.+\\.yaml$)==true
+  - write.mode==atomic

@@ -218,6 +218,8 @@
 
 - Detail 탭의 `Project` pane 상단에서 `Name`과 `Description`을 같은 행의 좌/우 2분할로 표시하도록 레이아웃을 조정함.
 - `Rule`/`Constraint`/`Features` 목록 항목이 길면 한 줄에서 `...`으로 축약되도록 단일행 ellipsis 렌더를 적용함.
+
+## 2026-03-03 - 작업한일
 - `Rule`/`Constraint`/`Features` 편집 모달을 list item pane 통합 형식으로 개편해 `a(add)`, `e(edit)`, `d(delete)`를 모달 내부에서 처리하고 우하단 `Confirm/Cancel`로 일괄 적용/취소되도록 변경함.
 - `Drafts` pane이 비어있을 때 `no draft item`을 pane 정중앙에 표시하도록 조정함.
 - `Drafts` pane 포커스에서 `Enter`를 누르면 y/n 확인 모달을 띄우고, 확인 시 선택 프로젝트 디렉터리에서 `create-draft` 명령을 실행하도록 연결함.
@@ -1360,3 +1362,68 @@
 - todo 파일 경로를 `.project/todos.yaml` 단일로 통일하고 관련 읽기/쓰기 경로를 갱신함(`src/main.rs`, `src/parallel/mod.rs`).
 - 프롬프트 파일을 `assets/code/prompts`로 일원화: `assets/prompts/*`, `assets/code/prompt/*`를 모두 이동하고 참조 resolver를 새 경로 기준으로 갱신함(`src/main.rs`, `src/ui/mod.rs`).
 - 검증: `cargo test` 통과(20 passed).
+
+## 2026-03-03 - 작업한일
+- Fish 설정(`/home/tree/Config/data/fish/config.fish`)에 `obfa` alias를 추가해 `orc build-function-auto`를 단축 호출할 수 있게 설정함.
+- 검증: `fish -c 'source /home/tree/Config/data/fish/config.fish; type obfa'`로 alias 함수 인식 확인.
+
+## 2026-03-03 - 작업한일
+- `build-function-auto`의 todo 생성을 input 객체 1:1 루프에서 input.md 전체 해석 기반 단일 LLM 생성 방식으로 변경함.
+- `assets/code/prompts/build-funciton-todo.txt`를 수정해 task 개수를 LLM이 분해/통합 판단하도록 하고, `name` 생성 시 `$rule-naming` 기준 snake_case를 강제하도록 명시함.
+- todo 생성 파서를 보강해 `tasks:` 문서/시퀀스/단일 객체 출력과 코드블록 섞인 출력까지 정규화 후 검증하도록 변경함.
+- draft 생성 파서를 보강해 파싱 실패 시 YAML 복구 프롬프트를 1회 수행한 뒤 재파싱하도록 추가함.
+- 검증: `cargo test` 통과(20 passed), `cargo run --bin orc -- build-function-auto`는 LLM 응답 지연으로 180초 timeout 발생(실행 경로 자체는 시작 확인).
+
+## 2026-03-03 - 작업한일
+- `AGENTS.md`에 기능 추가/개선 시 `orc` 도움말 목록을 같은 변경에서 갱신하도록 `CLI Help Update Rule`을 추가함.
+- `src/cli.rs`의 `print_usage`를 명령 목록 배열 정렬 방식으로 변경해 `orc` 도움말이 알파벳순으로 출력되도록 수정함.
+
+## 2026-03-03 - 작업한일
+- `orc chat -n <name>`(수신 모드) 및 `orc chat -n <name> -m <message> [-i <receiver_id>] [--data <data>]`(전송 모드) CLI 명령을 추가하고 `src/cli.rs` help/파서를 동기화함.
+- `src/main.rs`에 `.temp/<name>.yaml` 기반 chat room YAML 로드/저장, 8자리 session/sender/message ID 생성, 메시지 append, 수신 폴링(`max_read_time`) 로직을 추가함.
+- `src/config/mod.rs`, `config.yaml`, `configs.yaml`에 `max_read_time` 설정을 추가하고 chat 수신 대기 시간 기본값(3초)으로 연동함.
+- `README.md` 명령 목록에 `orc chat` 사용 예시를 추가함.
+
+## 2026-03-03 - 작업한일
+- `orc chat -n <name>` 기본 동작을 변경해 `.temp/<name>.yaml`이 없거나 파일 내용이 비어 있으면 기본 chat room YAML을 자동 생성한 뒤 계속 실행하도록 수정함.
+- `src/main.rs`의 `action_save_chat_room`에 부모 디렉터리 생성 로직을 추가해 `.temp/`가 없어도 자동 생성 경로가 실패하지 않도록 보강함.
+- `README.md` Notes에 chat room 자동 생성 동작을 명시함.
+
+## 2026-03-03 - 작업한일
+- `orc chat -n <name> --background` 옵션을 추가해 chat watcher를 백그라운드 프로세스로 실행하고 즉시 터미널을 반환하도록 구현함.
+- watcher 내부 실행 플래그(`--watch`)를 추가해 백그라운드 모드에서 stdin 없이 `.temp/<name>.yaml` 변화만 주기적으로 감지/출력하도록 분리함.
+- 백그라운드 watcher 출력 로그를 `.temp/<name>.watch.log`에 append하도록 추가하고, `src/cli.rs` help/`README.md` 명령 목록 및 Notes를 동기화함.
+
+## 2026-03-03 - 작업한일
+- chat 발신자 ID를 세션 기반으로 고정하기 위해 `.temp/<room>.sessions.yaml` 저장소를 추가하고, 세션 키(`TMUX_PANE` 우선, fallback: TTY/PID)별 `sender_id`를 재사용하도록 변경함.
+- `orc chat -n <name> -m ...`와 수신 모드 모두에서 무작위 `sender_id` 재생성 대신 세션 저장소 조회/갱신 경로를 사용하도록 수정함.
+- `README.md` Notes에 세션 기반 `sender_id` 재사용 동작을 문서화함.
+
+## 2026-03-03 - 작업한일
+- 세션 키 충돌을 줄이기 위해 chat 세션 식별자를 `TMUX_PANE + PPID + TTY` 조합(또는 `ORC_CHAT_SESSION_KEY` 강제 지정)으로 강화함.
+- 동일 경로/동일 room이라도 다른 pane/쉘에서 실행하면 서로 다른 `sender_id`를 갖도록 세션 키 계산 로직을 보강함.
+
+## 2026-03-03 - 작업한일
+- 사용자 요구에 맞춰 chat 세션 키를 pane 단위가 아닌 tmux window 단위(`session_id + window_id`)로 변경함.
+- 같은 tmux window 내 여러 pane에서 `orc chat`을 호출해도 동일 `sender_id`가 재사용되도록 `calc_chat_session_key`의 tmux 키 계산 로직을 `tmux display-message` 기반으로 수정함.
+
+## 2026-03-03 - 작업한일
+- 요구사항 정정에 따라 chat 세션 키를 다시 tmux pane 단위(`TMUX_PANE`)로 조정함.
+- 같은 window라도 pane이 다르면 `sender_id`가 서로 독립적으로 관리되도록 `calc_chat_session_key` 로직과 README 설명을 동기화함.
+
+## 2026-03-03 - 작업한일
+- `orc chat-wait -n <name> -a <true|false>` 명령을 추가해 채팅 파일 변화 대기 모드를 구현함.
+- `chat-wait` 내부에서 `reaction()` 함수를 호출하도록 연결하고, 기본 동작으로 새 메시지 도착 시 메시지를 출력하도록 구성함.
+- `-a true`는 모든 메시지 반응, `-a false`는 receiver가 자기 `sender_id`인 메시지에만 반응하도록 필터를 추가함.
+- `src/cli.rs` help와 `README.md` 명령/설명을 동기화함.
+
+## 2026-03-03 - 작업한일
+- `chat-wait`에 `-c <count>` 옵션을 추가해 지정 개수만큼 반응 메시지를 수신하면 자동 종료되도록 확장함.
+- `orc run_parallel_test` 명령을 추가해 `test` room 준비 -> 10개 백그라운드 프로세스 실행(3초 대기 후 `orc chat` 완료 메시지 전송) -> `chat-wait -a false -c 10` 대기 흐름을 구현함.
+- 병렬 테스트용 프롬프트 파일 `assets/code/prompts/parallel_order.txt`, `assets/code/prompts/parallel_oredr_unit.txt`를 추가하고 실행 경로에서 로드하도록 연결함.
+- `src/cli.rs` help와 `README.md` 명령/설명을 동기화함.
+- 동시 메시지 전송 시 YAML read-modify-write 충돌로 누락이 발생하지 않도록 `orc chat` 전송 경로에 room 단위 파일 락(`.temp/<room>.lock`)을 추가해 `run_parallel_test` 10/10 수신 완료를 보장함.
+
+## 2026-03-03 - 작업한일
+- `AGENTS.override.md`를 신설하고, 사용자가 `current.png` 확인을 요청하면 기본 경로를 `/mnt/c/Users/tende/Pictures/Screenshots/current.png`로 해석하도록 영구 규칙을 추가함.
+- 기본 경로 파일이 없을 때는 `/mnt/c/Users/tende/Pictures/Screenshots/` 디렉터리에서 검색하도록 보조 규칙을 추가함.

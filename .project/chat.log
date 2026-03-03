@@ -2099,3 +2099,2206 @@ depends_on: []
 draft_path: ""
 
 
+[1772525167] LLM_PROMPT
+너는 rust-orc의 todos.yaml 생성기다.
+`input.md` 전체를 해석해서 추가해야 할 기능을 스스로 판단하고, `tasks` 리스트를 생성해라.
+
+입력:
+# llm chat system
+- orc chat -n "이름" 을 하면 chat 모드가 활성화된다.
+- chat 모드 활성화 시 모든 대화 내용은 orc 설치 폴더 .temp/이름.yaml 파일에 기록된다.
+- orc chat -n "이름" 을 하면 현재 세션은 임의의 session_id 값(8자리 난수)을 할당받는다.
+- 내부 변수 llm_id 에는 방금 생성한 session_id 값을 저장한다.
+- chat 모드의 messages 형태는 message_id | command | data | receiver | sender_id 의미를 가진다.
+- chat 모드 종료 단축키는 ctrl+d 키이며 chat 모드 실행 시 도움말로 종료 방법을 출력한다.
+- .temp/이름.yaml 파일이 없으면 에러를 출력하고 종료한다. 자동 생성하지 않는다.
+- 채팅방 파일 형식은 YAML 이다.
+> orc chat -n "a" 라는 이름으로 명령을 호출한다.
+> orc 설치 폴더 .temp/a.yaml 가 있는지 확인한다.
+> 파일이 없으면 에러를 출력하고 종료한다.
+> 파일이 있으면 build_llm_id() 함수를 호출해서 8자리 난수 session_id 를 만든다.
+> 내부 변수 llm_id 에 8자리 난수를 저장한다.
+> users 에 sender_id(session_id) 를 반영한다.
+> .temp/이름.yaml 파일의 messages 를 last_read_message_id 기준으로 읽는다.
+> config 옵션 MAX_read_time 동안 대기 후 다시 이름.yaml 파일의 messages 값을 가져온다.
+> 새로운 값이 있다면 값을 표시하고 last_read_message_id 를 갱신한다.
+
+# llm chat system - send
+- orc chat -n "이름" -m "메시지" -i "receiver_id"(옵션) --data "data"(옵션) 으로 메시지를 보낼 수 있다.
+- 이때 orc 설치폴더 .temp/이름.yaml 이 없으면 에러를 출력하고 종료한다. 자동 생성하지 않는다.
+- 메시지를 보내면 message_id | command | data | receiver | sender_id 의미에 맞게 YAML messages 에 저장한다.
+- receiver 는 생략할 수 있다.
+- data 는 생략할 수 있다.
+- ID 분리 규칙은 다음과 같다: session_id(세션), sender_id(발신자), message_id(메시지).
+> orc chat -n "a" -m "hello" 를 입력한다.
+> orc 설치 폴더 .temp/a.yaml 파일이 있는지 검사한다.
+> 파일이 없으면 에러를 출력하고 종료한다.
+> 파일이 있으면 sender_id 용 임의 아이디 8자리를 생성한다.
+> 내부 변수 llm_id 에 방금 만든 난수를 저장한다.
+> messages 에 message_id=<new_id>, command="hello", data=null, receiver=null, sender_id=<llm_id> 를 기록한다.
+
+# chat room yaml format
+- chat room 파일은 아래 필드를 가진 YAML 구조를 사용한다.
+> room_name: "a"
+> users:
+>   - user_id: "A1B2C3D4"
+>     role: "user"
+> messages:
+>   - message_id: "M0000001"
+>     command: "hello"
+>     data: null
+>     receiver: null
+>     sender_id: "A1B2C3D4"
+>     created_at: "2026-03-03T00:00:00Z"
+
+
+참조:
+- 템플릿 스키마: `assets/code/templates/task.yaml`
+- 스킬 참조: `$rule-naming`, `$build_domain`, `$build-architecture`
+
+지시:
+- input.md의 `#`, `-`, `>` 블록을 그대로 1:1 매핑하지 말고, 구현 단위로 분해/통합해서 적정 task 개수를 결정한다.
+- task 수는 input.md 블록 수와 달라도 된다. 필요하면 더 많은 task를 만든다.
+- 각 task `name`은 반드시 `$rule-naming` 기준 snake_case로 생성한다.
+- `display_name`은 사람이 읽는 짧은 이름.
+- `rule`, `step`, `depends_on`은 문자열 배열.
+- `step`은 반드시 문자열 배열만 허용하며 map/object(`- key: value`)를 금지한다.
+- `draft_path`는 빈 문자열 `""`.
+- 출력은 YAML만 허용하며 설명 문장/코드블록/마크다운을 금지한다.
+
+출력 스키마(반드시 준수):
+tasks:
+  - name: snake_case
+    display_name: string
+    rule: [string]
+    step: [string]
+    depends_on: [string]
+    draft_path: ""
+
+
+[1772525193] LLM_RESPONSE
+tasks:
+  - name: define_chat_room_yaml_contract
+    display_name: 채팅방 YAML 계약 정의
+    rule:
+      - chat room 파일은 room_name, users, messages 필드를 가진다
+      - message는 message_id, command, data, receiver, sender_id, created_at 필드를 가진다
+      - ID는 session_id, sender_id, message_id 역할을 분리해 사용한다
+    step:
+      - 채팅방 YAML 구조체와 직렬화 역직렬화 규칙을 정의한다
+      - 필수 필드 누락 또는 타입 불일치 시 포맷 에러를 반환한다
+      - created_at을 ISO-8601 UTC 문자열로 기록하도록 규칙을 고정한다
+    depends_on: []
+    draft_path: ""
+
+  - name: enforce_chat_room_file_precheck
+    display_name: 채팅방 파일 사전검사
+    rule:
+      - .temp/{room_name}.yaml 파일이 없으면 에러를 출력하고 종료한다
+      - 채팅방 파일은 자동 생성하지 않는다
+      - 사전검사는 chat 진입과 send 실행 모두에서 동일하게 적용한다
+    step:
+      - orc 설치 폴더 기준 .temp/{name}.yaml 경로를 계산한다
+      - 파일 존재 여부를 검사한다
+      - 미존재 시 즉시 종료 코드와 에러 메시지를 반환한다
+    depends_on:
+      - define_chat_room_yaml_contract
+    draft_path: ""
+
+  - name: create_chat_runtime_identity
+    display_name: 채팅 런타임 ID 생성
+    rule:
+      - build_llm_id 함수로 8자리 난수를 생성한다
+      - chat 진입 시 session_id를 생성하고 내부 변수 llm_id에 저장한다
+      - send 실행 시 sender_id를 생성하고 내부 변수 llm_id에 저장한다
+    step:
+      - 8자리 ID 생성 함수를 구현한다
+      - chat 모드 진입 경로에서 session_id 생성 후 llm_id에 할당한다
+      - send 경로에서 sender_id 생성 후 llm_id에 할당한다
+    depends_on:
+      - enforce_chat_room_file_precheck
+    draft_path: ""
+
+  - name: enter_chat_session_and_register_user
+    display_name: 채팅 세션 진입 및 사용자 반영
+    rule:
+      - orc chat -n "name" 호출 시 chat 모드를 활성화한다
+      - 생성된 session_id를 users.sender_id와 연계해 반영한다
+      - chat 모드 시작 시 ctrl+d 종료 방법을 도움말로 출력한다
+    step:
+      - chat 커맨드의 -n 옵션 경로를 세션 진입 로직에 연결한다
+      - llm_id(session_id)를 users 항목에 반영하고 저장한다
+      - 시작 배너 또는 도움말에 ctrl+d 종료 안내를 출력한다
+    depends_on:
+      - create_chat_runtime_identity
+    draft_path: ""
+
+  - name: poll_new_messages_by_last_read_id
+    display_name: 마지막 읽음 기준 메시지 폴링
+    rule:
+      - messages는 last_read_message_id 기준으로 읽는다
+      - config의 MAX_read_time 동안 대기 후 파일을 재조회한다
+      - 새 메시지가 있으면 출력하고 last_read_message_id를 갱신한다
+    step:
+      - 초기 last_read_message_id를 기준으로 미읽음 메시지 집합을 계산한다
+      - MAX_read_time 대기 후 파일을 다시 읽는 루프를 구현한다
+      - 신규 메시지 출력 후 마지막 message_id를 저장한다
+    depends_on:
+      - enter_chat_session_and_register_user
+    draft_path: ""
+
+  - name: send_chat_message_to_room
+    display_name: 채팅 메시지 전송
+    rule:
+      - orc chat -n "name" -m "message"로 메시지를 전송할 수 있다
+      - -i receiver_id와 --data는 선택 옵션이며 생략 가능하다
+      - 전송 시 messages에 message_id, command, data, receiver, sender_id를 저장한다
+    step:
+      - chat 커맨드에 -m, -i, --data 옵션 파싱을 연결한다
+      - sender_id를 생성하고 llm_id에 저장한다
+      - 메시지 레코드를 만들어 YAML messages 배열에 append 저장한다
+    depends_on:
+      - create_chat_runtime_identity
+      - enforce_chat_room_file_precheck
+    draft_path: ""
+
+  - name: verify_chat_execution_paths
+    display_name: 채팅 실행 경로 검증
+    rule:
+      - chat 진입 경로와 send 경로를 실제 실행으로 검증한다
+      - 파일 없음 에러, 정상 전송, 폴링 갱신 시나리오를 확인한다
+      - 검증은 테스트 또는 CLI 실행 기반으로 수행한다
+    step:
+      - orc chat -n 케이스에서 파일 미존재 실패를 재현한다
+      - orc chat -n -m 케이스에서 messages append 결과를 확인한다
+      - last_read_message_id 기반 폴링 갱신 동작을 실행 검증한다
+    depends_on:
+      - poll_new_messages_by_last_read_id
+      - send_chat_message_to_room
+    draft_path: ""
+
+
+[1772525218] LLM_PROMPT
+너는 rust-orc의 todos.yaml 생성기다.
+`input.md` 전체를 해석해서 추가해야 할 기능을 스스로 판단하고, `tasks` 리스트를 생성해라.
+
+입력:
+# llm chat system
+- orc chat -n "이름" 을 하면 chat 모드가 활성화된다.
+- chat 모드 활성화 시 모든 대화 내용은 orc 설치 폴더 .temp/이름.yaml 파일에 기록된다.
+- orc chat -n "이름" 을 하면 현재 세션은 임의의 session_id 값(8자리 난수)을 할당받는다.
+- 내부 변수 llm_id 에는 방금 생성한 session_id 값을 저장한다.
+- chat 모드의 messages 형태는 message_id | command | data | receiver | sender_id 의미를 가진다.
+- chat 모드 종료 단축키는 ctrl+d 키이며 chat 모드 실행 시 도움말로 종료 방법을 출력한다.
+- .temp/이름.yaml 파일이 없으면 에러를 출력하고 종료한다. 자동 생성하지 않는다.
+- 채팅방 파일 형식은 YAML 이다.
+> orc chat -n "a" 라는 이름으로 명령을 호출한다.
+> orc 설치 폴더 .temp/a.yaml 가 있는지 확인한다.
+> 파일이 없으면 에러를 출력하고 종료한다.
+> 파일이 있으면 build_llm_id() 함수를 호출해서 8자리 난수 session_id 를 만든다.
+> 내부 변수 llm_id 에 8자리 난수를 저장한다.
+> users 에 sender_id(session_id) 를 반영한다.
+> .temp/이름.yaml 파일의 messages 를 last_read_message_id 기준으로 읽는다.
+> config 옵션 MAX_read_time 동안 대기 후 다시 이름.yaml 파일의 messages 값을 가져온다.
+> 새로운 값이 있다면 값을 표시하고 last_read_message_id 를 갱신한다.
+
+# llm chat system - send
+- orc chat -n "이름" -m "메시지" -i "receiver_id"(옵션) --data "data"(옵션) 으로 메시지를 보낼 수 있다.
+- 이때 orc 설치폴더 .temp/이름.yaml 이 없으면 에러를 출력하고 종료한다. 자동 생성하지 않는다.
+- 메시지를 보내면 message_id | command | data | receiver | sender_id 의미에 맞게 YAML messages 에 저장한다.
+- receiver 는 생략할 수 있다.
+- data 는 생략할 수 있다.
+- ID 분리 규칙은 다음과 같다: session_id(세션), sender_id(발신자), message_id(메시지).
+> orc chat -n "a" -m "hello" 를 입력한다.
+> orc 설치 폴더 .temp/a.yaml 파일이 있는지 검사한다.
+> 파일이 없으면 에러를 출력하고 종료한다.
+> 파일이 있으면 sender_id 용 임의 아이디 8자리를 생성한다.
+> 내부 변수 llm_id 에 방금 만든 난수를 저장한다.
+> messages 에 message_id=<new_id>, command="hello", data=null, receiver=null, sender_id=<llm_id> 를 기록한다.
+
+# chat room yaml format
+- chat room 파일은 아래 필드를 가진 YAML 구조를 사용한다.
+> room_name: "a"
+> users:
+>   - user_id: "A1B2C3D4"
+>     role: "user"
+> messages:
+>   - message_id: "M0000001"
+>     command: "hello"
+>     data: null
+>     receiver: null
+>     sender_id: "A1B2C3D4"
+>     created_at: "2026-03-03T00:00:00Z"
+
+
+참조:
+- 템플릿 스키마: `assets/code/templates/task.yaml`
+- 스킬 참조: `$rule-naming`, `$build_domain`, `$build-architecture`
+
+지시:
+- input.md의 `#`, `-`, `>` 블록을 그대로 1:1 매핑하지 말고, 구현 단위로 분해/통합해서 적정 task 개수를 결정한다.
+- task 수는 input.md 블록 수와 달라도 된다. 필요하면 더 많은 task를 만든다.
+- 각 task `name`은 반드시 `$rule-naming` 기준 snake_case로 생성한다.
+- `display_name`은 사람이 읽는 짧은 이름.
+- `rule`, `step`, `depends_on`은 문자열 배열.
+- `step`은 반드시 문자열 배열만 허용하며 map/object(`- key: value`)를 금지한다.
+- `draft_path`는 빈 문자열 `""`.
+- 출력은 YAML만 허용하며 설명 문장/코드블록/마크다운을 금지한다.
+
+출력 스키마(반드시 준수):
+tasks:
+  - name: snake_case
+    display_name: string
+    rule: [string]
+    step: [string]
+    depends_on: [string]
+    draft_path: ""
+
+
+[1772525241] LLM_RESPONSE
+tasks:
+  - name: add_chat_cli_command_options
+    display_name: chat CLI 옵션 추가
+    rule:
+      - "orc chat 명령에서 -n, -m, -i, --data 옵션을 지원한다"
+      - "읽기 모드(-n만)와 전송 모드(-n,-m)의 진입 분기를 명확히 분리한다"
+    step:
+      - "기존 CLI 파서에 chat 서브커맨드 옵션 정의를 추가한다"
+      - "옵션 조합에 따라 chat listen/send 실행 경로를 분기한다"
+      - "잘못된 옵션 조합은 사용법과 함께 에러를 반환한다"
+    depends_on: []
+    draft_path: ""
+  - name: add_chat_room_file_guard
+    display_name: 채팅방 파일 존재 검증
+    rule:
+      - ".temp/<room_name>.yaml 파일이 없으면 즉시 에러로 종료한다"
+      - "채팅방 파일은 자동 생성하지 않는다"
+    step:
+      - "설치 폴더 기준 .temp/<name>.yaml 경로를 계산한다"
+      - "listen/send 공통으로 파일 존재 여부를 검사한다"
+      - "미존재 시 표준 에러 메시지를 출력하고 종료한다"
+    depends_on:
+      - "add_chat_cli_command_options"
+    draft_path: ""
+  - name: add_chat_room_yaml_store
+    display_name: 채팅방 YAML 저장소
+    rule:
+      - "chat room YAML 포맷(room_name, users, messages)을 구조체로 매핑한다"
+      - "messages 항목은 message_id, command, data, receiver, sender_id, created_at 필드를 유지한다"
+    step:
+      - "채팅방 YAML 로드/파싱 함수를 구현한다"
+      - "메시지 append 및 users 반영 후 YAML 저장 함수를 구현한다"
+      - "필수 필드 누락/파싱 실패 시 에러를 반환한다"
+    depends_on:
+      - "add_chat_room_file_guard"
+    draft_path: ""
+  - name: add_chat_id_generators
+    display_name: 채팅 ID 생성 규칙
+    rule:
+      - "session_id, sender_id, message_id를 의미별로 분리해 생성한다"
+      - "session_id와 sender_id는 8자리 난수 규칙을 따른다"
+      - "현재 세션 ID는 내부 변수 llm_id에 저장한다"
+    step:
+      - "build_llm_id()로 8자리 난수 session_id 생성 로직을 구현한다"
+      - "send 흐름용 sender_id 생성 로직을 분리 구현한다"
+      - "message_id 생성 규칙과 중복 방지 정책을 적용한다"
+    depends_on:
+      - "add_chat_cli_command_options"
+    draft_path: ""
+  - name: implement_chat_listen_session_loop
+    display_name: 채팅 수신 세션 루프
+    rule:
+      - "chat 모드 진입 시 session_id를 생성하고 llm_id에 저장한다"
+      - "users에 sender_id(session_id)를 반영한다"
+      - "last_read_message_id 기준으로 새 메시지만 표시한다"
+      - "config MAX_read_time 대기 후 messages를 재조회한다"
+      - "시작 시 ctrl+d 종료 방법을 도움말로 출력한다"
+    step:
+      - "채팅방 로드 후 build_llm_id()를 호출해 세션을 초기화한다"
+      - "users 목록에 현재 sender_id를 반영하고 저장한다"
+      - "last_read_message_id 기준 필터링 출력 로직을 구현한다"
+      - "MAX_read_time 간격 폴링과 갱신 로직을 구현한다"
+      - "EOF(ctrl+d) 입력 시 루프를 안전 종료한다"
+    depends_on:
+      - "add_chat_room_yaml_store"
+      - "add_chat_id_generators"
+    draft_path: ""
+  - name: implement_chat_send_message_flow
+    display_name: 채팅 메시지 전송
+    rule:
+      - "orc chat -n <name> -m <message>로 메시지를 전송한다"
+      - "receiver와 data는 선택값이며 미지정 시 null로 저장한다"
+      - "전송 시 sender_id를 생성하고 llm_id에 저장한다"
+      - "messages에 규격 필드로 append 저장한다"
+    step:
+      - "send 실행 시 sender_id를 생성하고 llm_id를 갱신한다"
+      - "message_id, command, data, receiver, sender_id, created_at 값을 조합한다"
+      - "YAML messages 리스트에 append 후 파일에 저장한다"
+    depends_on:
+      - "add_chat_room_yaml_store"
+      - "add_chat_id_generators"
+    draft_path: ""
+
+
+[1772525255] LLM_PROMPT
+너는 rust-orc의 todos.yaml 생성기다.
+`input.md` 전체를 해석해서 추가해야 할 기능을 스스로 판단하고, `tasks` 리스트를 생성해라.
+
+입력:
+# llm chat system
+- orc chat -n "이름" 을 하면 chat 모드가 활성화된다.
+- chat 모드 활성화 시 모든 대화 내용은 orc 설치 폴더 .temp/이름.yaml 파일에 기록된다.
+- orc chat -n "이름" 을 하면 현재 세션은 임의의 session_id 값(8자리 난수)을 할당받는다.
+- 내부 변수 llm_id 에는 방금 생성한 session_id 값을 저장한다.
+- chat 모드의 messages 형태는 message_id | command | data | receiver | sender_id 의미를 가진다.
+- chat 모드 종료 단축키는 ctrl+d 키이며 chat 모드 실행 시 도움말로 종료 방법을 출력한다.
+- .temp/이름.yaml 파일이 없으면 에러를 출력하고 종료한다. 자동 생성하지 않는다.
+- 채팅방 파일 형식은 YAML 이다.
+> orc chat -n "a" 라는 이름으로 명령을 호출한다.
+> orc 설치 폴더 .temp/a.yaml 가 있는지 확인한다.
+> 파일이 없으면 에러를 출력하고 종료한다.
+> 파일이 있으면 build_llm_id() 함수를 호출해서 8자리 난수 session_id 를 만든다.
+> 내부 변수 llm_id 에 8자리 난수를 저장한다.
+> users 에 sender_id(session_id) 를 반영한다.
+> .temp/이름.yaml 파일의 messages 를 last_read_message_id 기준으로 읽는다.
+> config 옵션 MAX_read_time 동안 대기 후 다시 이름.yaml 파일의 messages 값을 가져온다.
+> 새로운 값이 있다면 값을 표시하고 last_read_message_id 를 갱신한다.
+
+# llm chat system - send
+- orc chat -n "이름" -m "메시지" -i "receiver_id"(옵션) --data "data"(옵션) 으로 메시지를 보낼 수 있다.
+- 이때 orc 설치폴더 .temp/이름.yaml 이 없으면 에러를 출력하고 종료한다. 자동 생성하지 않는다.
+- 메시지를 보내면 message_id | command | data | receiver | sender_id 의미에 맞게 YAML messages 에 저장한다.
+- receiver 는 생략할 수 있다.
+- data 는 생략할 수 있다.
+- ID 분리 규칙은 다음과 같다: session_id(세션), sender_id(발신자), message_id(메시지).
+> orc chat -n "a" -m "hello" 를 입력한다.
+> orc 설치 폴더 .temp/a.yaml 파일이 있는지 검사한다.
+> 파일이 없으면 에러를 출력하고 종료한다.
+> 파일이 있으면 sender_id 용 임의 아이디 8자리를 생성한다.
+> 내부 변수 llm_id 에 방금 만든 난수를 저장한다.
+> messages 에 message_id=<new_id>, command="hello", data=null, receiver=null, sender_id=<llm_id> 를 기록한다.
+
+# chat room yaml format
+- chat room 파일은 아래 필드를 가진 YAML 구조를 사용한다.
+> room_name: "a"
+> users:
+>   - user_id: "A1B2C3D4"
+>     role: "user"
+> messages:
+>   - message_id: "M0000001"
+>     command: "hello"
+>     data: null
+>     receiver: null
+>     sender_id: "A1B2C3D4"
+>     created_at: "2026-03-03T00:00:00Z"
+
+
+참조:
+- 템플릿 스키마: `assets/code/templates/task.yaml`
+- 스킬 참조: `$rule-naming`, `$build_domain`, `$build-architecture`
+
+지시:
+- input.md의 `#`, `-`, `>` 블록을 그대로 1:1 매핑하지 말고, 구현 단위로 분해/통합해서 적정 task 개수를 결정한다.
+- task 수는 input.md 블록 수와 달라도 된다. 필요하면 더 많은 task를 만든다.
+- 각 task `name`은 반드시 `$rule-naming` 기준 snake_case로 생성한다.
+- `display_name`은 사람이 읽는 짧은 이름.
+- `rule`, `step`, `depends_on`은 문자열 배열.
+- `step`은 반드시 문자열 배열만 허용하며 map/object(`- key: value`)를 금지한다.
+- `draft_path`는 빈 문자열 `""`.
+- 출력은 YAML만 허용하며 설명 문장/코드블록/마크다운을 금지한다.
+
+출력 스키마(반드시 준수):
+tasks:
+  - name: snake_case
+    display_name: string
+    rule: [string]
+    step: [string]
+    depends_on: [string]
+    draft_path: ""
+
+
+[1772525287] LLM_RESPONSE
+tasks:
+  - name: create_chat_id_generators
+    display_name: 채팅 ID 생성기
+    rule:
+      - session_id, sender_id, message_id를 분리해 관리한다.
+      - session_id와 sender_id는 8자리 난수 문자열을 사용한다.
+      - message_id는 메시지 식별자로 중복 없이 생성한다.
+    step:
+      - build_llm_id()를 구현해 8자리 난수 session_id를 생성한다.
+      - sender_id 생성 함수와 message_id 생성 함수를 분리 구현한다.
+      - 생성된 session_id를 내부 변수 llm_id에 저장하는 경로를 공통화한다.
+    depends_on: []
+    draft_path: ""
+
+  - name: create_chat_room_yaml_io
+    display_name: 채팅방 YAML 입출력
+    rule:
+      - 채팅방 파일 구조는 room_name, users, messages 필드를 유지한다.
+      - message는 message_id, command, data, receiver, sender_id, created_at 필드를 가진다.
+      - data와 receiver는 null 허용으로 직렬화/역직렬화한다.
+    step:
+      - 채팅방 YAML 구조체와 직렬화 스키마를 정의한다.
+      - .temp/이름.yaml 로드 및 저장 유틸을 구현한다.
+      - users/messages 필드 업데이트 후 YAML로 안전하게 반영한다.
+    depends_on:
+      - create_chat_id_generators
+    draft_path: ""
+
+  - name: add_chat_file_existence_guard
+    display_name: 채팅방 파일 존재 검사
+    rule:
+      - .temp/이름.yaml 파일이 없으면 즉시 에러를 출력하고 종료한다.
+      - 파일 자동 생성은 절대 수행하지 않는다.
+      - chat 진입과 send 실행 모두 동일한 검사 규칙을 적용한다.
+    step:
+      - chat 명령 시작 지점에서 .temp/이름.yaml 존재 여부를 검사한다.
+      - send 경로에서도 동일한 파일 존재 검사를 재사용한다.
+      - 실패 시 일관된 에러 메시지와 종료 코드를 반환한다.
+    depends_on:
+      - create_chat_room_yaml_io
+    draft_path: ""
+
+  - name: add_chat_mode_session_bootstrap
+    display_name: 채팅 모드 세션 시작
+    rule:
+      - orc chat -n "이름" 실행 시 session_id를 생성해 llm_id에 저장한다.
+      - users 목록에 sender_id(session_id)를 반영한다.
+      - chat 모드 실행 시 종료 방법(ctrl+d)을 도움말로 출력한다.
+    step:
+      - chat -n 진입 시 build_llm_id()를 호출해 session_id를 할당한다.
+      - llm_id 값을 현재 세션 컨텍스트에 저장한다.
+      - users에 user_id=llm_id 항목을 추가/반영하고 도움말을 출력한다.
+    depends_on:
+      - add_chat_file_existence_guard
+    draft_path: ""
+
+  - name: add_chat_mode_message_follow
+    display_name: 채팅 모드 메시지 팔로우
+    rule:
+      - last_read_message_id 기준으로 신규 messages만 출력한다.
+      - config MAX_read_time 동안 대기 후 파일을 다시 읽는다.
+      - 신규 메시지 출력 후 last_read_message_id를 갱신한다.
+    step:
+      - 초기 last_read_message_id를 기준으로 메시지 읽기 로직을 구현한다.
+      - MAX_read_time 대기 후 YAML 재로드 루프를 구성한다.
+      - 신규 messages 감지 시 출력하고 마지막 읽은 ID를 업데이트한다.
+    depends_on:
+      - add_chat_mode_session_bootstrap
+    draft_path: ""
+
+  - name: add_chat_send_message_command
+    display_name: 채팅 메시지 전송
+    rule:
+      - orc chat -n -m [-i] [--data] 옵션으로 메시지를 전송한다.
+      - sender_id용 8자리 난수를 생성해 llm_id에 저장한다.
+      - messages에 command/data/receiver/sender_id/message_id를 규격대로 기록한다.
+    step:
+      - chat send 인자(-n, -m, -i, --data) 파싱과 검증을 추가한다.
+      - sender_id(8자리) 생성 후 llm_id에 반영한다.
+      - message 레코드를 생성해 YAML messages 배열에 append 저장한다.
+    depends_on:
+      - add_chat_file_existence_guard
+      - create_chat_room_yaml_io
+    draft_path: ""
+
+
+[1772525287] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 채팅 ID 생성기
+- rule:
+- session_id, sender_id, message_id를 분리해 관리한다.
+- session_id와 sender_id는 8자리 난수 문자열을 사용한다.
+- message_id는 메시지 식별자로 중복 없이 생성한다.
+- step:
+- build_llm_id()를 구현해 8자리 난수 session_id를 생성한다.
+- sender_id 생성 함수와 message_id 생성 함수를 분리 구현한다.
+- 생성된 session_id를 내부 변수 llm_id에 저장하는 경로를 공통화한다.
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525324] LLM_RESPONSE
+FEATURE_NAME: chat_id_generator
+```yaml
+rule:
+  - split_manage(session_id,sender_id,message_id) == true
+  - matches(session_id, '^[A-Za-z0-9]{8}$') == true
+  - matches(sender_id, '^[A-Za-z0-9]{8}$') == true
+  - unique(message_id) == true
+features:
+  domain:
+    - chat
+  flow:
+    - generate_chat_identifiers
+    - unify_llm_id_assignment
+task:
+  - name: generate_chat_identifiers
+    type: action
+    domain:
+      - chat
+    depends_on: []
+    scope:
+      - src/chat/session.rs
+      - src/chat/message.rs
+      - src/cli/chat.rs
+    rule:
+      - build_llm_id() returns session_id
+      - len(session_id) == 8
+      - len(sender_id) == 8
+      - message_id != session_id and message_id != sender_id
+      - llm_id == session_id
+    step:
+      - "input: call build_llm_id() -> output: 8-char random session_id"
+      - "input: send context -> output: sender_id from dedicated sender_id generator"
+      - "input: message context -> output: unique message_id from dedicated message_id generator"
+      - "input: generated session_id -> output: llm_id assigned through shared internal path"
+      - "input: sender_id and message_id -> output: message payload persisted with separated identifiers"
+    touches:
+      - build_llm_id
+      - generate_sender_id
+      - generate_message_id
+      - llm_id
+      - session_id
+      - sender_id
+      - message_id
+    contracts:
+      - session_id_format=matches('^[A-Za-z0-9]{8}$')
+      - sender_id_format=matches('^[A-Za-z0-9]{8}$')
+      - message_id_uniqueness=unique(message_id)==true
+      - llm_id_equals_session_id=true
+      - id_separation=session_id!=sender_id and sender_id!=message_id and session_id!=message_id
+```
+
+
+[1772525324] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 채팅방 YAML 입출력
+- rule:
+- 채팅방 파일 구조는 room_name, users, messages 필드를 유지한다.
+- message는 message_id, command, data, receiver, sender_id, created_at 필드를 가진다.
+- data와 receiver는 null 허용으로 직렬화/역직렬화한다.
+- step:
+- 채팅방 YAML 구조체와 직렬화 스키마를 정의한다.
+- .temp/이름.yaml 로드 및 저장 유틸을 구현한다.
+- users/messages 필드 업데이트 후 YAML로 안전하게 반영한다.
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525375] LLM_RESPONSE
+FEATURE_NAME: manage_chat_room_yaml_io
+```yaml
+rule:
+- room_name.type == string
+- users.type == array
+- messages.type == array
+- messages[*].message_id.type == string
+- messages[*].command.type == string
+- messages[*].data.type in [null, any]
+- messages[*].receiver.type in [null, any]
+- messages[*].sender_id.type == string
+- messages[*].created_at.type == string
+features:
+  domain:
+  - chat_room
+  flow:
+  - load_update_save_chat_room_yaml
+task:
+- name: manage_chat_room_yaml_io
+  type: action
+  domain:
+  - chat_room
+  depends_on: []
+  scope:
+  - src/chat_room/yaml_model.rs
+  - src/chat_room/yaml_io.rs
+  - tests/chat_room_yaml_io.rs
+  - .temp/<name>.yaml
+  rule:
+  - yaml_deserialize_success == true
+  - required_keys_present == true
+  - nullable_fields_limited_to_data_and_receiver == true
+  - users_messages_update_applied == true
+  - yaml_serialize_success == true
+  - atomic_write_success == true
+  step:
+  - "input: room yaml text -> output: chat_room struct with room_name users messages fields"
+  - "input: chat_room struct -> output: message schema with message_id command data receiver sender_id created_at fields"
+  - "input: .temp/<name>.yaml path -> output: loaded chat_room object or io error"
+  - "input: users update and messages update -> output: updated chat_room object"
+  - "input: updated chat_room object -> output: serialized yaml with data and receiver nullable"
+  - "input: serialized yaml and .temp/<name>.yaml path -> output: safely persisted yaml file"
+  touches:
+  - chat_room
+  - user
+  - message
+  contracts:
+  - room_name:type==string
+  - users:type==array
+  - messages:type==array
+  - messages[*].message_id:type==string
+  - messages[*].command:type==string
+  - messages[*].data:type in [null, any]
+  - messages[*].receiver:type in [null, any]
+  - messages[*].sender_id:type==string
+  - messages[*].created_at:type==string
+  - io.path:matches(^\\.temp\\/.+\\.yaml$)==true
+  - write.mode==atomic
+```
+
+
+[1772525375] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 채팅방 파일 존재 검사
+- rule:
+- .temp/이름.yaml 파일이 없으면 즉시 에러를 출력하고 종료한다.
+- 파일 자동 생성은 절대 수행하지 않는다.
+- chat 진입과 send 실행 모두 동일한 검사 규칙을 적용한다.
+- step:
+- chat 명령 시작 지점에서 .temp/이름.yaml 존재 여부를 검사한다.
+- send 경로에서도 동일한 파일 존재 검사를 재사용한다.
+- 실패 시 일관된 에러 메시지와 종료 코드를 반환한다.
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525405] LLM_RESPONSE
+FEATURE_NAME: chat_room_file_existence_check
+```yaml
+rule:
+  - file_exists(".temp/{room_name}.yaml") == true
+  - file_auto_create(".temp/{room_name}.yaml") == false
+  - guard_rule(chat) == guard_rule(send)
+features:
+  domain:
+    - chat
+  flow:
+    - chat_command_start -> validate_room_yaml_exists -> continue_or_error_exit
+    - send_command_start -> validate_room_yaml_exists -> continue_or_error_exit
+task:
+  - name: validate_chat_room_yaml_before_chat_and_send
+    type: action
+    domain:
+      - chat
+    depends_on: []
+    scope:
+      - src/cli
+      - src/chat
+    rule:
+      - file_exists(".temp/{room_name}.yaml") == true
+      - file_auto_create(".temp/{room_name}.yaml") == false
+      - guard_rule(chat) == guard_rule(send)
+      - error_message_consistent == true
+      - error_exit_code_consistent == true
+    step:
+      - input(room_name) -> check_exists(.temp/{room_name}.yaml) -> output(exists|missing)
+      - input(chat_command, room_name) -> validate_room_yaml_exists(room_name) -> output(start_chat|print_error_and_exit)
+      - input(send_command, room_name) -> validate_room_yaml_exists(room_name) -> output(send_message|print_error_and_exit)
+      - input(missing_file) -> format_error(.temp/{room_name}.yaml) -> output(consistent_error_message_and_exit_code)
+    touches: []
+    contracts:
+      - room_file_required=file_exists(".temp/{room_name}.yaml") == true
+      - no_auto_create=file_auto_create(".temp/{room_name}.yaml") == false
+      - missing_file_error=stderr == "ERROR: room file not found: .temp/{room_name}.yaml"
+      - missing_file_exit=exit_code == 1
+      - shared_guard=guard_rule(chat) == guard_rule(send)
+```
+
+
+[1772525428] LLM_PROMPT
+너는 rust-orc의 todos.yaml 생성기다.
+`input.md` 전체를 해석해서 추가해야 할 기능을 스스로 판단하고, `tasks` 리스트를 생성해라.
+
+입력:
+# llm chat system
+- orc chat -n "이름" 을 하면 chat 모드가 활성화된다.
+- chat 모드 활성화 시 모든 대화 내용은 orc 설치 폴더 .temp/이름.yaml 파일에 기록된다.
+- orc chat -n "이름" 을 하면 현재 세션은 임의의 session_id 값(8자리 난수)을 할당받는다.
+- 내부 변수 llm_id 에는 방금 생성한 session_id 값을 저장한다.
+- chat 모드의 messages 형태는 message_id | command | data | receiver | sender_id 의미를 가진다.
+- chat 모드 종료 단축키는 ctrl+d 키이며 chat 모드 실행 시 도움말로 종료 방법을 출력한다.
+- .temp/이름.yaml 파일이 없으면 에러를 출력하고 종료한다. 자동 생성하지 않는다.
+- 채팅방 파일 형식은 YAML 이다.
+> orc chat -n "a" 라는 이름으로 명령을 호출한다.
+> orc 설치 폴더 .temp/a.yaml 가 있는지 확인한다.
+> 파일이 없으면 에러를 출력하고 종료한다.
+> 파일이 있으면 build_llm_id() 함수를 호출해서 8자리 난수 session_id 를 만든다.
+> 내부 변수 llm_id 에 8자리 난수를 저장한다.
+> users 에 sender_id(session_id) 를 반영한다.
+> .temp/이름.yaml 파일의 messages 를 last_read_message_id 기준으로 읽는다.
+> config 옵션 MAX_read_time 동안 대기 후 다시 이름.yaml 파일의 messages 값을 가져온다.
+> 새로운 값이 있다면 값을 표시하고 last_read_message_id 를 갱신한다.
+
+# llm chat system - send
+- orc chat -n "이름" -m "메시지" -i "receiver_id"(옵션) --data "data"(옵션) 으로 메시지를 보낼 수 있다.
+- 이때 orc 설치폴더 .temp/이름.yaml 이 없으면 에러를 출력하고 종료한다. 자동 생성하지 않는다.
+- 메시지를 보내면 message_id | command | data | receiver | sender_id 의미에 맞게 YAML messages 에 저장한다.
+- receiver 는 생략할 수 있다.
+- data 는 생략할 수 있다.
+- ID 분리 규칙은 다음과 같다: session_id(세션), sender_id(발신자), message_id(메시지).
+> orc chat -n "a" -m "hello" 를 입력한다.
+> orc 설치 폴더 .temp/a.yaml 파일이 있는지 검사한다.
+> 파일이 없으면 에러를 출력하고 종료한다.
+> 파일이 있으면 sender_id 용 임의 아이디 8자리를 생성한다.
+> 내부 변수 llm_id 에 방금 만든 난수를 저장한다.
+> messages 에 message_id=<new_id>, command="hello", data=null, receiver=null, sender_id=<llm_id> 를 기록한다.
+
+# chat room yaml format
+- chat room 파일은 아래 필드를 가진 YAML 구조를 사용한다.
+> room_name: "a"
+> users:
+>   - user_id: "A1B2C3D4"
+>     role: "user"
+> messages:
+>   - message_id: "M0000001"
+>     command: "hello"
+>     data: null
+>     receiver: null
+>     sender_id: "A1B2C3D4"
+>     created_at: "2026-03-03T00:00:00Z"
+
+
+참조:
+- 템플릿 스키마: `assets/code/templates/task.yaml`
+- 스킬 참조: `$rule-naming`, `$build_domain`, `$build-architecture`
+
+지시:
+- input.md의 `#`, `-`, `>` 블록을 그대로 1:1 매핑하지 말고, 구현 단위로 분해/통합해서 적정 task 개수를 결정한다.
+- task 수는 input.md 블록 수와 달라도 된다. 필요하면 더 많은 task를 만든다.
+- 각 task `name`은 반드시 `$rule-naming` 기준 snake_case로 생성한다.
+- `display_name`은 사람이 읽는 짧은 이름.
+- `rule`, `step`, `depends_on`은 문자열 배열.
+- `step`은 반드시 문자열 배열만 허용하며 map/object(`- key: value`)를 금지한다.
+- `draft_path`는 빈 문자열 `""`.
+- 출력은 YAML만 허용하며 설명 문장/코드블록/마크다운을 금지한다.
+
+출력 스키마(반드시 준수):
+tasks:
+  - name: snake_case
+    display_name: string
+    rule: [string]
+    step: [string]
+    depends_on: [string]
+    draft_path: ""
+
+
+[1772525451] LLM_RESPONSE
+tasks:
+  - name: add_chat_command_arguments
+    display_name: chat 명령 인자 처리
+    rule: ["`orc chat`에서 `-n`은 필수, `-m/-i/--data`는 시나리오에 따라 선택 처리", "전송 인자(`-m`)가 있으면 send 경로, 없으면 chat 모드 경로로 분기"]
+    step: ["`orc chat` 서브커맨드 인자 정의 추가", "실행 분기 로직에서 chat 모드/메시지 전송 모드 구분", "도움말에 chat 종료 단축키 안내 문구 연결"]
+    depends_on: []
+    draft_path: ""
+  - name: load_chat_room_yaml_with_missing_file_error
+    display_name: 채팅방 파일 로드/검증
+    rule: [".temp/{room}.yaml 파일이 없으면 자동 생성 없이 에러 후 종료", "채팅방 파일 포맷은 YAML로만 처리"]
+    step: ["orc 설치 경로 기준 .temp/{name}.yaml 경로 계산", "파일 존재 여부 검사", "미존재 시 명확한 에러 메시지 출력 후 종료", "존재 시 YAML 파싱 진입"]
+    depends_on: ["add_chat_command_arguments"]
+    draft_path: ""
+  - name: create_llm_id_and_sync_user_identity
+    display_name: 세션 ID 생성 및 사용자 반영
+    rule: ["chat 시작 시 build_llm_id()로 8자리 난수 session_id 생성", "생성한 값을 내부 변수 llm_id에 저장", "users에 sender_id(session_id) 반영"]
+    step: ["8자리 ID 생성 유틸 구현(build_llm_id)", "chat 시작 경로에서 llm_id 설정", "users 목록에 현재 sender_id 반영 또는 갱신"]
+    depends_on: ["load_chat_room_yaml_with_missing_file_error"]
+    draft_path: ""
+  - name: implement_chat_receive_polling_loop
+    display_name: chat 수신 루프 구현
+    rule: ["messages는 last_read_message_id 기준으로 증분 조회", "config.MAX_read_time 대기 후 재조회", "신규 메시지 출력 후 last_read_message_id 갱신", "ctrl+d 종료를 지원"]
+    step: ["초기 last_read_message_id 계산", "주기적 파일 재로딩 및 messages 비교 루프 작성", "신규 메시지 출력 포맷 적용", "EOF(ctrl+d) 감지 시 안전 종료"]
+    depends_on: ["create_llm_id_and_sync_user_identity"]
+    draft_path: ""
+  - name: add_chat_send_message_flow
+    display_name: chat 메시지 전송
+    rule: ["`orc chat -n <name> -m <message>`로 메시지 전송", "receiver/data는 생략 가능하며 null 저장", "메시지 저장 필드는 message_id|command|data|receiver|sender_id 의미를 준수"]
+    step: ["send 경로에서 8자리 sender_id 생성 및 llm_id 저장", "new message_id 생성 규칙 적용", "messages 배열에 command/data/receiver/sender_id/created_at 추가", "YAML 파일에 원자적으로 반영"]
+    depends_on: ["load_chat_room_yaml_with_missing_file_error"]
+    draft_path: ""
+  - name: enforce_chat_room_yaml_schema
+    display_name: 채팅방 YAML 스키마 강제
+    rule: ["room_name, users, messages 기본 구조를 유지", "messages 항목은 message_id, command, data, receiver, sender_id, created_at 필드를 포함", "ID 타입 분리 규칙(session_id/sender_id/message_id)을 문맥별로 준수"]
+    step: ["채팅방 구조체/스키마 정의", "로딩 시 필수 필드 검증", "쓰기 시 누락 필드 자동 보정 대신 에러 처리 또는 명시적 값 채움", "예시 포맷과 직렬화 결과 일치 검증"]
+    depends_on: ["add_chat_send_message_flow", "implement_chat_receive_polling_loop"]
+    draft_path: ""
+
+
+[1772525451] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: chat 명령 인자 처리
+- rule:
+- `orc chat`에서 `-n`은 필수, `-m/-i/--data`는 시나리오에 따라 선택 처리
+- 전송 인자(`-m`)가 있으면 send 경로, 없으면 chat 모드 경로로 분기
+- step:
+- `orc chat` 서브커맨드 인자 정의 추가
+- 실행 분기 로직에서 chat 모드/메시지 전송 모드 구분
+- 도움말에 chat 종료 단축키 안내 문구 연결
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525484] LLM_RESPONSE
+FEATURE_NAME: chat_command_argument_handling
+```yaml
+rule:
+  - command == 'orc chat -n <name> [-m <message>] [-i <receiver_id>] [--data <data>]'
+  - required('-n') == true
+  - optional('-m') == true
+  - optional('-i') == true
+  - optional('--data') == true
+  - has('-m') == true => mode == 'send'
+  - has('-m') == false => mode == 'chat'
+  - help_contains('chat 종료 단축키') == true
+features:
+  domain:
+    - chat
+  flow:
+    - parse_chat_subcommand_args
+    - branch_chat_or_send_mode
+    - link_help_exit_shortcut
+task:
+  - name: handle_chat_command_args
+    type: action
+    domain:
+      - chat
+    depends_on: []
+    scope:
+      - src/cli/mod.rs
+      - src/cli/chat.rs
+      - src/chat/*.rs
+    rule:
+      - arg_required('-n') == true
+      - arg_optional('-m') == true
+      - arg_optional('-i') == true
+      - arg_optional('--data') == true
+      - has('-m') == true => execute_path == 'send'
+      - has('-m') == false => execute_path == 'chat'
+      - help_contains('chat 종료 단축키') == true
+    step:
+      - "input: `orc chat` args -> output: parse result with required `-n` and optional `-m/-i/--data`"
+      - "input: parse result -> output: execute send path when `-m` exists"
+      - "input: parse result -> output: execute chat mode path when `-m` is absent"
+      - "input: chat help request -> output: help text includes chat exit shortcut guidance"
+    touches:
+      - cli.chat.args
+      - cli.chat.dispatch
+      - cli.chat.help
+    contracts:
+      - required_name=has('-n')==true
+      - mode_switch=has('-m')?send:chat
+      - send_uses_optional=('-i','--data')
+      - help_exit_shortcut=contains('chat 종료 단축키')
+```
+
+
+[1772525484] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 채팅방 파일 로드/검증
+- rule:
+- .temp/{room}.yaml 파일이 없으면 자동 생성 없이 에러 후 종료
+- 채팅방 파일 포맷은 YAML로만 처리
+- step:
+- orc 설치 경로 기준 .temp/{name}.yaml 경로 계산
+- 파일 존재 여부 검사
+- 미존재 시 명확한 에러 메시지 출력 후 종료
+- 존재 시 YAML 파싱 진입
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525517] LLM_RESPONSE
+FEATURE_NAME: load_chat_room_file_validation
+```yaml
+rule:
+  - file_exists(".temp/{room}.yaml") == true
+  - file_ext(".temp/{room}.yaml") == ".yaml"
+features:
+  domain:
+    - chat
+  flow:
+    - load_and_validate_room_file
+task:
+  - name: load_chat_room_file_validation
+    type: action
+    domain:
+      - chat
+    depends_on: []
+    scope:
+      - .temp/{room}.yaml
+    rule:
+      - file_exists(".temp/{room}.yaml") == true
+      - file_ext(".temp/{room}.yaml") == ".yaml"
+      - yaml_parse(".temp/{room}.yaml") == ok
+    step:
+      - orc 설치 경로 기준으로 ".temp/{room}.yaml" 경로를 계산한다
+      - ".temp/{room}.yaml" 파일 존재 여부를 검사한다
+      - 파일이 없으면 "채팅방 파일(.temp/{room}.yaml)이 없어 종료합니다. 자동 생성하지 않습니다." 에러를 출력하고 종료한다
+      - 파일이 있으면 YAML 파싱에 진입한다
+    touches:
+      - .temp/{room}.yaml
+    contracts:
+      - path=join(orc_install_path,".temp/{room}.yaml")
+      - parser=yaml_only
+      - missing_file_behavior=error_and_exit_without_create
+```
+
+
+[1772525535] LLM_PROMPT
+너는 rust-orc의 todos.yaml 생성기다.
+`input.md` 전체를 해석해서 추가해야 할 기능을 스스로 판단하고, `tasks` 리스트를 생성해라.
+
+입력:
+# llm chat system
+- orc chat -n "이름" 을 하면 chat 모드가 활성화된다.
+- chat 모드 활성화 시 모든 대화 내용은 orc 설치 폴더 .temp/이름.yaml 파일에 기록된다.
+- orc chat -n "이름" 을 하면 현재 세션은 임의의 session_id 값(8자리 난수)을 할당받는다.
+- 내부 변수 llm_id 에는 방금 생성한 session_id 값을 저장한다.
+- chat 모드의 messages 형태는 message_id | command | data | receiver | sender_id 의미를 가진다.
+- chat 모드 종료 단축키는 ctrl+d 키이며 chat 모드 실행 시 도움말로 종료 방법을 출력한다.
+- .temp/이름.yaml 파일이 없으면 에러를 출력하고 종료한다. 자동 생성하지 않는다.
+- 채팅방 파일 형식은 YAML 이다.
+> orc chat -n "a" 라는 이름으로 명령을 호출한다.
+> orc 설치 폴더 .temp/a.yaml 가 있는지 확인한다.
+> 파일이 없으면 에러를 출력하고 종료한다.
+> 파일이 있으면 build_llm_id() 함수를 호출해서 8자리 난수 session_id 를 만든다.
+> 내부 변수 llm_id 에 8자리 난수를 저장한다.
+> users 에 sender_id(session_id) 를 반영한다.
+> .temp/이름.yaml 파일의 messages 를 last_read_message_id 기준으로 읽는다.
+> config 옵션 MAX_read_time 동안 대기 후 다시 이름.yaml 파일의 messages 값을 가져온다.
+> 새로운 값이 있다면 값을 표시하고 last_read_message_id 를 갱신한다.
+
+# llm chat system - send
+- orc chat -n "이름" -m "메시지" -i "receiver_id"(옵션) --data "data"(옵션) 으로 메시지를 보낼 수 있다.
+- 이때 orc 설치폴더 .temp/이름.yaml 이 없으면 에러를 출력하고 종료한다. 자동 생성하지 않는다.
+- 메시지를 보내면 message_id | command | data | receiver | sender_id 의미에 맞게 YAML messages 에 저장한다.
+- receiver 는 생략할 수 있다.
+- data 는 생략할 수 있다.
+- ID 분리 규칙은 다음과 같다: session_id(세션), sender_id(발신자), message_id(메시지).
+> orc chat -n "a" -m "hello" 를 입력한다.
+> orc 설치 폴더 .temp/a.yaml 파일이 있는지 검사한다.
+> 파일이 없으면 에러를 출력하고 종료한다.
+> 파일이 있으면 sender_id 용 임의 아이디 8자리를 생성한다.
+> 내부 변수 llm_id 에 방금 만든 난수를 저장한다.
+> messages 에 message_id=<new_id>, command="hello", data=null, receiver=null, sender_id=<llm_id> 를 기록한다.
+
+# chat room yaml format
+- chat room 파일은 아래 필드를 가진 YAML 구조를 사용한다.
+> room_name: "a"
+> users:
+>   - user_id: "A1B2C3D4"
+>     role: "user"
+> messages:
+>   - message_id: "M0000001"
+>     command: "hello"
+>     data: null
+>     receiver: null
+>     sender_id: "A1B2C3D4"
+>     created_at: "2026-03-03T00:00:00Z"
+
+
+참조:
+- 템플릿 스키마: `assets/code/templates/task.yaml`
+- 스킬 참조: `$rule-naming`, `$build_domain`, `$build-architecture`
+
+지시:
+- input.md의 `#`, `-`, `>` 블록을 그대로 1:1 매핑하지 말고, 구현 단위로 분해/통합해서 적정 task 개수를 결정한다.
+- task 수는 input.md 블록 수와 달라도 된다. 필요하면 더 많은 task를 만든다.
+- 각 task `name`은 반드시 `$rule-naming` 기준 snake_case로 생성한다.
+- `display_name`은 사람이 읽는 짧은 이름.
+- `rule`, `step`, `depends_on`은 문자열 배열.
+- `step`은 반드시 문자열 배열만 허용하며 map/object(`- key: value`)를 금지한다.
+- `draft_path`는 빈 문자열 `""`.
+- 출력은 YAML만 허용하며 설명 문장/코드블록/마크다운을 금지한다.
+
+출력 스키마(반드시 준수):
+tasks:
+  - name: snake_case
+    display_name: string
+    rule: [string]
+    step: [string]
+    depends_on: [string]
+    draft_path: ""
+
+
+[1772525565] LLM_RESPONSE
+tasks:
+  - name: add_chat_room_yaml_contract
+    display_name: Chat Room YAML 모델 정의
+    rule:
+      - "chat room 파일은 room_name, users, messages 필드를 가진 YAML 구조를 따른다."
+      - "messages 항목은 message_id, command, data, receiver, sender_id, created_at 필드를 포함한다."
+      - "ID 분리 규칙(session_id, sender_id, message_id)을 타입/필드 수준에서 구분한다."
+    step:
+      - "chat room YAML 구조체와 직렬화/역직렬화 규칙을 추가한다."
+      - "users/message 엔트리 필수 필드와 nullable(data, receiver) 처리 규칙을 반영한다."
+      - "YAML 파싱/저장 시 필드 누락 및 타입 오류를 검증하도록 경계 처리를 추가한다."
+    depends_on: []
+    draft_path: ""
+  - name: add_chat_room_file_guard
+    display_name: 채팅방 파일 존재 검증
+    rule:
+      - "orc 설치 폴더 .temp/{name}.yaml 파일이 없으면 에러를 출력하고 종료한다."
+      - "채팅방 파일은 자동 생성하지 않는다."
+      - "chat 시작 모드와 send 모드 모두 동일한 파일 존재 검증을 적용한다."
+    step:
+      - "chat 명령 진입 초기에 .temp/{name}.yaml 존재 여부를 검사한다."
+      - "파일 미존재 시 공통 에러 경로로 즉시 종료하도록 처리한다."
+      - "send 경로에서도 동일 검증 로직을 재사용하도록 연결한다."
+    depends_on:
+      - "add_chat_room_yaml_contract"
+    draft_path: ""
+  - name: add_chat_session_bootstrap
+    display_name: 채팅 세션 시작 처리
+    rule:
+      - "orc chat -n \"이름\" 실행 시 8자리 난수 session_id를 생성한다."
+      - "생성한 session_id를 내부 변수 llm_id에 저장한다."
+      - "users에 sender_id(session_id)를 반영한다."
+    step:
+      - "build_llm_id()를 통해 8자리 난수 ID 생성 함수를 구현한다."
+      - "chat 시작 시 llm_id를 세팅하고 사용자 등록/갱신 로직을 수행한다."
+      - "session_id/sender_id 구분 규칙이 유지되도록 저장 경로를 분리한다."
+    depends_on:
+      - "add_chat_room_file_guard"
+    draft_path: ""
+  - name: add_chat_receive_polling_loop
+    display_name: 채팅 수신 폴링 루프
+    rule:
+      - "chat 모드에서 last_read_message_id 기준으로 messages를 읽는다."
+      - "config 옵션 MAX_read_time 동안 대기 후 messages를 다시 조회한다."
+      - "새 메시지가 있으면 출력하고 last_read_message_id를 갱신한다."
+    step:
+      - "초기 last_read_message_id 계산 및 메시지 필터링 로직을 구현한다."
+      - "MAX_read_time 기반 대기 후 재조회하는 폴링 루프를 추가한다."
+      - "신규 메시지 출력 후 읽은 포인터를 갱신하는 상태 전이를 연결한다."
+    depends_on:
+      - "add_chat_session_bootstrap"
+    draft_path: ""
+  - name: add_chat_exit_help_and_ctrl_d
+    display_name: 종료 도움말 및 Ctrl+D 처리
+    rule:
+      - "chat 모드 실행 시 종료 방법(Ctrl+D) 도움말을 출력한다."
+      - "Ctrl+D 입력 시 chat 모드를 정상 종료한다."
+      - "종료 동작은 수신 루프와 충돌 없이 즉시 반영된다."
+    step:
+      - "chat 모드 시작 시 단축키 도움말 출력 문구를 추가한다."
+      - "표준입력 EOF(Ctrl+D)를 감지해 종료 신호를 처리한다."
+      - "종료 시 루프/리소스를 정리하고 정상 종료 코드로 반환한다."
+    depends_on:
+      - "add_chat_receive_polling_loop"
+    draft_path: ""
+  - name: add_chat_send_message_flow
+    display_name: 메시지 전송 처리
+    rule:
+      - "orc chat -n \"이름\" -m \"메시지\" -i \"receiver_id\" --data \"data\"를 지원한다."
+      - "receiver와 data는 생략 가능하며, 생략 시 null로 저장한다."
+      - "messages에 message_id, command, data, receiver, sender_id를 규칙에 맞게 저장한다."
+    step:
+      - "send 모드 CLI 옵션(-m, -i, --data) 파싱 및 입력 검증을 연결한다."
+      - "sender_id용 8자리 난수를 생성하고 llm_id에 저장한다."
+      - "message_id 신규 발급 후 YAML messages에 created_at 포함 엔트리를 append 저장한다."
+    depends_on:
+      - "add_chat_room_file_guard"
+      - "add_chat_room_yaml_contract"
+    draft_path: ""
+  - name: add_chat_command_integration_tests
+    display_name: 채팅 명령 통합 검증
+    rule:
+      - "chat 시작/수신/send 경로가 파일 상태 기반으로 end-to-end 동작해야 한다."
+      - "파일 미존재 에러 경로와 정상 경로를 모두 검증한다."
+      - "ID 생성 규칙(8자리)과 메시지 필드 저장 규칙을 테스트로 고정한다."
+    step:
+      - "chat 시작 시 session_id/llm_id/users 반영을 검증하는 테스트를 추가한다."
+      - "send 실행 시 messages append 및 nullable 필드 저장을 검증한다."
+      - "last_read_message_id 갱신 및 폴링 재조회 경로를 시나리오 테스트로 검증한다."
+    depends_on:
+      - "add_chat_send_message_flow"
+      - "add_chat_exit_help_and_ctrl_d"
+    draft_path: ""
+
+
+[1772525565] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: Chat Room YAML 모델 정의
+- rule:
+- chat room 파일은 room_name, users, messages 필드를 가진 YAML 구조를 따른다.
+- messages 항목은 message_id, command, data, receiver, sender_id, created_at 필드를 포함한다.
+- ID 분리 규칙(session_id, sender_id, message_id)을 타입/필드 수준에서 구분한다.
+- step:
+- chat room YAML 구조체와 직렬화/역직렬화 규칙을 추가한다.
+- users/message 엔트리 필수 필드와 nullable(data, receiver) 처리 규칙을 반영한다.
+- YAML 파싱/저장 시 필드 누락 및 타입 오류를 검증하도록 경계 처리를 추가한다.
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525619] LLM_RESPONSE
+FEATURE_NAME: chat_room_yaml_model_definition
+```yaml
+rule:
+  - room_name.type == string
+  - users.type == array
+  - messages.type == array
+  - messages[*].message_id.type == string
+  - messages[*].command.type == string
+  - messages[*].data.type in [null, any]
+  - messages[*].receiver.type in [null, any]
+  - messages[*].sender_id.type == string
+  - messages[*].created_at.type == string
+  - id_type_separation(session_id,sender_id,message_id) == true
+  - yaml_missing_field_rejected == true
+  - yaml_type_error_rejected == true
+features:
+  domain:
+    - chat_room
+  flow:
+    - define_chat_room_yaml_model_with_validation
+task:
+  - name: define_chat_room_yaml_model
+    type: action
+    domain:
+      - chat_room
+    depends_on: []
+    scope:
+      - src/chat_room/yaml_model.rs
+      - src/chat_room/yaml_io.rs
+      - tests/chat_room_yaml_model_definition.rs
+    rule:
+      - yaml_deserialize_success == true
+      - required_user_message_fields_present == true
+      - nullable_fields_limited_to_data_and_receiver == true
+      - id_types_are_separated == true
+      - yaml_serialize_success == true
+      - missing_or_invalid_field_returns_error == true
+    step:
+      - "input: chat room yaml text -> output: ChatRoomYaml struct or parse error"
+      - "input: parsed users entries -> output: error if required user fields are missing or invalid"
+      - "input: parsed messages entries -> output: error if message_id command sender_id created_at is missing or invalid"
+      - "input: parsed messages entries -> output: allow only nullable data and receiver fields"
+      - "input: parsed identifiers -> output: session_id sender_id message_id mapped to separated id types"
+      - "input: valid ChatRoomYaml struct -> output: serialized yaml text preserving schema"
+      - "input: yaml with missing field or wrong type -> output: boundary validation error"
+    touches:
+      - chat_room
+      - user
+      - message
+      - session_id
+      - sender_id
+      - message_id
+    contracts:
+      - room_name:type==string
+      - users:type==array
+      - messages:type==array
+      - messages[*].message_id:type==string
+      - messages[*].command:type==string
+      - messages[*].data:type in [null, any]
+      - messages[*].receiver:type in [null, any]
+      - messages[*].sender_id:type==string
+      - messages[*].created_at:type==string
+      - session_id:type==SessionId
+      - sender_id:type==SenderId
+      - message_id:type==MessageId
+      - yaml_missing_field:error==returned
+      - yaml_type_mismatch:error==returned
+```
+
+
+[1772525619] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 채팅방 파일 존재 검증
+- rule:
+- orc 설치 폴더 .temp/{name}.yaml 파일이 없으면 에러를 출력하고 종료한다.
+- 채팅방 파일은 자동 생성하지 않는다.
+- chat 시작 모드와 send 모드 모두 동일한 파일 존재 검증을 적용한다.
+- step:
+- chat 명령 진입 초기에 .temp/{name}.yaml 존재 여부를 검사한다.
+- 파일 미존재 시 공통 에러 경로로 즉시 종료하도록 처리한다.
+- send 경로에서도 동일 검증 로직을 재사용하도록 연결한다.
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525650] LLM_RESPONSE
+FEATURE_NAME: chat_room_file_existence_validation
+```yaml
+rule:
+  - file_exists(".temp/{name}.yaml") == true
+features:
+  domain:
+    - chat
+  flow:
+    - chat_entry_file_guard
+task:
+  - name: validate_chat_room_file_exists
+    type: action
+    domain:
+      - chat
+    depends_on: []
+    scope:
+      - src/cli/chat.rs
+      - src/cli/send.rs
+      - src/error.rs
+    rule:
+      - file_exists(".temp/{name}.yaml") == true
+      - auto_create_chat_room_file == false
+      - applies_to("chat_start") == true
+      - applies_to("send") == true
+    step:
+      - chat 명령 진입 초기에 .temp/{name}.yaml 존재 여부를 검사한다.
+      - 파일 미존재 시 공통 에러 경로로 즉시 종료한다.
+      - send 경로에서 동일 검증 로직을 재사용한다.
+    touches: []
+    contracts:
+      - chat_start_requires_file=file_exists(".temp/{name}.yaml") == true
+      - send_requires_file=file_exists(".temp/{name}.yaml") == true
+      - missing_file_exits_with_common_error=exit_path == "common_error"
+```
+
+
+[1772525650] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 채팅 세션 시작 처리
+- rule:
+- orc chat -n "이름" 실행 시 8자리 난수 session_id를 생성한다.
+- 생성한 session_id를 내부 변수 llm_id에 저장한다.
+- users에 sender_id(session_id)를 반영한다.
+- step:
+- build_llm_id()를 통해 8자리 난수 ID 생성 함수를 구현한다.
+- chat 시작 시 llm_id를 세팅하고 사용자 등록/갱신 로직을 수행한다.
+- session_id/sender_id 구분 규칙이 유지되도록 저장 경로를 분리한다.
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525703] LLM_RESPONSE
+FEATURE_NAME: chat_session_start
+```yaml
+rule:
+  - 'command == "orc chat -n <name>"'
+  - 'matches(llm_id, "^[A-Za-z0-9]{8}$")'
+  - "users.sender_id == llm_id"
+features:
+  domain:
+    - chat
+  flow:
+    - chat_session_start
+task:
+  - name: build_llm_id_and_bind_sender
+    type: action
+    domain:
+      - chat
+    depends_on: []
+    scope:
+      - src/chat.rs
+      - src/cli.rs
+      - src/main.rs
+    rule:
+      - 'matches(llm_id, "^[A-Za-z0-9]{8}$")'
+      - "users.sender_id == llm_id"
+      - "session_id_store_path != sender_id_store_path"
+    step:
+      - "src/chat.rs -> build_llm_id() 추가 -> 8자리 난수 ID 반환"
+      - "chat 시작 입력 처리 -> llm_id=session_id 저장 -> users.sender_id 갱신"
+      - "session_id 저장 경로와 sender_id 저장 경로를 분리해 기록"
+    touches:
+      - llm_id
+      - session_id
+      - users.sender_id
+      - session_id_store_path
+      - sender_id_store_path
+    contracts:
+      - 'llm_id=matches("^[A-Za-z0-9]{8}$")'
+      - "users.sender_id==llm_id"
+      - "session_id_store_path!=sender_id_store_path"
+```
+
+
+[1772525703] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 채팅 수신 폴링 루프
+- rule:
+- chat 모드에서 last_read_message_id 기준으로 messages를 읽는다.
+- config 옵션 MAX_read_time 동안 대기 후 messages를 다시 조회한다.
+- 새 메시지가 있으면 출력하고 last_read_message_id를 갱신한다.
+- step:
+- 초기 last_read_message_id 계산 및 메시지 필터링 로직을 구현한다.
+- MAX_read_time 기반 대기 후 재조회하는 폴링 루프를 추가한다.
+- 신규 메시지 출력 후 읽은 포인터를 갱신하는 상태 전이를 연결한다.
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525733] LLM_RESPONSE
+FEATURE_NAME: chat_receive_polling_loop
+```yaml
+rule:
+- chat_mode == true
+- read_messages_since(last_read_message_id) == messages_filtered
+- wait_time <= config.MAX_read_time
+- has_new_messages == true => last_read_message_id updates_to latest_message_id
+features:
+  domain:
+  - chat
+  flow:
+  - chat_receive_message_polling
+task:
+- name: poll_chat_messages_since_last_read
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/cli/chat.rs
+  - src/chat/session.rs
+  - src/chat/*.rs
+  rule:
+  - initial_last_read_message_id != null
+  - messages = read_messages_since(last_read_message_id)
+  - wait(config.MAX_read_time) executes_between_reads == true
+  - new_messages_count > 0 => print(new_messages) == true
+  - new_messages_count > 0 => last_read_message_id == new_messages[-1].message_id
+  step:
+  - chat 모드 시작 시 last_read_message_id를 계산하고 그 이후 메시지만 필터링한다.
+  - config.MAX_read_time 동안 대기한 뒤 같은 기준으로 messages를 재조회한다.
+  - 신규 메시지가 있으면 출력하고 last_read_message_id를 최신 message_id로 갱신한다.
+  touches:
+  - last_read_message_id
+  - messages
+  - config.MAX_read_time
+  - stdout
+  contracts:
+  - last_read_message_id=matches('^[A-Za-z0-9_-]+$')
+  - poll_wait_seconds<=config.MAX_read_time
+  - printed_messages_count==new_messages_count
+  - pointer_update_on_new_messages=true
+```
+
+
+[1772525733] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 종료 도움말 및 Ctrl+D 처리
+- rule:
+- chat 모드 실행 시 종료 방법(Ctrl+D) 도움말을 출력한다.
+- Ctrl+D 입력 시 chat 모드를 정상 종료한다.
+- 종료 동작은 수신 루프와 충돌 없이 즉시 반영된다.
+- step:
+- chat 모드 시작 시 단축키 도움말 출력 문구를 추가한다.
+- 표준입력 EOF(Ctrl+D)를 감지해 종료 신호를 처리한다.
+- 종료 시 루프/리소스를 정리하고 정상 종료 코드로 반환한다.
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525775] LLM_RESPONSE
+FEATURE_NAME: chat_exit_help_ctrl_d
+```yaml
+rule:
+  - "chat_mode_enabled == true"
+features:
+  domain:
+    - "chat"
+  flow:
+    - "start_chat_mode"
+    - "show_exit_help"
+    - "detect_stdin_eof"
+    - "signal_chat_shutdown"
+    - "cleanup_and_return_zero"
+task:
+  - name: "chat_exit_help_ctrl_d"
+    type: "action"
+    domain:
+      - "chat"
+    depends_on: []
+    scope:
+      - "src/"
+    rule:
+      - 'stdout.contains("Ctrl+D") == true'
+      - "stdin.eof == true -> shutdown_signal == emitted"
+      - "shutdown_signal == emitted -> process.exit_code == 0"
+    step:
+      - "chat 모드 시작 시 종료 도움말에 Ctrl+D 문구를 출력한다."
+      - "표준입력 EOF를 감지하면 종료 신호를 즉시 처리한다."
+      - "종료 시 입력 루프와 리소스를 정리하고 종료 코드 0으로 반환한다."
+    touches:
+      - "chat_loop"
+      - "stdin_reader"
+      - "shutdown_signal"
+      - "exit_help_output"
+    contracts:
+      - "help_output_has_ctrl_d=true"
+      - "eof_triggers_shutdown=true"
+      - "shutdown_applied_without_loop_conflict=true"
+      - "exit_code==0"
+```
+
+
+[1772525775] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 메시지 전송 처리
+- rule:
+- orc chat -n "이름" -m "메시지" -i "receiver_id" --data "data"를 지원한다.
+- receiver와 data는 생략 가능하며, 생략 시 null로 저장한다.
+- messages에 message_id, command, data, receiver, sender_id를 규칙에 맞게 저장한다.
+- step:
+- send 모드 CLI 옵션(-m, -i, --data) 파싱 및 입력 검증을 연결한다.
+- sender_id용 8자리 난수를 생성하고 llm_id에 저장한다.
+- message_id 신규 발급 후 YAML messages에 created_at 포함 엔트리를 append 저장한다.
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525826] LLM_RESPONSE
+FEATURE_NAME: process_chat_message_send
+```yaml
+rule:
+  - command == 'orc chat -n <name> -m <message> [-i <receiver_id>] [--data <data>]'
+  - arg_required('-n') == true
+  - arg_required('-m') == true
+  - arg_optional('-i') == true
+  - arg_optional('--data') == true
+  - omitted('-i') => receiver == null
+  - omitted('--data') => data == null
+  - append(messages, {message_id, command, data, receiver, sender_id, created_at}) == true
+features:
+  domain:
+    - chat
+  flow:
+    - parse_send_mode_options
+    - generate_sender_and_message_ids
+    - append_message_entry_to_yaml
+task:
+  - name: process_chat_message_send
+    type: action
+    domain:
+      - chat
+    depends_on: []
+    scope:
+      - src/cli/mod.rs
+      - src/cli/chat.rs
+      - src/chat/*.rs
+      - .temp/*.yaml
+    rule:
+      - has('-m') == true
+      - parse('-m') != ''
+      - parse('-i') == null or is_string(parse('-i')) == true
+      - parse('--data') == null or is_string(parse('--data')) == true
+      - len(sender_id) == 8
+      - llm_id == sender_id
+      - message_id != sender_id
+      - messages[-1].command == input.message
+      - messages[-1].receiver == null when input.receiver_id is omitted
+      - messages[-1].data == null when input.data is omitted
+      - has_key(messages[-1], 'created_at') == true
+    step:
+      - "input: `orc chat -n <name> -m <message> [-i <receiver_id>] [--data <data>]` -> output: validated send mode args"
+      - "input: validated args -> output: sender_id 8-char random string and llm_id assignment"
+      - "input: send context -> output: new message_id issuance"
+      - "input: message fields -> output: append YAML messages entry with created_at"
+    touches:
+      - cli.chat.args
+      - runtime.llm_id
+      - messages[].message_id
+      - messages[].command
+      - messages[].receiver
+      - messages[].data
+      - messages[].sender_id
+      - messages[].created_at
+    contracts:
+      - sender_id_format=matches('^[A-Za-z0-9]{8}$')==true
+      - llm_id_equals_sender_id=llm_id==sender_id
+      - message_id_unique=unique(message_id)==true
+      - receiver_nullable=receiver==null or is_string(receiver)==true
+      - data_nullable=data==null or is_string(data)==true
+      - message_append_has_created_at=has_key(messages[-1],'created_at')==true
+```
+
+
+[1772525826] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 채팅 명령 통합 검증
+- rule:
+- chat 시작/수신/send 경로가 파일 상태 기반으로 end-to-end 동작해야 한다.
+- 파일 미존재 에러 경로와 정상 경로를 모두 검증한다.
+- ID 생성 규칙(8자리)과 메시지 필드 저장 규칙을 테스트로 고정한다.
+- step:
+- chat 시작 시 session_id/llm_id/users 반영을 검증하는 테스트를 추가한다.
+- send 실행 시 messages append 및 nullable 필드 저장을 검증한다.
+- last_read_message_id 갱신 및 폴링 재조회 경로를 시나리오 테스트로 검증한다.
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525858] LLM_PROMPT
+너는 rust-orc의 todos.yaml 생성기다.
+`input.md` 전체를 해석해서 추가해야 할 기능을 스스로 판단하고, `tasks` 리스트를 생성해라.
+
+입력:
+# llm chat system
+- orc chat -n "이름" 을 하면 chat 모드가 활성화된다.
+- chat 모드 활성화 시 모든 대화 내용은 orc 설치 폴더 .temp/이름.yaml 파일에 기록된다.
+- orc chat -n "이름" 을 하면 현재 세션은 임의의 session_id 값(8자리 난수)을 할당받는다.
+- 내부 변수 llm_id 에는 방금 생성한 session_id 값을 저장한다.
+- chat 모드의 messages 형태는 message_id | command | data | receiver | sender_id 의미를 가진다.
+- chat 모드 종료 단축키는 ctrl+d 키이며 chat 모드 실행 시 도움말로 종료 방법을 출력한다.
+- .temp/이름.yaml 파일이 없으면 에러를 출력하고 종료한다. 자동 생성하지 않는다.
+- 채팅방 파일 형식은 YAML 이다.
+> orc chat -n "a" 라는 이름으로 명령을 호출한다.
+> orc 설치 폴더 .temp/a.yaml 가 있는지 확인한다.
+> 파일이 없으면 에러를 출력하고 종료한다.
+> 파일이 있으면 build_llm_id() 함수를 호출해서 8자리 난수 session_id 를 만든다.
+> 내부 변수 llm_id 에 8자리 난수를 저장한다.
+> users 에 sender_id(session_id) 를 반영한다.
+> .temp/이름.yaml 파일의 messages 를 last_read_message_id 기준으로 읽는다.
+> config 옵션 MAX_read_time 동안 대기 후 다시 이름.yaml 파일의 messages 값을 가져온다.
+> 새로운 값이 있다면 값을 표시하고 last_read_message_id 를 갱신한다.
+
+# llm chat system - send
+- orc chat -n "이름" -m "메시지" -i "receiver_id"(옵션) --data "data"(옵션) 으로 메시지를 보낼 수 있다.
+- 이때 orc 설치폴더 .temp/이름.yaml 이 없으면 에러를 출력하고 종료한다. 자동 생성하지 않는다.
+- 메시지를 보내면 message_id | command | data | receiver | sender_id 의미에 맞게 YAML messages 에 저장한다.
+- receiver 는 생략할 수 있다.
+- data 는 생략할 수 있다.
+- ID 분리 규칙은 다음과 같다: session_id(세션), sender_id(발신자), message_id(메시지).
+> orc chat -n "a" -m "hello" 를 입력한다.
+> orc 설치 폴더 .temp/a.yaml 파일이 있는지 검사한다.
+> 파일이 없으면 에러를 출력하고 종료한다.
+> 파일이 있으면 sender_id 용 임의 아이디 8자리를 생성한다.
+> 내부 변수 llm_id 에 방금 만든 난수를 저장한다.
+> messages 에 message_id=<new_id>, command="hello", data=null, receiver=null, sender_id=<llm_id> 를 기록한다.
+
+# chat room yaml format
+- chat room 파일은 아래 필드를 가진 YAML 구조를 사용한다.
+> room_name: "a"
+> users:
+>   - user_id: "A1B2C3D4"
+>     role: "user"
+> messages:
+>   - message_id: "M0000001"
+>     command: "hello"
+>     data: null
+>     receiver: null
+>     sender_id: "A1B2C3D4"
+>     created_at: "2026-03-03T00:00:00Z"
+
+
+참조:
+- 템플릿 스키마: `assets/code/templates/task.yaml`
+- 스킬 참조: `$rule-naming`, `$build_domain`, `$build-architecture`
+
+지시:
+- input.md의 `#`, `-`, `>` 블록을 그대로 1:1 매핑하지 말고, 구현 단위로 분해/통합해서 적정 task 개수를 결정한다.
+- task 수는 input.md 블록 수와 달라도 된다. 필요하면 더 많은 task를 만든다.
+- 각 task `name`은 반드시 `$rule-naming` 기준 snake_case로 생성한다.
+- `display_name`은 사람이 읽는 짧은 이름.
+- `rule`, `step`, `depends_on`은 문자열 배열.
+- `step`은 반드시 문자열 배열만 허용하며 map/object(`- key: value`)를 금지한다.
+- `draft_path`는 빈 문자열 `""`.
+- 출력은 YAML만 허용하며 설명 문장/코드블록/마크다운을 금지한다.
+
+출력 스키마(반드시 준수):
+tasks:
+  - name: snake_case
+    display_name: string
+    rule: [string]
+    step: [string]
+    depends_on: [string]
+    draft_path: ""
+
+
+[1772525882] LLM_RESPONSE
+tasks:
+  - name: define_chat_room_yaml_schema
+    display_name: 채팅방 YAML 스키마 정의
+    rule:
+      - "chat room 파일은 room_name, users, messages 구조를 따른다"
+      - "messages 항목은 message_id, command, data, receiver, sender_id, created_at 필드를 가진다"
+      - "ID 분리 규칙(session_id, sender_id, message_id)을 유지한다"
+    step:
+      - "채팅방 YAML 구조체를 추가하고 직렬화/역직렬화 경로를 연결한다"
+      - "users와 messages 필드의 타입 및 null 허용 규칙(data, receiver)을 반영한다"
+      - "기존 로드/저장 코드가 새 스키마를 사용하도록 연결한다"
+    depends_on: []
+    draft_path: ""
+  - name: add_chat_command_entry_and_options
+    display_name: chat 명령 진입점/옵션 추가
+    rule:
+      - "orc chat -n \"이름\" 실행 시 chat 모드로 진입한다"
+      - "orc chat -n \"이름\" -m \"메시지\" -i \"receiver_id\" --data \"data\" 형태를 지원한다"
+      - "receiver, data는 선택 옵션이다"
+    step:
+      - "chat 서브커맨드에 name 필수 옵션과 send 관련 옵션을 추가한다"
+      - "interactive 모드와 send 모드 분기 로직을 구현한다"
+      - "도움말에 ctrl+d 종료 안내를 노출한다"
+    depends_on:
+      - "define_chat_room_yaml_schema"
+    draft_path: ""
+  - name: enforce_chat_room_file_exists
+    display_name: 채팅방 파일 존재 검증
+    rule:
+      - ".temp/이름.yaml 파일이 없으면 에러 출력 후 종료한다"
+      - "파일 자동 생성은 금지한다"
+    step:
+      - "chat 진입 시 .temp/{name}.yaml 경로를 계산한다"
+      - "interactive/send 공통으로 파일 존재 여부를 검사한다"
+      - "미존재 시 명확한 에러를 반환하고 후속 로직을 중단한다"
+    depends_on:
+      - "add_chat_command_entry_and_options"
+    draft_path: ""
+  - name: create_session_id_and_bind_llm_id
+    display_name: 세션 ID 생성 및 llm_id 바인딩
+    rule:
+      - "build_llm_id()로 8자리 난수 session_id를 생성한다"
+      - "내부 변수 llm_id에 생성된 값을 저장한다"
+      - "interactive 진입 시 users에 sender_id(session_id)를 반영한다"
+    step:
+      - "8자리 난수 ID 생성 함수(build_llm_id)를 구현한다"
+      - "chat 실행 컨텍스트에 llm_id 저장 경로를 추가한다"
+      - "interactive 시작 시 users 목록에 현재 sender_id를 반영한다"
+    depends_on:
+      - "enforce_chat_room_file_exists"
+    draft_path: ""
+  - name: implement_chat_interactive_polling_loop
+    display_name: chat 모드 메시지 폴링 루프
+    rule:
+      - "messages를 last_read_message_id 기준으로 읽는다"
+      - "config MAX_read_time 동안 대기 후 다시 messages를 읽는다"
+      - "새 메시지가 있으면 출력하고 last_read_message_id를 갱신한다"
+    step:
+      - "초기 last_read_message_id를 계산해 unread 메시지를 출력한다"
+      - "MAX_read_time 기반 반복 조회 루프를 구현한다"
+      - "새 메시지 발견 시 출력 후 last_read_message_id를 업데이트한다"
+    depends_on:
+      - "create_session_id_and_bind_llm_id"
+    draft_path: ""
+  - name: implement_chat_send_message_write
+    display_name: chat 메시지 전송 저장
+    rule:
+      - "send 실행 시 sender_id용 8자리 ID를 만들고 llm_id에 저장한다"
+      - "messages에 message_id, command, data, receiver, sender_id를 저장한다"
+      - "receiver/data 미입력 시 null로 기록한다"
+    step:
+      - "send 경로에서 sender_id와 message_id를 생성한다"
+      - "입력 메시지를 YAML messages 배열에 append한다"
+      - "created_at 타임스탬프를 포함해 파일에 저장한다"
+    depends_on:
+      - "create_session_id_and_bind_llm_id"
+    draft_path: ""
+  - name: verify_chat_execution_paths
+    display_name: chat 실행 경로 검증
+    rule:
+      - "interactive 경로와 send 경로를 실제 실행으로 검증한다"
+      - "파일 미존재 에러 경로를 검증한다"
+      - "도움말/문서의 chat 사용법을 구현 결과와 동기화한다"
+    step:
+      - "orc chat -n \"a\" 실행 시 파일 검사/세션/폴링 동작을 확인한다"
+      - "orc chat -n \"a\" -m \"hello\" 실행 시 messages append 결과를 확인한다"
+      - "cargo test 및 관련 CLI 체크를 실행해 회귀를 확인한다"
+    depends_on:
+      - "implement_chat_interactive_polling_loop"
+      - "implement_chat_send_message_write"
+    draft_path: ""
+
+
+[1772525882] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 채팅방 YAML 스키마 정의
+- rule:
+- chat room 파일은 room_name, users, messages 구조를 따른다
+- messages 항목은 message_id, command, data, receiver, sender_id, created_at 필드를 가진다
+- ID 분리 규칙(session_id, sender_id, message_id)을 유지한다
+- step:
+- 채팅방 YAML 구조체를 추가하고 직렬화/역직렬화 경로를 연결한다
+- users와 messages 필드의 타입 및 null 허용 규칙(data, receiver)을 반영한다
+- 기존 로드/저장 코드가 새 스키마를 사용하도록 연결한다
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525914] LLM_RESPONSE
+FEATURE_NAME: define_chat_room_yaml_schema
+```yaml
+rule:
+  - chat_room_file.structure == "room_name,users,messages"
+  - messages.item.fields == "message_id,command,data,receiver,sender_id,created_at"
+  - id_separation == "session_id,sender_id,message_id"
+features:
+  domain:
+    - chat_room
+  flow:
+    - chat_room_yaml_load_save
+task:
+  - name: define_chat_room_yaml_schema
+    type: action
+    domain:
+      - chat_room
+    depends_on: []
+    scope:
+      - src/chat.rs
+      - src/project.rs
+    rule:
+      - file_exists("src/chat.rs") == true
+      - chat_room.users.type == "array"
+      - chat_room.messages.type == "array"
+      - chat_room.messages.data.nullable == true
+      - chat_room.messages.receiver.nullable == true
+    step:
+      - "add chat room yaml struct with room_name users messages fields"
+      - "connect serde serialize and deserialize for chat room yaml struct"
+      - "define users and messages field types and allow null for data and receiver"
+      - "wire existing load and save paths to use new chat room schema"
+    touches:
+      - src/chat.rs
+      - src/project.rs
+    contracts:
+      - "messages_fields == [message_id,command,data,receiver,sender_id,created_at]"
+      - "id_split == [session_id,sender_id,message_id]"
+      - "load_path.uses_chat_room_schema == true"
+      - "save_path.uses_chat_room_schema == true"
+```
+
+
+[1772525914] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: chat 명령 진입점/옵션 추가
+- rule:
+- orc chat -n "이름" 실행 시 chat 모드로 진입한다
+- orc chat -n "이름" -m "메시지" -i "receiver_id" --data "data" 형태를 지원한다
+- receiver, data는 선택 옵션이다
+- step:
+- chat 서브커맨드에 name 필수 옵션과 send 관련 옵션을 추가한다
+- interactive 모드와 send 모드 분기 로직을 구현한다
+- 도움말에 ctrl+d 종료 안내를 노출한다
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525967] LLM_RESPONSE
+FEATURE_NAME: add_chat_command_options
+```yaml
+rule:
+  - chat_command_enabled == true
+features:
+  domain:
+    - chat
+  flow:
+    - chat_interactive_mode
+    - chat_send_mode
+task:
+  - name: add_chat_entry_options_and_mode_branch
+    type: action
+    domain:
+      - chat
+    depends_on: []
+    scope:
+      - src/cli/mod.rs
+      - src/cli/chat.rs
+      - src/chat/mod.rs
+    rule:
+      - chat_name_required == true
+      - chat_message_optional == true
+      - chat_receiver_optional == true
+      - chat_data_optional == true
+      - send_mode_when_message_present == true
+      - interactive_mode_when_message_absent == true
+      - help_includes_ctrl_d_exit == true
+    step:
+      - "CLI 입력 chat -n <name> 을 파싱해 chat 서브커맨드 진입점으로 라우팅한다"
+      - "chat 서브커맨드에서 name 필수 옵션과 message receiver data 옵션을 파싱한다"
+      - "message 값 존재 여부로 interactive 모드와 send 모드 분기 로직을 실행한다"
+      - "send 모드에서 receiver data 미입력 시 기본값 처리로 전송 요청을 생성한다"
+      - "help 출력에 Ctrl+D 종료 안내 문구를 추가한다"
+    touches: []
+    contracts:
+      - "chat.name.required == true"
+      - "chat.receiver.required == false"
+      - "chat.data.required == false"
+      - "mode.branch == message_present ? send : interactive"
+      - "help.chat.contains_ctrl_d_exit == true"
+```
+
+
+[1772525967] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 채팅방 파일 존재 검증
+- rule:
+- .temp/이름.yaml 파일이 없으면 에러 출력 후 종료한다
+- 파일 자동 생성은 금지한다
+- step:
+- chat 진입 시 .temp/{name}.yaml 경로를 계산한다
+- interactive/send 공통으로 파일 존재 여부를 검사한다
+- 미존재 시 명확한 에러를 반환하고 후속 로직을 중단한다
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772525999] LLM_RESPONSE
+FEATURE_NAME: validate_chat_room_file_exists
+```yaml
+rule:
+- file_exists(".temp/{name}.yaml") == true
+- auto_create_chat_room_file == false
+features:
+  domain:
+  - chat
+  flow:
+  - chat_entry_file_guard
+task:
+- name: validate_chat_room_file_exists
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/cli/chat.rs
+  - src/cli/send.rs
+  - src/error.rs
+  rule:
+  - file_exists(".temp/{name}.yaml") == true
+  - auto_create_chat_room_file == false
+  - applies_to("interactive") == true
+  - applies_to("send") == true
+  step:
+  - "input: chat 진입 name -> output: .temp/{name}.yaml 경로 계산"
+  - "input: interactive 실행 -> output: .temp/{name}.yaml 존재 여부 검사"
+  - "input: send 실행 -> output: .temp/{name}.yaml 존재 여부 검사"
+  - "input: file_exists == false -> output: 명확한 에러 반환 후 후속 로직 중단"
+  touches: []
+  contracts:
+  - interactive_requires_file=file_exists(".temp/{name}.yaml") == true
+  - send_requires_file=file_exists(".temp/{name}.yaml") == true
+  - missing_file_error=error.code == "chat_room_file_not_found"
+  - no_auto_create_on_missing=auto_create_chat_room_file == false
+  - stop_followup_on_missing=next_logic_executed == false
+```
+
+
+[1772525999] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: 세션 ID 생성 및 llm_id 바인딩
+- rule:
+- build_llm_id()로 8자리 난수 session_id를 생성한다
+- 내부 변수 llm_id에 생성된 값을 저장한다
+- interactive 진입 시 users에 sender_id(session_id)를 반영한다
+- step:
+- 8자리 난수 ID 생성 함수(build_llm_id)를 구현한다
+- chat 실행 컨텍스트에 llm_id 저장 경로를 추가한다
+- interactive 시작 시 users 목록에 현재 sender_id를 반영한다
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+
+[1772526033] LLM_RESPONSE
+FEATURE_NAME: bind_llm_id_session_sender
+```yaml
+rule:
+- matches(session_id, '^[A-Za-z0-9]{8}$') == true
+- llm_id == session_id
+- users.sender_id == session_id
+features:
+  domain:
+  - chat
+  flow:
+  - bind_llm_id_to_interactive_sender
+task:
+- name: bind_llm_id_to_interactive_sender
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/chat.rs
+  - src/chat/session.rs
+  - src/cli/chat.rs
+  rule:
+  - 'check: build_llm_id() returns 8-char session_id should hold'
+  - llm_id == session_id
+  - interactive_enter == true => users.sender_id == session_id
+  - chat_context.llm_id_store_path != ""
+  step:
+  - "input: build_llm_id() call -> output: 8-char random session_id"
+  - "input: generated session_id -> output: llm_id saved in chat execution context store path"
+  - "input: interactive enter event and sender_id=session_id -> output: users list updated with sender_id"
+  touches:
+  - build_llm_id
+  - session_id
+  - llm_id
+  - chat_execution_context.llm_id
+  - users.sender_id
+  contracts:
+  - session_id_format=matches('^[A-Za-z0-9]{8}$')
+  - llm_id_equals_session_id=llm_id==session_id
+  - interactive_sender_binding=interactive_enter==true => users.sender_id==session_id
+  - llm_id_store_path_exists=chat_context.llm_id_store_path!=''
+```
+
+
+[1772526033] LLM_PROMPT
+너는 rust-orc의 todo/draft 생성기다.
+입력 객체:
+- name: chat 모드 메시지 폴링 루프
+- rule:
+- messages를 last_read_message_id 기준으로 읽는다
+- config MAX_read_time 동안 대기 후 다시 messages를 읽는다
+- 새 메시지가 있으면 출력하고 last_read_message_id를 갱신한다
+- step:
+- 초기 last_read_message_id를 계산해 unread 메시지를 출력한다
+- MAX_read_time 기반 반복 조회 루프를 구현한다
+- 새 메시지 발견 시 출력 후 last_read_message_id를 업데이트한다
+
+지시:
+- `/home/tree/ai/skills/build-domain/SKILL.md`, `$plan-drafts-code`를 참조해 도메인/flow를 결정해.
+- `assets/code/templates/draft.yaml` 형식을 기준으로 draft.yaml 본문을 만든다.
+- 출력 스키마를 반드시 지켜라.
+- `task.step`은 반드시 문자열 배열만 허용한다.
+- `task.step`에 map/object 형태(`- key: value`)를 절대 넣지 마라.
+- 값이 애매하면 단일 문자열로 평탄화해서 넣어라.
+- 파싱 실패 가능성이 있으면 안전한 단순 문자열 표현으로 재작성하라.
+- 설명 문장 금지.
+
+출력 형식:
+FEATURE_NAME: <snake_case>
+```yaml
+<draft.yaml 본문>
+```
+
+

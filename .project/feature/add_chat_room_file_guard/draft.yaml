@@ -1,0 +1,31 @@
+rule:
+- file_exists(".temp/{name}.yaml") == true
+features:
+  domain:
+  - chat
+  flow:
+  - chat_entry_file_guard
+task:
+- name: validate_chat_room_file_exists
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/cli/chat.rs
+  - src/cli/send.rs
+  - src/error.rs
+  rule:
+  - file_exists(".temp/{name}.yaml") == true
+  - auto_create_chat_room_file == false
+  - applies_to("chat_start") == true
+  - applies_to("send") == true
+  step:
+  - chat 명령 진입 초기에 .temp/{name}.yaml 존재 여부를 검사한다.
+  - 파일 미존재 시 공통 에러 경로로 즉시 종료한다.
+  - send 경로에서 동일 검증 로직을 재사용한다.
+  touches: []
+  contracts:
+  - chat_start_requires_file=file_exists(".temp/{name}.yaml") == true
+  - send_requires_file=file_exists(".temp/{name}.yaml") == true
+  - missing_file_exits_with_common_error=exit_path == "common_error"

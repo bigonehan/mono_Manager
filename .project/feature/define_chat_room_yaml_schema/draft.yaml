@@ -1,0 +1,37 @@
+rule:
+- chat_room_file.structure == "room_name,users,messages"
+- messages.item.fields == "message_id,command,data,receiver,sender_id,created_at"
+- id_separation == "session_id,sender_id,message_id"
+features:
+  domain:
+  - chat_room
+  flow:
+  - chat_room_yaml_load_save
+task:
+- name: define_chat_room_yaml_schema
+  type: action
+  domain:
+  - chat_room
+  depends_on: []
+  scope:
+  - src/chat.rs
+  - src/project.rs
+  rule:
+  - file_exists("src/chat.rs") == true
+  - chat_room.users.type == "array"
+  - chat_room.messages.type == "array"
+  - chat_room.messages.data.nullable == true
+  - chat_room.messages.receiver.nullable == true
+  step:
+  - add chat room yaml struct with room_name users messages fields
+  - connect serde serialize and deserialize for chat room yaml struct
+  - define users and messages field types and allow null for data and receiver
+  - wire existing load and save paths to use new chat room schema
+  touches:
+  - src/chat.rs
+  - src/project.rs
+  contracts:
+  - messages_fields == [message_id,command,data,receiver,sender_id,created_at]
+  - id_split == [session_id,sender_id,message_id]
+  - load_path.uses_chat_room_schema == true
+  - save_path.uses_chat_room_schema == true

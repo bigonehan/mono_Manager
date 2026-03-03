@@ -1,0 +1,8 @@
+parallel unit {index}
+
+When this unit starts:
+1) wait 3 seconds
+2) send completion message using:
+   `orc chat -n {room} -m "parallel_unit_{index}_complete" -i "{receiver_id}" --data "<unit result>"`
+3) terminate the process immediately after sending the message
+

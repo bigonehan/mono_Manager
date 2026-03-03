@@ -15,33 +15,43 @@ pub fn calc_is_help_command(args: &[String]) -> bool {
 }
 
 pub fn print_usage(program: &str) {
+    let mut commands = [
+        "help | -h | --help",
+        "plan-project [llm]",
+        "detail-project [llm]",
+        "detail-project -d <description> -s <spec> [--llm <bin>]",
+        "list-projects (alias: list)",
+        "create-project <name> [path] [description]",
+        "select-project <name> (alias: select)",
+        "delete-project <name> (alias: delete)",
+        "validate-tasks <feature_name>",
+        "create-draft (alias: draft-create)",
+        "add-plan [hint]",
+        "add-draft <feature_name> [request] (alias: draft-add)",
+        "delete-draft <feature_name> (alias: draft-delete)",
+        "add-function [request] (alias: add-func)",
+        "open-ui (alias: ui)",
+        "run-auto [project_name]",
+        "auto -d <description> -s <spec>",
+        "auto-check",
+        "auto-improve <request>",
+        "draft-report",
+        "send-tmux <pane_id> <msg...> [enter|raw] (alias: tsend)",
+        "build-parallel-code",
+        "build-parallel-todo",
+        "run_parallel_test",
+        "chat -n <name> [--background] [-m <message>] [-i <receiver_id>] [--data <data>]",
+        "chat-wait -n <name> -a <true|false> [-c <count>]",
+        "feedback",
+        "build-function-auto (alias: build-todo-auto, build-functon-auto)",
+        "press-key <key>",
+    ];
+    commands.sort_unstable();
+
     println!("usage:");
-    println!("  {program} help | -h | --help");
-    println!("  {program} plan-project [llm]");
-    println!("  {program} detail-project [llm]");
-    println!("  {program} detail-project -d <description> -s <spec> [--llm <bin>]");
-    println!("  {program} list-projects (alias: list)");
-    println!("  {program} create-project <name> [path] [description]");
-    println!("  {program} select-project <name> (alias: select)");
-    println!("  {program} delete-project <name> (alias: delete)");
-    println!("  {program} validate-tasks <feature_name>");
-    println!("  {program} create-draft (alias: draft-create)");
-    println!("  {program} add-plan [hint]");
-    println!("  {program} add-draft <feature_name> [request] (alias: draft-add)");
-    println!("  {program} delete-draft <feature_name> (alias: draft-delete)");
-    println!("  {program} add-function [request] (alias: add-func)");
-    println!("  {program} open-ui (alias: ui)");
-    println!("  {program} run-auto [project_name]");
-    println!("  {program} auto -d <description> -s <spec>");
-    println!("  {program} auto-check");
-    println!("  {program} auto-improve <request>");
-    println!("  {program} draft-report");
-    println!("  {program} send-tmux <pane_id> <msg...> [enter|raw] (alias: tsend)");
-    println!("  {program} build-parallel-code");
-    println!("  {program} build-parallel-todo");
-    println!("  {program} feedback");
-    println!("  {program} build-function-auto (alias: build-todo-auto, build-functon-auto)");
-    println!("  {program} press-key <key>");
+    for command in commands {
+        println!("  {program} {command}");
+    }
 }
 
 pub async fn execute_cli(args: &[String]) -> Result<String, String> {
@@ -222,6 +232,27 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         }
         "build-parallel-todo" => {
             super::parallel::run_parallel_todo().await
+        }
+        "run_parallel_test" => {
+            if args.len() != 2 {
+                return Err("run_parallel_test does not accept arguments".to_string());
+            }
+            super::run_parallel_test().await
+        }
+        "chat" => {
+            if args.len() < 4 {
+                return Err(
+                    "chat requires -n <name> (optional: --background | -m <message> -i <receiver_id> --data <data>)"
+                        .to_string(),
+                );
+            }
+            super::chat_command(&args[2..]).await
+        }
+        "chat-wait" => {
+            if args.len() < 4 {
+                return Err("chat-wait requires -n <name> -a <true|false> (optional: -c <count>)".to_string());
+            }
+            super::chat_wait_command(&args[2..]).await
         }
         "feedback" => {
             if args.len() != 2 {

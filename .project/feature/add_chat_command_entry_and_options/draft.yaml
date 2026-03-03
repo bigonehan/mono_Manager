@@ -1,0 +1,39 @@
+rule:
+- chat_command_enabled == true
+features:
+  domain:
+  - chat
+  flow:
+  - chat_interactive_mode
+  - chat_send_mode
+task:
+- name: add_chat_entry_options_and_mode_branch
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/cli/mod.rs
+  - src/cli/chat.rs
+  - src/chat/mod.rs
+  rule:
+  - chat_name_required == true
+  - chat_message_optional == true
+  - chat_receiver_optional == true
+  - chat_data_optional == true
+  - send_mode_when_message_present == true
+  - interactive_mode_when_message_absent == true
+  - help_includes_ctrl_d_exit == true
+  step:
+  - CLI 입력 chat -n <name> 을 파싱해 chat 서브커맨드 진입점으로 라우팅한다
+  - chat 서브커맨드에서 name 필수 옵션과 message receiver data 옵션을 파싱한다
+  - message 값 존재 여부로 interactive 모드와 send 모드 분기 로직을 실행한다
+  - send 모드에서 receiver data 미입력 시 기본값 처리로 전송 요청을 생성한다
+  - help 출력에 Ctrl+D 종료 안내 문구를 추가한다
+  touches: []
+  contracts:
+  - chat.name.required == true
+  - chat.receiver.required == false
+  - chat.data.required == false
+  - 'mode.branch == message_present ? send : interactive'
+  - help.chat.contains_ctrl_d_exit == true

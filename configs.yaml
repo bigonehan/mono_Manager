@@ -1,5 +1,6 @@
 max_parallel: 10
 timeout_sec: 300
+max_read_time: 3
 auto_yes: true
 dangerous_bypass: true
 debug: true

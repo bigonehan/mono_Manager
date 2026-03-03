@@ -1,0 +1,48 @@
+rule:
+- command == 'orc chat -n <name> [-m <message>] [-i <receiver_id>] [--data <data>]'
+- required('-n') == true
+- optional('-m') == true
+- optional('-i') == true
+- optional('--data') == true
+- has('-m') == true => mode == 'send'
+- has('-m') == false => mode == 'chat'
+- help_contains('chat 종료 단축키') == true
+features:
+  domain:
+  - chat
+  flow:
+  - parse_chat_subcommand_args
+  - branch_chat_or_send_mode
+  - link_help_exit_shortcut
+task:
+- name: handle_chat_command_args
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/cli/mod.rs
+  - src/cli/chat.rs
+  - src/chat/*.rs
+  rule:
+  - arg_required('-n') == true
+  - arg_optional('-m') == true
+  - arg_optional('-i') == true
+  - arg_optional('--data') == true
+  - has('-m') == true => execute_path == 'send'
+  - has('-m') == false => execute_path == 'chat'
+  - help_contains('chat 종료 단축키') == true
+  step:
+  - 'input: `orc chat` args -> output: parse result with required `-n` and optional `-m/-i/--data`'
+  - 'input: parse result -> output: execute send path when `-m` exists'
+  - 'input: parse result -> output: execute chat mode path when `-m` is absent'
+  - 'input: chat help request -> output: help text includes chat exit shortcut guidance'
+  touches:
+  - cli.chat.args
+  - cli.chat.dispatch
+  - cli.chat.help
+  contracts:
+  - required_name=has('-n')==true
+  - mode_switch=has('-m')?send:chat
+  - send_uses_optional=('-i','--data')
+  - help_exit_shortcut=contains('chat 종료 단축키')

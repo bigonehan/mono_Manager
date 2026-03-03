@@ -22,6 +22,7 @@ pub struct AiConfig {
 pub struct AppConfig {
     pub max_parallel: Option<usize>,
     pub timeout_sec: Option<u64>,
+    pub max_read_time: Option<u64>,
     pub auto_yes: Option<bool>,
     pub dangerous_bypass: Option<bool>,
     pub debug: Option<bool>,
@@ -49,6 +50,10 @@ impl AppConfig {
         self.timeout_sec
             .or_else(|| self.performance.as_ref().and_then(|v| v.timeout_sec))
             .unwrap_or(300)
+    }
+
+    pub fn max_read_time_sec(&self) -> u64 {
+        self.max_read_time.unwrap_or(3)
     }
 
     pub fn run_parallel_key(&self) -> &str {
