@@ -552,6 +552,7 @@ fn calc_parse_color(name: Option<&str>, fallback: Color) -> Color {
         "black" => Color::Black,
         "red" => Color::Red,
         "green" => Color::Green,
+        "orange" => Color::Rgb(255, 165, 0),
         "yellow" => Color::Yellow,
         "blue" => Color::Blue,
         "magenta" => Color::Magenta,
@@ -585,7 +586,7 @@ fn action_load_border_palette() -> BorderPalette {
             if let Ok(doc) = serde_yaml::from_str::<PaneStyleDoc>(&raw) {
                 let active = calc_parse_color(
                     doc.active.as_ref().and_then(|v| v.border.as_deref()),
-                    Color::Green,
+                    Color::Rgb(255, 165, 0),
                 );
                 let normal = calc_parse_color(
                     doc.normal.as_ref().and_then(|v| v.border.as_deref()),
@@ -605,7 +606,7 @@ fn action_load_border_palette() -> BorderPalette {
     }
 
     BorderPalette {
-        active: Color::Green,
+        active: Color::Rgb(255, 165, 0),
         normal: Color::Black,
         inactive: Color::Gray,
     }
@@ -1304,7 +1305,7 @@ fn action_has_planned_task_file(project: &ProjectRecord, feature_name: &str) -> 
         .join("feature")
         .join(feature_name);
     [
-        feature_dir.join("task.yaml"),
+        feature_dir.join("draft.yaml"),
         feature_dir.join("tasks.yaml"),
         feature_dir.join("draft.yaml"),
         feature_dir.join("drafts.yaml"),
@@ -1435,7 +1436,9 @@ fn action_render_draft_bulk_add_modal(
         .constraints([Constraint::Min(6), Constraint::Length(2)])
         .split(inner);
     let input_border = if modal.input_focus {
-        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::Rgb(255, 165, 0))
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM)
     };
@@ -1687,14 +1690,18 @@ fn action_load_bootstrap_rule_for_spec(spec: &str) -> Option<BootstrapRule> {
 fn action_resolve_bootstrap_prompt_path() -> Result<PathBuf, String> {
     let root = crate::action_source_root();
     let candidates = [
-        root.join("assets").join("prompts").join("bootstrap.txt"),
-        root.join("assets").join("prompt").join("bootstrap.txt"),
-        PathBuf::from("assets").join("prompts").join("bootstrap.txt"),
-        PathBuf::from("assets").join("prompt").join("bootstrap.txt"),
-        root.join("src").join("assets").join("prompts").join("bootstrap.txt"),
-        root.join("src").join("assets").join("prompt").join("bootstrap.txt"),
-        PathBuf::from("src").join("assets").join("prompts").join("bootstrap.txt"),
-        PathBuf::from("src").join("assets").join("prompt").join("bootstrap.txt"),
+        root.join("assets").join("code").join("prompts").join("bootstrap.txt"),
+        PathBuf::from("assets").join("code").join("prompts").join("bootstrap.txt"),
+        root.join("src")
+            .join("assets")
+            .join("code")
+            .join("prompts")
+            .join("bootstrap.txt"),
+        PathBuf::from("src")
+            .join("assets")
+            .join("code")
+            .join("prompts")
+            .join("bootstrap.txt"),
     ];
     for candidate in candidates {
         if candidate.exists() {
@@ -2378,6 +2385,33 @@ fn action_append_planned_from_add_plan_items(
     Ok(changed)
 }
 
+fn action_run_add_plan_via_cli(project_path: &Path, hint: &str) -> Result<String, String> {
+    let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
+    let mut cmd = Command::new(exe);
+    cmd.current_dir(project_path).arg("add-plan");
+    if !hint.trim().is_empty() {
+        cmd.arg(hint.trim());
+    }
+    let out = cmd
+        .output()
+        .map_err(|e| format!("failed to run add-plan: {}", e))?;
+    if out.status.success() {
+        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if stdout.is_empty() {
+            Ok("add-plan executed".to_string())
+        } else {
+            Ok(stdout)
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        Err(format!(
+            "add-plan failed (code={:?}) {}",
+            out.status.code(),
+            stderr
+        ))
+    }
+}
+
 fn action_apply_add_plan_update_from_yaml(modal: &AiChatModal, raw_response: &str) -> Result<Option<String>, String> {
     let parsed_body = if let Some(yaml) = calc_extract_yaml_codeblock(raw_response) {
         match serde_yaml::from_str::<AddPlanUpdateDoc>(&yaml) {
@@ -2403,11 +2437,16 @@ fn action_apply_add_plan_update_from_yaml(modal: &AiChatModal, raw_response: &st
     }
     let project_path = Path::new(&modal.project_path);
     let added_features = action_append_project_md_features_items(project_path, &features)?;
+    let add_plan_hint = if added_features.is_empty() {
+        String::new()
+    } else {
+        added_features.join(", ")
+    };
+    let add_plan_msg = action_run_add_plan_via_cli(project_path, &add_plan_hint)?;
     let planned_added = action_append_planned_from_add_plan_items(project_path, &added_features)?;
     Ok(Some(format!(
-        "add-plan applied: project.md features +{} / tasks_list planned +{}",
-        added_features.len(),
-        planned_added
+        "add-plan applied: project.md features +{} / tasks_list planned +{} | {}",
+        added_features.len(), planned_added, add_plan_msg
     )))
 }
 
@@ -3977,7 +4016,7 @@ mod tests {
                 ..Default::default()
             },
             generated_files: vec![
-                ("jump".to_string(), "task.yaml".to_string()),
+                ("jump".to_string(), "draft.yaml".to_string()),
                 ("win".to_string(), "draft.yaml".to_string()),
             ],
         };
@@ -4092,7 +4131,7 @@ fn action_collect_generated_draft_items_from_project(project: &ProjectRecord) ->
         }
         let dir = entry.path();
         let has_task = [
-            dir.join("task.yaml"),
+            dir.join("draft.yaml"),
             dir.join("tasks.yaml"),
             dir.join("draft.yaml"),
             dir.join("drafts.yaml"),
@@ -4399,7 +4438,7 @@ fn calc_modal_field_value_style(modal: &CreateProjectModal, field_index: usize, 
 fn calc_modal_input_border_style(active: bool) -> Style {
     if active {
         Style::default()
-            .fg(Color::Green)
+            .fg(Color::Rgb(255, 165, 0))
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default()
@@ -4793,10 +4832,10 @@ fn action_render_bootstrap_confirm_modal(
 fn calc_ai_detail_input_border_style(modal: &AiChatModal) -> Style {
     if modal.focus == AiDetailFocus::Input && modal.input_active {
         Style::default()
-            .fg(Color::Green)
+            .fg(Color::Rgb(255, 165, 0))
             .add_modifier(Modifier::BOLD)
     } else if modal.focus == AiDetailFocus::Input {
-        Style::default().fg(Color::Yellow)
+        Style::default().fg(Color::Rgb(255, 165, 0))
     } else {
         Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM)
     }

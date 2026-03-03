@@ -119,6 +119,9 @@
 - `Project Select` 카드 렌더를 최대 3x3(9개) 범위로 제한해 영역 높이/개수가 고정되도록 조정함.
 - 카드 내 프로젝트 이름 라인을 검은 배경 + 흰색 굵은 글자로 렌더링하도록 스타일을 변경함.
 
+## 2026-03-03 - 작업한일
+- `project.md` 생성 경로의 프롬프트 지시를 강화해 `src/main.rs` fallback 프롬프트와 `assets/prompts/project-md-init.txt`, `assets/prompts/project-md-auto.txt`에 `/home/tree/ai/skills/build-domain/SKILL.md` 참조 문구를 추가함.
+
 - 상단 `Current Pane` 헤더에서 `Pane:` 접두어를 제거하고 `Project | Detail`만 표시되도록 수정함.
 
 - `Current Pane` 헤더를 좌/우 영역으로 분리해 우측에 `switch : tab` 안내를 추가함.
@@ -1214,3 +1217,146 @@
     - 템플릿 참조를 `assets/code/templates/project.md` 기준으로 정렬
   - `src/main.rs`의 내장 fallback prompt도 동일 스키마 제약으로 동기화
 - 기대 효과: LLM 출력이 흔들려도 normalize/validate 단계에서 자동 보정되고, auto 모드 재시도 중 schema fail 확률을 낮춤.
+
+## 2026-02-28 - 작업한일
+- `check-code` 점검 결과, auto 모드에서 `auto_improve`가 질문형 응답을 성공으로 처리할 수 있는 병목 위험을 확인.
+- `src/project.rs` `auto_improve` 개선:
+  - 프롬프트에 비대화형 계약 추가(질문/선택지/확인요청 금지).
+  - 응답 말미 `RESULT: APPLIED|NO_CHANGE` 계약 강제.
+  - 질문형 문구 감지 시 즉시 실패 처리해 자동 재시도 루프로 복귀하도록 보강.
+- 기대 효과: auto-improve 단계에서 "진행 방법 선택"류 응답으로 흐름이 정지/왜곡되는 상황 감소.
+
+## 2026-02-28 - 작업한일
+- `.project/feature/*`의 draft 파일 기준을 `task.yaml`에서 `draft.yaml`로 통일.
+- `src/draft.rs`에서 draft 생성/추가 시 이중 파일 쓰기 제거(`draft.yaml` 단일 저장).
+- `src/main.rs`, `src/project.rs`의 탐색/검증 메시지에서 `task.yaml` 참조 제거 및 `draft.yaml` 기준 정렬.
+- `src/parallel/mod.rs`에 완료 feature 이동 후처리 연결:
+  - 병렬 빌드 성공 목록을 `.project/feature/<name>` -> `.project/clear/<name>`로 실제 이동.
+  - 상태 승격(`planned -> features`) 이후 이동 결과 메시지 포함.
+- `src/main.rs`에 `action_move_finished_features_to_clear` 추가.
+- 검증: `cargo test -q` 통과(19 passed).
+
+## 2026-03-01 - 작업한일
+- 완료 이동 로직 도입 후 검증 실패하던 카운트 기준을 수정.
+- `src/project.rs`에서 draft file count를 `.project/feature`뿐 아니라 `.project/clear`까지 합산하도록 보강.
+- draft stage fallback 상태 출력에도 `.project/clear` 존재 여부 및 합산 카운트를 반영.
+- 결과: `build-parallel-code` 성공 후 feature 이동(`.project/clear`) 시 verification 오탐(false fail) 제거.
+
+## 2026-03-02 - 작업한일
+- `build-parallel-code` 완료 후 상태 동기화를 보강해, 완료 항목이 `drafts_list.yaml`뿐 아니라 `.project/project.md`의 `## plan`에서 제거되고 `## features`로 승격되도록 `src/main.rs`에 `action_promote_project_md_plan_to_features`를 추가함.
+- 위 동작이 실제로 유지되는지 검증하기 위해 `src/main.rs` 테스트 `promote_project_md_plan_to_features_moves_completed_items`를 추가함.
+- UI add-plan 적용 경로에서 실제 CLI `add-plan` 호출이 누락되어 있던 부분을 `src/ui/mod.rs`에 `action_run_add_plan_via_cli`로 연결하고, 기존 planned 직접 추가 로직은 fallback으로 유지함.
+- 구현 완료 프로세스에 `.project/feedback.md` 자동 생성 단계를 추가함:
+  - `src/main.rs`에 feedback prompt 경로 해석/출력 검증/파일 쓰기 함수(`action_write_parallel_feedback`)를 추가.
+  - `src/parallel/mod.rs` `run_parallel_build_code` 종료 시 feedback 생성을 실행하도록 연결.
+  - 프롬프트 파일 `assets/prompts/parallel-feedback.txt`를 추가해 출력 스키마(`# 구현 완료 피드백`, `## 해결된 문제`, `## 개선점`, `## 다음 점검`)를 강제함.
+- 검증: `cargo test` 통과(20 passed), `cargo run --bin orc -- --help` 실행 확인.
+
+## 2026-03-02 - 작업한일
+- UI에서 `focus` 또는 `active` 상태 색상을 주황색으로 통일함.
+- `src/ui/mod.rs`에 `orange` 컬러 파싱(`Color::Rgb(255, 165, 0)`)을 추가하고, 활성/포커스 입력 테두리에서 기존 초록/노랑 값을 주황색으로 변경함.
+- `configs/style.yaml`, `assets/style/pane_style.yaml`의 `active.border`를 `orange`로 변경해 패널 활성 테두리도 주황색으로 적용되도록 맞춤.
+
+## 2026-03-03 - 작업한일
+- 스킬 규칙 단일화를 위해 `/home/tree/ai/skills/rule-naming/SKILL.md`를 신설하고, 기존 `feature_architecture_rules`, `rule-name-prompt` 스킬 디렉터리를 제거함.
+- 삭제된 스킬 경로를 참조하던 스킬 문서(`add-function`, `build-code-parallel`, `plan-drafts`, `plan-project-code`)를 `rule-naming` 경로로 교체함.
+- `rust-orc` 코드에서 FEATURE_NAME 규칙 로딩 경로를 `/home/tree/ai/skills/rule-naming/SKILL.md`로 변경(`src/main.rs`).
+- draft 생성 프롬프트의 스킬 참조를 `$feature-name-prompt-rules`에서 `$rule-naming`으로 변경(`src/draft.rs`, `src/main.rs`).
+- 검증: `skill-creator quick_validate` 통과, `cargo test` 통과(20 passed).
+
+## 2026-03-03 - 작업한일
+- `build-function-auto`/`build-todo-auto`/`build-functon-auto` CLI를 추가해 `input.md` 자동 감지 -> `.project/todo.yaml(.project/todos.yaml 동시 기록)` 생성 -> `build-parallel-todo` 실행 -> `.project/feedback.md` 작성 -> feedback 재평가 루프를 한 명령으로 수행하도록 구현함.
+- `src/main.rs`에 `TodoDoc/TodoItem` 스키마, `input.md` 파서 연동 draft 생성, todo preflight/수집, feedback markdown 검증(`# 구현 기능`, `## 문제 해결`, `## 미해결`, `## 개선점`) 및 다음 사이클 `input.md` 재생성/삭제 로직을 추가함.
+- `src/parallel/mod.rs`에 `run_parallel_build_code`를 기반으로 한 `run_parallel_todo`를 추가해 `todo.yaml` 기반 task 병렬 실행 경로를 구현함.
+- `src/cli/mod.rs`/`README.md`를 갱신해 신규 명령(`build-parallel-todo`, `feedback`, `build-function-auto`)과 alias를 help/문서에 동기화함.
+- 검증: `cargo test` 통과(20 passed), `cargo run --bin orc -- --help`로 CLI 출력 동기화 확인.
+
+## 2026-03-03 - 작업한일
+- `show_current_state` 공용 함수를 `src/main.rs`에 추가하고, 출력 형식을 `[state]description`으로 고정함.
+- `build-function-auto` 사이클에 상태 로그를 연결해 단계별로 `[plan]`(todo 생성), `[build]`(병렬 구현), `[chcek]`(feedback 작성/검토) 진행 상태를 한 줄 출력하도록 변경함.
+- `src/parallel/mod.rs`의 `run_parallel_todo`에 병렬 작업 상태 로그를 추가해 preflight/check/빌드 라운드 및 task 시작 시 `[state]description` 형태로 현재 상태를 출력하도록 변경함.
+- 검증: `cargo test` 통과(20 passed).
+
+## 2026-03-03 - 작업한일
+- `input.md`를 YAML 단일 문서 형태에서 Markdown 설계 문서 형태로 되돌리고, 채팅방 저장 파일 포맷만 YAML 스키마/예시로 명시하도록 수정함.
+- 채팅 저장 경로를 `.temp`로 통일하고, ID를 `session_id`/`sender_id`/`message_id`로 분리해 역할을 명확화함.
+- 파일 미존재 시 동작을 자동 생성이 아닌 `에러 출력 후 종료`로 통일함(chat/send 공통).
+- chat 읽기 루프 기준에 `last_read_message_id` 추적과 `MAX_read_time` 폴링 조건을 명시함.
+
+## 2026-03-03 - 작업한일
+- 사용자 지정 입력 규칙(`#`, `-`, `>`)에 맞춰 `input.md` 형식을 재정렬함.
+- 문서 포맷만 수정하고 기존 합의 내용(`.temp` 통일, ID 분리, 에러 후 종료, chat room YAML 포맷)은 유지함.
+
+## 2026-03-03 - 작업한일
+- `input.md`를 사용자 지정 문서 패턴(`#`, `-`, `>`)만 사용하도록 재수정하고 코드블록(````yaml`)을 제거함.
+- 기존 합의 내용(`.temp` 경로, ID 분리, 파일 미존재 시 에러 종료, YAML 채팅방 형식)은 유지함.
+
+## 2026-03-03 - 작업한일
+- `orc` 단독 실행 시 도움말 목록이 최신 명령/alias를 반영하도록 `src/cli/mod.rs` `print_usage`를 갱신함.
+- `build-function-auto` alias(`build-todo-auto`, `build-functon-auto`)와 `list/select/delete`, `draft-*`, `add-func`, `ui`, `tsend` alias를 도움말에 함께 표시하도록 추가함.
+- 인자 없이 `orc`를 실행하면 `missing command` 오류 대신 도움말만 출력되도록 `src/main.rs` 진입 분기를 보강함.
+- 검증: `cargo test` 통과(20 passed), `cargo run --bin orc --` 출력 확인.
+
+## 2026-03-03 - 작업한일
+- CLI 도움말 출력/명령 라우팅 관리 파일을 `src/cli/mod.rs`에서 `src/cli.rs`로 이동해 단일 파일(`cli.rs`)에서 관리하도록 정리함.
+- `mod cli;` 로딩 구조는 유지하고, `src/cli` 디렉터리는 제거함.
+- 검증: `cargo test` 통과(20 passed), `cargo run --bin orc --` 도움말 출력 정상 확인.
+
+## 2026-03-03 - 작업한일
+- 사용자 요청 해석 오류 재발 방지를 위해 `AGENTS.md`에 `CLI Execute-First Interpretation Rule`을 추가함.
+- `호출해서 실행/실행해봐/돌려봐` 표현은 구현이 아니라 기존 CLI 실행 우선으로 처리하도록 명시함.
+
+## 2026-03-03 - 작업한일
+- 사용자 요청에 따라 `AGENTS.override.md`에도 CLI 실행 우선 해석 규칙을 추가함.
+- 반영 위치: `/home/tree/ai/codex/AGENTS.override.md`, `/home/tree/home/AGENTS.override.md`.
+
+## 2026-03-03 - 작업한일
+- `/home/tree/home/AGENTS.override.md` 삭제 전 고유 규칙(`Port Ownership Override`)을 `/home/tree/ai/codex/AGENTS.override.md`로 이관함.
+- 이관 완료 후 `/home/tree/home/AGENTS.override.md` 파일을 삭제함.
+
+## 2026-03-03 - 작업한일
+- `build-function-auto`의 `input.md -> todo.yaml` 생성 경로에서 하드코딩 파싱을 제거하고, LLM이 `assets/prompts/build-funciton-todo.txt` 프롬프트로 todo YAML을 직접 생성하도록 변경함(`src/main.rs`).
+- 생성된 todo 항목 기준으로 draft YAML을 후속 생성하고 `draft_path/depends_on`을 채우는 흐름으로 정리함.
+- `assets/prompts/build-funciton.txt`를 build-function draft 생성 프롬프트로 고정하고, `task.step` 문자열 배열 강제/맵 금지 규칙을 포함함.
+- `assets/prompts/build-funciton-todo.txt`를 추가해 todo 스키마 생성 규칙을 분리했고, `input.md` 형식 해석은 `build-funciton.txt` 입력 객체 규칙을 참조하도록 갱신함.
+- 검증: `cargo test` 통과(20 passed).
+
+## 2026-03-03 - 작업한일
+- `input.md`를 `#` 블록 단위로 파싱해(`다음 # 전까지`) 객체별 `{name}`, `{rule}`, `{step}`를 프롬프트 템플릿 변수로 주입하도록 `action_build_todo_from_input_md`를 변경함.
+- `assets/prompts/build-funciton-todo.txt`를 객체 단위 생성 프롬프트로 전환하고, 출력을 `assets/code/templates/task.yaml` 형식의 단일 YAML item으로 강제함.
+- 프롬프트에 스킬 참조를 `$rule-naming`, `$build_domain`, `$build-architecture`로 추가함.
+- `assets/code/templates/task.yaml` 템플릿 파일을 추가함.
+- 검증: `cargo test` 통과(20 passed).
+
+## 2026-03-03 - 작업한일
+- `# 제목` 값이 `{name}`으로 전달되고 `TodoItem.name`에 강제 매핑되도록 `build-function-auto` 경로를 보강함.
+- todo item 파싱을 `GeneratedTodoItem`(옵셔널 필드)로 수신 후 `TodoItem`으로 매핑하도록 변경해, LLM 출력에 `name` 누락이 있어도 `# 제목` 기반 snake_case 이름으로 보정되게 수정함.
+- `assets/prompts/build-funciton-todo.txt`에 `{name}`은 input.md `# 제목`이며 todo item `name`에 매핑해야 한다는 규칙을 추가함.
+- 검증: `cargo test` 통과, `cargo run --bin orc -- build-function-auto` 실행 시 `missing field name` 오류는 해소됨(후속 draft step 타입 오류는 별도).
+
+## 2026-03-03 - 작업한일
+- `build-function-auto` 실행 중 LLM이 생성한 `draft/task.step` map 타입으로 파싱 실패하던 문제를 막기 위해 `action_normalize_draft_task_step_yaml`를 추가하고, draft 파싱 전 정규화 경로를 `build-function-auto`/`add-func`에 적용함.
+- LLM이 생성한 todo item의 `rule/step/depends_on`에 map/scalar가 들어와도 문자열 배열로 보정하도록 `action_normalize_todo_item_yaml`를 추가하고 파싱 전 적용함.
+- 검증: `cargo test` 통과(20 passed), `cargo run --bin orc -- build-function-auto` 실행 시 기존 step/rule 타입 파싱 실패는 해소되고 후속 규칙 검증 단계로 진행됨을 확인함.
+
+## 2026-03-03 - 작업한일
+- `.project/project.md`가 없을 때 템플릿 고정 생성 대신, 현재 폴더 파일 목록을 기반으로 project.md를 생성하는 함수(`action_generate_project_md_from_workspace`)를 추가함.
+- `build-function-auto` 실행 중 `project.md` 누락 시 위 함수를 자동 호출하도록 `action_ensure_project_md_exists`를 변경함.
+- 워크스페이스 파일 힌트 수집(`action_collect_workspace_file_hints`)과 spec 추론(`action_infer_workspace_spec`)을 추가해 project.md 생성 입력에 반영함.
+- 검증: `cargo test` 통과(20 passed), `cargo run --bin orc -- build-function-auto` 실행에서 `project.md` 누락 오류는 재발하지 않음을 확인.
+
+## 2026-03-03 - 작업한일
+- todo 산출 파일 경로를 `.project/todos.yaml` 단일 경로로 통일하고, `build-function-auto`/`run_parallel_todo`의 읽기/쓰기 경로를 전부 `todos.yaml` 기준으로 갱신함.
+- 프롬프트 파일을 `assets/code/prompts`로 일원화: 기존 `assets/prompts/*`와 `assets/code/prompt/*` 파일을 모두 이동하고 원본 디렉터리를 정리함.
+- 프롬프트 경로 해석 코드를 전부 새 경로 기준으로 갱신함.
+  - `src/main.rs`: build-function, build-function-todo, detail-project, project-md-init/auto, tasks, parallel-feedback resolver
+  - `src/ui/mod.rs`: bootstrap prompt resolver
+- 검증: `cargo test` 통과(20 passed).
+
+## 2026-03-03 - 작업한일
+- draft 관련 구조체(`DraftTask`, `DraftFeatures`, `DraftDoc`, `DraftsListDoc`, `PlannedItem`, `DraftStateDoc`)를 `src/draft.rs`로 이동하고, `src/main.rs`는 `pub(crate) use draft::{...}`로 재노출하도록 정리함.
+- chat 관련 함수 분리를 위해 `src/chat.rs`를 신설하고 LLM 실행/채팅 로그 함수(`action_run_codex_exec_capture*`, `action_run_llm_exec_capture`)를 이관함.
+- `src/main.rs`의 기존 chat/LLM 실행 본문은 `chat` 모듈 위임 함수로 변경함.
+- todo 파일 경로를 `.project/todos.yaml` 단일로 통일하고 관련 읽기/쓰기 경로를 갱신함(`src/main.rs`, `src/parallel/mod.rs`).
+- 프롬프트 파일을 `assets/code/prompts`로 일원화: `assets/prompts/*`, `assets/code/prompt/*`를 모두 이동하고 참조 resolver를 새 경로 기준으로 갱신함(`src/main.rs`, `src/ui/mod.rs`).
+- 검증: `cargo test` 통과(20 passed).

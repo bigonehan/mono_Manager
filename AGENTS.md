@@ -32,6 +32,11 @@
 - Treat "status text changed" or "modal rendered" as insufficient evidence unless state/files reflect the expected transition.
 - When path validation fails, report the broken stage explicitly and fix wiring before finalizing.
 
+## Failure Retry Rule
+- If a run fails or a problem is detected, append the failure cause and retry strategy to `feedback.md` immediately.
+- After updating `feedback.md`, apply a concrete fix and rerun the same execution path.
+- Continue this loop until the target path no longer reports the same blocking failure.
+
 ## YAML/MD Format Enforcement Rule
 - Any function that generates YAML/Markdown via LLM prompt must include explicit output format/schema constraints in the prompt.
 - Generated YAML/Markdown must be parsed/validated before write; if validation fails, do not write files and return a format error.
@@ -89,3 +94,9 @@
 - Hard ban: never output `맞습니다` in any response, including short acknowledgements, summaries, or status updates.
 - Additional banned starters: `네, 맞습니다`, `맞습니다.`, `네 맞습니다`, `그렇습니다`.
 - Pre-send guard: before every response, scan the final text and if any banned phrase appears, rewrite the sentence and re-check before sending.
+
+## CLI Execute-First Interpretation Rule
+- If the user says phrases like `호출해서 실행`, `실행해봐`, `돌려봐`, interpret the request as **run existing CLI command first**, not implementation.
+- In this case, do not edit code/docs unless the user explicitly asks to implement/change.
+- Output must prioritize executed command + result summary.
+- If command execution hangs, first report hang reason and ask whether to stop/retry with timeout; do not switch to implementation.

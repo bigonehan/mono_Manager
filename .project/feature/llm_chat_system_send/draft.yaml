@@ -1,0 +1,50 @@
+rule:
+- command == 'orc chat -n <name> -m <message> [-i <receiver_id>] [--data <data>]'
+- file_exists('.temp/<name>.yaml') == true
+- missing('.temp/<name>.yaml') => error_and_exit
+- append(messages, {message_id, command, data, receiver, sender_id})
+- receiver == null or is_string(receiver)
+- data == null or is_string(data)
+- session_id != sender_id and sender_id != message_id and session_id != message_id
+features:
+  domain:
+  - chat
+  flow:
+  - validate_temp_session_file
+  - generate_sender_id
+  - append_message_yaml
+task:
+- name: send_chat_message
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - .temp/*.yaml
+  - src/cli/mod.rs
+  - src/chat/*.rs
+  rule:
+  - input.name != '' and input.message != ''
+  - file_exists('.temp/<name>.yaml') == true
+  - len(sender_id) == 8
+  - llm_id == sender_id
+  - messages[-1].command == input.message
+  - messages[-1].data == null when input.data is omitted
+  - messages[-1].receiver == null when input.receiver_id is omitted
+  step:
+  - orc chat -n "a" -m "hello" 를 입력으로 받는다.
+  - .temp/a.yaml 파일 존재를 검사한다.
+  - 파일이 없으면 에러를 출력하고 종료한다.
+  - 파일이 있으면 sender_id용 8자리 임의 ID를 생성한다.
+  - 생성한 값을 내부 변수 llm_id에 저장한다.
+  - messages에 message_id=<new_id>, command="hello", data=null, receiver=null, sender_id=<llm_id>를 추가 저장한다.
+  touches:
+  - .temp/<name>.yaml#messages
+  - runtime.llm_id
+  contracts:
+  - sender_id =~ '^[A-Za-z0-9]{8}$'
+  - message_id =~ '^[A-Za-z0-9_-]+$'
+  - command == input.message
+  - receiver == null or receiver == input.receiver_id
+  - data == null or data == input.data
+  - append_only(messages) == true

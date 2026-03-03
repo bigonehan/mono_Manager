@@ -19,6 +19,9 @@
 - `orc validate-tasks <feature_name>`
 - `orc add-function`
 - `orc build-parallel-code`
+- `orc build-parallel-todo`
+- `orc feedback`
+- `orc build-function-auto` (alias: `build-todo-auto`, `build-functon-auto`)
 - `orc press-key <key>`
 
 ## UI Mode

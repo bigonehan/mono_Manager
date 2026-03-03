@@ -1,0 +1,8 @@
+name: feature_name
+display_name: Feature Name
+rule:
+  - rule string
+step:
+  - step string
+depends_on: []
+draft_path: ""

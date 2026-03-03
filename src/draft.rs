@@ -6,6 +6,84 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DraftTask {
+    pub(crate) name: String,
+    #[serde(default, rename = "type")]
+    pub(crate) task_type: String,
+    #[serde(default)]
+    pub(crate) domain: Vec<String>,
+    #[serde(default)]
+    pub(crate) depends_on: Vec<String>,
+    #[serde(default)]
+    pub(crate) scope: Vec<String>,
+    #[serde(default)]
+    pub(crate) rule: Vec<String>,
+    #[serde(default)]
+    pub(crate) step: Vec<String>,
+    #[serde(default)]
+    pub(crate) touches: Vec<String>,
+    #[serde(default)]
+    pub(crate) contracts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DraftFeatures {
+    #[serde(default)]
+    pub(crate) domain: Vec<String>,
+    #[serde(default)]
+    pub(crate) flow: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DraftDoc {
+    #[serde(default)]
+    pub(crate) rule: Vec<String>,
+    #[serde(default)]
+    pub(crate) features: DraftFeatures,
+    #[serde(default)]
+    pub(crate) depends_on: Vec<String>,
+    #[serde(default)]
+    pub(crate) task: Vec<DraftTask>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub(crate) struct PlannedItem {
+    pub(crate) name: String,
+    pub(crate) value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub(crate) struct DraftStateDoc {
+    #[serde(default)]
+    pub(crate) generated: Vec<String>,
+    #[serde(default)]
+    pub(crate) pending: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub(crate) struct DraftsListDoc {
+    #[serde(default)]
+    pub(crate) domains: Vec<String>,
+    #[serde(default)]
+    pub(crate) flows: Vec<String>,
+    #[serde(default)]
+    #[serde(alias = "feature")]
+    pub(crate) features: Vec<String>,
+    #[serde(default)]
+    pub(crate) planned: Vec<String>,
+    #[serde(default)]
+    pub(crate) planned_items: Vec<PlannedItem>,
+    #[serde(default)]
+    pub(crate) draft_state: DraftStateDoc,
+    #[serde(default)]
+    pub(crate) sync_initialized: bool,
+}
 
 fn calc_failure_report_path(feature_name: &str) -> Result<PathBuf, String> {
     let feature_dir = crate::ui::action_resolve_feature_draft_path(feature_name)
@@ -70,8 +148,8 @@ fn action_append_draft_runtime_log(debug_enabled: bool, feature_name: &str, stag
     let _ = writeln!(file, "[{}] {} | {}", crate::calc_now_unix(), stage, detail);
 }
 
-fn action_parse_and_validate_draft_yaml(draft_yaml: &str) -> Result<crate::DraftDoc, String> {
-    let draft_doc: crate::DraftDoc = serde_yaml::from_str(draft_yaml)
+fn action_parse_and_validate_draft_yaml(draft_yaml: &str) -> Result<DraftDoc, String> {
+    let draft_doc: DraftDoc = serde_yaml::from_str(draft_yaml)
         .map_err(|e| format!("generated draft yaml invalid: {}", e))?;
     let draft_issues = crate::action_validate_draft_doc(&draft_doc);
     if !draft_issues.is_empty() {
@@ -190,7 +268,7 @@ fn action_generate_valid_draft_yaml(
 }
 
 fn action_build_draft_prompt(
-    doc: &crate::DraftsListDoc,
+    doc: &DraftsListDoc,
     feature: &str,
     project_info: &str,
     project_rules: &[String],
@@ -204,7 +282,7 @@ fn action_build_draft_prompt(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| feature.to_string());
     format!(
-        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능 key:\n- {}\n입력 기능 설명:\n- {}\n\n지시:\n- `draft.yaml`은 템플릿(`assets/code/templates/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$feature-name-prompt-rules` 스킬을 사용해.\n- FEATURE_NAME은 반드시 입력 기능 key와 동일하게 출력해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `rule`은 자동 검증 가능한 식(`==`, `!=`, `>=`, `<=`, `matches`, `contains`, `exists`)으로만 작성해.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
+        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능 key:\n- {}\n입력 기능 설명:\n- {}\n\n지시:\n- `draft.yaml`은 템플릿(`assets/code/templates/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- FEATURE_NAME은 반드시 입력 기능 key와 동일하게 출력해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `rule`은 자동 검증 가능한 식(`==`, `!=`, `>=`, `<=`, `matches`, `contains`, `exists`)으로만 작성해.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
         project_info,
         project_rules.join("\n- "),
         feature,
@@ -225,17 +303,11 @@ fn action_write_generated_draft(
     )?;
     fs::write(&draft_path, draft_yaml)
         .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
-    let task_path = crate::ui::action_resolve_feature_draft_path(feature_name)
-        .parent()
-        .ok_or_else(|| "failed to resolve feature dir".to_string())?
-        .join("task.yaml");
-    fs::write(&task_path, draft_yaml)
-        .map_err(|e| format!("failed to write {}: {}", task_path.display(), e))?;
     action_append_draft_runtime_log(
         debug_enabled,
         feature_name,
         "파일 반영 단계",
-        "draft.yaml/task.yaml 쓰기를 완료했습니다.",
+        "draft.yaml 쓰기를 완료했습니다.",
     );
     let _ = action_clear_draft_failure_report(feature_name);
     Ok(())
@@ -415,7 +487,7 @@ pub(crate) fn draft_add(feature_name: &str, request: Option<String>) -> Result<S
     let project_rules = crate::calc_extract_project_rules(&project_md);
     let debug_instruction = calc_debug_prompt_instruction();
     let prompt = format!(
-        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능명:\n- {}\n요구사항:\n- {}\n\n지시:\n- `draft.yaml`은 템플릿(`assets/code/templates/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$feature-name-prompt-rules` 스킬을 사용해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
+        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능명:\n- {}\n요구사항:\n- {}\n\n지시:\n- `draft.yaml`은 템플릿(`assets/code/templates/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
         project_info,
         project_rules.join("\n- "),
         feature_name,
@@ -435,18 +507,12 @@ pub(crate) fn draft_add(feature_name: &str, request: Option<String>) -> Result<S
     )?;
     fs::write(&draft_path, &draft_yaml)
         .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
-    let task_path = crate::ui::action_resolve_feature_draft_path(&generated_name)
-        .parent()
-        .ok_or_else(|| "failed to resolve feature dir".to_string())?
-        .join("task.yaml");
-    fs::write(&task_path, &draft_yaml)
-        .map_err(|e| format!("failed to write {}: {}", task_path.display(), e))?;
     let check_msg =
         crate::action_run_check_code_after_draft_changes(&[generated_name.clone()], "add-draft")?;
     Ok(format!(
         "draft-add completed with llm: planned+file updated for {} ({}) | {}",
         generated_name,
-        task_path.display(),
+        draft_path.display(),
         check_msg
     ))
 }

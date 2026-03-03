@@ -1,5 +1,6 @@
 mod config;
 mod cli;
+mod chat;
 mod draft;
 mod parallel;
 mod plan;
@@ -14,19 +15,21 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+pub(crate) use draft::{DraftDoc, DraftsListDoc, DraftTask, PlannedItem};
 
 const REGISTRY_PATH: &str = "configs/project.yaml";
 const LEGACY_REGISTRY_PATH: &str = "configs/Project.yaml";
 const EXEC_LOG_PATH: &str = ".project/log.md";
 const PROJECT_MD_PATH: &str = ".project/project.md";
 const PRIMARY_DRAFTS_LIST_FILE: &str = "drafts_list.yaml";
-const CODEX_DANGEROUS_FLAG: &str = "--dangerously-bypass-approvals-and-sandbox";
-const FEATURE_NAME_SKILL_PATH: &str = "/home/tree/ai/skills/feature-name-prompt-rules/SKILL.md";
+const INPUT_MD_PATH: &str = "input.md";
+const TODOS_YAML_PATH: &str = ".project/todos.yaml";
+const FEATURE_NAME_SKILL_PATH: &str = "/home/tree/ai/skills/rule-naming/SKILL.md";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProjectRecord {
@@ -48,88 +51,48 @@ struct ProjectRegistry {
     projects: Vec<ProjectRecord>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct DraftTask {
-    name: String,
-    #[serde(default, rename = "type")]
-    task_type: String,
-    #[serde(default)]
-    domain: Vec<String>,
-    #[serde(default)]
-    depends_on: Vec<String>,
-    #[serde(default)]
-    scope: Vec<String>,
-    #[serde(default)]
-    rule: Vec<String>,
-    #[serde(default)]
-    step: Vec<String>,
-    #[serde(default)]
-    touches: Vec<String>,
-    #[serde(default)]
-    contracts: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct DraftFeatures {
-    #[serde(default)]
-    domain: Vec<String>,
-    #[serde(default)]
-    flow: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct DraftDoc {
-    #[serde(default)]
-    rule: Vec<String>,
-    #[serde(default)]
-    features: DraftFeatures,
-    #[serde(default)]
-    depends_on: Vec<String>,
-    #[serde(default)]
-    task: Vec<DraftTask>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct DraftsListDoc {
-    #[serde(default)]
-    domains: Vec<String>,
-    #[serde(default)]
-    flows: Vec<String>,
-    #[serde(default)]
-    #[serde(alias = "feature")]
-    features: Vec<String>,
-    #[serde(default)]
-    planned: Vec<String>,
-    #[serde(default)]
-    planned_items: Vec<PlannedItem>,
-    #[serde(default)]
-    draft_state: DraftStateDoc,
-    #[serde(default)]
-    sync_initialized: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct PlannedItem {
-    name: String,
-    value: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct DraftStateDoc {
-    #[serde(default)]
-    generated: Vec<String>,
-    #[serde(default)]
-    pending: Vec<String>,
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct ParallelFeatureTask {
     pub(crate) name: String,
     pub(crate) draft_path: PathBuf,
     pub(crate) depends_on: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct TodoDoc {
+    #[serde(default)]
+    tasks: Vec<TodoItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct TodoItem {
+    name: String,
+    #[serde(default)]
+    display_name: String,
+    #[serde(default)]
+    rule: Vec<String>,
+    #[serde(default)]
+    step: Vec<String>,
+    #[serde(default)]
+    depends_on: Vec<String>,
+    #[serde(default)]
+    draft_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct GeneratedTodoItem {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    display_name: String,
+    #[serde(default)]
+    rule: Vec<String>,
+    #[serde(default)]
+    step: Vec<String>,
+    #[serde(default)]
+    depends_on: Vec<String>,
+    #[serde(default)]
+    draft_path: String,
 }
 
 fn calc_now_unix() -> String {
@@ -256,240 +219,23 @@ fn action_read_multiline_until_blank(prompt: &str) -> Result<String, String> {
     Ok(lines.join("\n").trim().to_string())
 }
 
-fn action_append_chat_log(project_root: &Path, role: &str, message: &str) {
-    let path = project_root.join(".project").join("chat.log");
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(file, "[{}] {}", ts, role);
-        let _ = writeln!(file, "{}", message);
-        let _ = writeln!(file);
-    }
-}
-
-fn calc_codex_exec_timeout_sec() -> u64 {
-    action_load_app_config()
-        .as_ref()
-        .map_or(300, config::AppConfig::default_timeout_sec)
-        .max(1)
-}
-
-fn action_run_command_with_timeout(
-    mut command: Command,
-    timeout_sec: u64,
-    timeout_label: &str,
-) -> Result<Output, String> {
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("failed to spawn {}: {}", timeout_label, e))?;
-    let started = Instant::now();
-    loop {
-        match child
-            .try_wait()
-            .map_err(|e| format!("failed while waiting {}: {}", timeout_label, e))?
-        {
-            Some(_) => {
-                return child
-                    .wait_with_output()
-                    .map_err(|e| format!("failed to collect output for {}: {}", timeout_label, e));
-            }
-            None => {
-                if started.elapsed() >= Duration::from_secs(timeout_sec) {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(format!(
-                        "{} timed out after {}s",
-                        timeout_label, timeout_sec
-                    ));
-                }
-                thread::sleep(Duration::from_millis(200));
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct LlmExecResult {
-    success: bool,
-    stdout: String,
-    stderr: String,
-}
-
-fn calc_should_use_tmux_for_llm() -> bool {
-    let debug_enabled = action_load_app_config()
-        .as_ref()
-        .is_none_or(config::AppConfig::debug_enabled);
-    debug_enabled && env::var("TMUX").map(|v| !v.trim().is_empty()).unwrap_or(false)
-}
-
-fn calc_llm_retry_count() -> u32 {
-    action_load_app_config()
-        .as_ref()
-        .map_or(2, config::AppConfig::llm_retry_count)
-        .max(1)
-}
-
-fn calc_quote_sh(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\"'\"'"))
-}
-
-fn action_run_llm_via_tmux(
-    dir: &Path,
-    llm_bin: &str,
-    prompt: &str,
-    timeout_sec: u64,
-    add_yes_flag: bool,
-    add_dangerous_flag: bool,
-    timeout_label: &str,
-) -> Result<LlmExecResult, String> {
-    let runtime = dir.join(".project").join("runtime");
-    fs::create_dir_all(&runtime)
-        .map_err(|e| format!("failed to create runtime dir {}: {}", runtime.display(), e))?;
-    let stamp = calc_now_unix();
-    let token = format!("{}_{}", stamp, std::process::id());
-    let prompt_path = runtime.join(format!("tmux-llm-{}.prompt.txt", token));
-    let script_path = runtime.join(format!("tmux-llm-{}.sh", token));
-    let stdout_path = runtime.join(format!("tmux-llm-{}.stdout.log", token));
-    let stderr_path = runtime.join(format!("tmux-llm-{}.stderr.log", token));
-    let code_path = runtime.join(format!("tmux-llm-{}.code", token));
-    fs::write(&prompt_path, prompt)
-        .map_err(|e| format!("failed to write {}: {}", prompt_path.display(), e))?;
-
-    let mut flags = Vec::new();
-    if add_yes_flag {
-        flags.push("-y".to_string());
-    }
-    if add_dangerous_flag {
-        flags.push(CODEX_DANGEROUS_FLAG.to_string());
-    }
-    let flags_joined = if flags.is_empty() {
-        String::new()
-    } else {
-        format!(" {}", flags.join(" "))
-    };
-    let script = format!(
-        "#!/usr/bin/env bash\n\
-cd {dir}\n\
-{llm} exec{flags} \"$(cat {prompt})\" > {stdout} 2> {stderr}\n\
-status=$?\n\
-printf \"%s\" \"$status\" > {code}\n",
-        dir = calc_quote_sh(&dir.display().to_string()),
-        llm = calc_quote_sh(llm_bin),
-        flags = flags_joined,
-        prompt = calc_quote_sh(&prompt_path.display().to_string()),
-        stdout = calc_quote_sh(&stdout_path.display().to_string()),
-        stderr = calc_quote_sh(&stderr_path.display().to_string()),
-        code = calc_quote_sh(&code_path.display().to_string()),
-    );
-    fs::write(&script_path, script)
-        .map_err(|e| format!("failed to write {}: {}", script_path.display(), e))?;
-
-    let script_cmd = format!("bash {}", calc_quote_sh(&script_path.display().to_string()));
-    let pane_id = tmux::action_split_window_run(&script_cmd)
-        .map_err(|e| format!("{} (tmux split/run failed: {})", timeout_label, e))?;
-    let _ = tmux::action_rename_pane(&pane_id, "llm-debug");
-
-    let started = Instant::now();
-    while !code_path.exists() {
-        if started.elapsed() >= Duration::from_secs(timeout_sec) {
-            let _ = tmux::action_kill_pane(&pane_id);
-            return Err(format!("{} timed out after {}s", timeout_label, timeout_sec));
-        }
-        thread::sleep(Duration::from_millis(200));
-    }
-    let _ = tmux::action_kill_pane(&pane_id);
-
-    let code_raw = fs::read_to_string(&code_path)
-        .map_err(|e| format!("failed to read {}: {}", code_path.display(), e))?;
-    let code = code_raw.trim().parse::<i32>().unwrap_or(1);
-    let stdout = fs::read_to_string(&stdout_path).unwrap_or_default();
-    let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
-    Ok(LlmExecResult {
-        success: code == 0,
-        stdout,
-        stderr: stderr.trim().to_string(),
-    })
+pub(crate) fn show_current_state(state: &str, description: &str) {
+    println!("[{}]{}", state, description);
 }
 
 pub(crate) fn action_run_codex_exec_capture_with_timeout(
     prompt: &str,
     timeout_sec: u64,
 ) -> Result<String, String> {
-    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    action_append_chat_log(&cwd, "LLM_PROMPT", prompt);
-    let model_bin = action_default_model_bin();
-    let dangerous = calc_model_supports_dangerous_flag(&model_bin);
-    let total_attempts = calc_llm_retry_count();
-    let mut last_error = "unknown llm error".to_string();
-    for attempt in 1..=total_attempts {
-        if calc_should_use_tmux_for_llm() {
-            match action_run_llm_via_tmux(
-                &cwd,
-                &model_bin,
-                prompt,
-                timeout_sec,
-                false,
-                dangerous,
-                &format!("{} exec", model_bin),
-            ) {
-                Ok(result) => {
-                    if result.success {
-                        action_append_chat_log(&cwd, "LLM_RESPONSE", &result.stdout);
-                        return Ok(result.stdout);
-                    }
-                    last_error = result.stderr;
-                }
-                Err(e) => {
-                    last_error = e;
-                }
-            }
-        } else {
-            let mut command = Command::new(&model_bin);
-            command.arg("exec");
-            if dangerous {
-                command.arg(CODEX_DANGEROUS_FLAG);
-            }
-            command.arg(prompt);
-            match action_run_command_with_timeout(
-                command,
-                timeout_sec,
-                &format!("{} exec", model_bin),
-            ) {
-                Ok(output) if output.status.success() => {
-                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
-                    return Ok(stdout);
-                }
-                Ok(output) => {
-                    last_error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                }
-                Err(e) => {
-                    last_error = e;
-                }
-            }
-        }
-        action_append_chat_log(
-            &cwd,
-            "LLM_RETRY",
-            &format!("attempt {}/{} failed: {}", attempt, total_attempts, last_error),
-        );
-    }
-    action_append_chat_log(&cwd, "LLM_ERROR", &last_error);
-    Err(last_error)
+    chat::action_run_codex_exec_capture_with_timeout(prompt, timeout_sec)
 }
 
 fn action_run_codex_exec_capture(prompt: &str) -> Result<String, String> {
-    action_run_codex_exec_capture_with_timeout(prompt, calc_codex_exec_timeout_sec())
+    chat::action_run_codex_exec_capture(prompt)
 }
 
 fn action_run_codex_exec_capture_in_dir(dir: &Path, prompt: &str) -> Result<String, String> {
-    action_run_codex_exec_capture_in_dir_with_timeout(dir, prompt, calc_codex_exec_timeout_sec())
+    chat::action_run_codex_exec_capture_in_dir(dir, prompt)
 }
 
 pub(crate) fn action_run_codex_exec_capture_in_dir_with_timeout(
@@ -497,180 +243,11 @@ pub(crate) fn action_run_codex_exec_capture_in_dir_with_timeout(
     prompt: &str,
     timeout_sec: u64,
 ) -> Result<String, String> {
-    action_append_chat_log(dir, "LLM_PROMPT", prompt);
-    let model_bin = action_default_model_bin();
-    let dangerous = calc_model_supports_dangerous_flag(&model_bin);
-    let total_attempts = calc_llm_retry_count();
-    let mut last_error = "unknown llm error".to_string();
-    for attempt in 1..=total_attempts {
-        if calc_should_use_tmux_for_llm() {
-            match action_run_llm_via_tmux(
-                dir,
-                &model_bin,
-                prompt,
-                timeout_sec,
-                false,
-                dangerous,
-                &format!("{} exec in {}", model_bin, dir.display()),
-            ) {
-                Ok(result) => {
-                    if result.success {
-                        action_append_chat_log(dir, "LLM_RESPONSE", &result.stdout);
-                        return Ok(result.stdout);
-                    }
-                    last_error = result.stderr;
-                }
-                Err(e) => {
-                    last_error = e;
-                }
-            }
-        } else {
-            let mut command = Command::new(&model_bin);
-            command.current_dir(dir).arg("exec");
-            if dangerous {
-                command.arg(CODEX_DANGEROUS_FLAG);
-            }
-            command.arg(prompt);
-            match action_run_command_with_timeout(
-                command,
-                timeout_sec,
-                &format!("{} exec in {}", model_bin, dir.display()),
-            ) {
-                Ok(output) if output.status.success() => {
-                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    action_append_chat_log(dir, "LLM_RESPONSE", &stdout);
-                    return Ok(stdout);
-                }
-                Ok(output) => {
-                    last_error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                }
-                Err(e) => {
-                    last_error = e;
-                }
-            }
-        }
-        action_append_chat_log(
-            dir,
-            "LLM_RETRY",
-            &format!("attempt {}/{} failed: {}", attempt, total_attempts, last_error),
-        );
-    }
-    action_append_chat_log(dir, "LLM_ERROR", &last_error);
-    Err(last_error)
+    chat::action_run_codex_exec_capture_in_dir_with_timeout(dir, prompt, timeout_sec)
 }
 
 fn action_run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, String> {
-    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    action_append_chat_log(&cwd, "LLM_PROMPT", prompt);
-    let timeout_sec = calc_codex_exec_timeout_sec().max(30);
-    let use_dangerous = calc_model_supports_dangerous_flag(llm);
-    let total_attempts = calc_llm_retry_count();
-    let mut last_error = "unknown llm error".to_string();
-    for attempt in 1..=total_attempts {
-        if calc_should_use_tmux_for_llm() {
-            match action_run_llm_via_tmux(
-                &cwd,
-                llm,
-                prompt,
-                timeout_sec,
-                true,
-                use_dangerous,
-                &format!("{} exec -y", llm),
-            ) {
-                Ok(result) if result.success => {
-                    action_append_chat_log(&cwd, "LLM_RESPONSE", &result.stdout);
-                    return Ok(result.stdout);
-                }
-                Ok(result) if result.stderr.contains("unexpected argument '-y'") => {
-                    match action_run_llm_via_tmux(
-                        &cwd,
-                        llm,
-                        prompt,
-                        timeout_sec,
-                        false,
-                        use_dangerous,
-                        &format!("{} exec", llm),
-                    ) {
-                        Ok(retry) if retry.success => {
-                            action_append_chat_log(&cwd, "LLM_RESPONSE", &retry.stdout);
-                            return Ok(retry.stdout);
-                        }
-                        Ok(retry) => {
-                            last_error = retry.stderr;
-                        }
-                        Err(e) => {
-                            last_error = e;
-                        }
-                    }
-                }
-                Ok(result) => {
-                    last_error = result.stderr;
-                }
-                Err(e) => {
-                    last_error = e;
-                }
-            }
-        } else {
-            let mut command = Command::new(llm);
-            command.arg("exec").arg("-y");
-            if use_dangerous {
-                command.arg(CODEX_DANGEROUS_FLAG);
-            }
-            command.arg(prompt);
-            match action_run_command_with_timeout(
-                command,
-                timeout_sec,
-                &format!("{} exec -y", llm),
-            ) {
-                Ok(output) if output.status.success() => {
-                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
-                    return Ok(stdout);
-                }
-                Ok(output) => {
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    if stderr.contains("unexpected argument '-y'") {
-                        let mut retry_command = Command::new(llm);
-                        retry_command.arg("exec");
-                        if use_dangerous {
-                            retry_command.arg(CODEX_DANGEROUS_FLAG);
-                        }
-                        retry_command.arg(prompt);
-                        match action_run_command_with_timeout(
-                            retry_command,
-                            timeout_sec,
-                            &format!("{} exec", llm),
-                        ) {
-                            Ok(retry) if retry.status.success() => {
-                                let stdout = String::from_utf8_lossy(&retry.stdout).to_string();
-                                action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
-                                return Ok(stdout);
-                            }
-                            Ok(retry) => {
-                                last_error =
-                                    String::from_utf8_lossy(&retry.stderr).trim().to_string();
-                            }
-                            Err(e) => {
-                                last_error = e;
-                            }
-                        }
-                    } else {
-                        last_error = stderr;
-                    }
-                }
-                Err(e) => {
-                    last_error = e;
-                }
-            }
-        }
-        action_append_chat_log(
-            &cwd,
-            "LLM_RETRY",
-            &format!("attempt {}/{} failed: {}", attempt, total_attempts, last_error),
-        );
-    }
-    action_append_chat_log(&cwd, "LLM_ERROR", &last_error);
-    Err(last_error)
+    chat::action_run_llm_exec_capture(llm, prompt)
 }
 
 fn calc_extract_markdown_block(raw: &str) -> String {
@@ -1640,6 +1217,10 @@ fn auto_improve(request: &str) -> Result<String, String> {
     project::auto_improve(request)
 }
 
+fn run_feedback() -> Result<String, String> {
+    feedback()
+}
+
 fn draft_report() -> Result<String, String> {
     project::draft_report()
 }
@@ -1784,6 +1365,502 @@ fn action_append_feature_to_project_md(feature_name: &str, display_name: &str) -
         .map_err(|e| format!("failed to write {}: {}", PROJECT_MD_PATH, e))
 }
 
+fn action_validate_todo_doc(doc: &TodoDoc) -> Result<(), String> {
+    if doc.tasks.is_empty() {
+        return Err("todo.yaml format invalid: tasks is empty".to_string());
+    }
+    let mut seen = HashSet::new();
+    for (idx, task) in doc.tasks.iter().enumerate() {
+        if task.name.trim().is_empty() {
+            return Err(format!("todo.yaml format invalid: tasks[{idx}].name is empty"));
+        }
+        if !calc_is_valid_snake_feature_key(&task.name) {
+            return Err(format!(
+                "todo.yaml format invalid: tasks[{idx}].name is not snake_case"
+            ));
+        }
+        if !seen.insert(task.name.clone()) {
+            return Err(format!(
+                "todo.yaml format invalid: duplicated task name `{}`",
+                task.name
+            ));
+        }
+        if task.draft_path.trim().is_empty() {
+            return Err(format!(
+                "todo.yaml format invalid: tasks[{idx}].draft_path is empty"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn action_save_todo_doc(path: &Path, doc: &TodoDoc) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
+    }
+    let raw = serde_yaml::to_string(doc).map_err(|e| format!("todo yaml encode error: {}", e))?;
+    fs::write(path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
+}
+
+fn action_load_todo_doc(path: &Path) -> Result<TodoDoc, String> {
+    let raw =
+        fs::read_to_string(path).map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+    let doc: TodoDoc =
+        serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse {}: {}", path.display(), e))?;
+    action_validate_todo_doc(&doc)?;
+    Ok(doc)
+}
+
+fn action_build_todo_from_input_md() -> Result<String, String> {
+    let input_path = Path::new(INPUT_MD_PATH);
+    if !input_path.exists() {
+        return Err(format!("{} not found", INPUT_MD_PATH));
+    }
+    let request_raw = fs::read_to_string(input_path)
+        .map_err(|e| format!("failed to read {}: {}", INPUT_MD_PATH, e))?;
+    let objects = calc_parse_add_function_objects(&request_raw);
+    if objects.is_empty() {
+        return Err("input.md parse failed: expected `# / > / -` format".to_string());
+    }
+    let todo_prompt_path = action_resolve_build_funciton_todo_prompt_path()?;
+    let todo_prompt_template = fs::read_to_string(&todo_prompt_path)
+        .map_err(|e| format!("failed to read {}: {}", todo_prompt_path.display(), e))?;
+    let mut todo_doc = TodoDoc { tasks: Vec::new() };
+    for obj in &objects {
+        let rule_text = if obj.rules.is_empty() {
+            "- (none)".to_string()
+        } else {
+            obj.rules
+                .iter()
+                .map(|v| format!("- {}", v))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let step_text = if obj.steps.is_empty() {
+            "- (none)".to_string()
+        } else {
+            obj.steps
+                .iter()
+                .map(|v| format!("- {}", v))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let todo_prompt = todo_prompt_template
+            .replace("{name}", &obj.name)
+            .replace("{rule}", &rule_text)
+            .replace("{step}", &step_text);
+        let todo_raw = action_run_codex_exec_capture(&todo_prompt)?;
+        let todo_yaml = action_normalize_todo_item_yaml(&calc_extract_yaml_block(&todo_raw))?;
+        let generated: GeneratedTodoItem = serde_yaml::from_str(&todo_yaml)
+            .map_err(|e| format!("generated todo item yaml invalid: {}", e))?;
+        let fallback_name = calc_feature_name_snake_like(&obj.name);
+        let mapped_name = if generated.name.trim().is_empty() {
+            fallback_name
+        } else {
+            calc_feature_name_snake_like(&generated.name)
+        };
+        let item = TodoItem {
+            name: mapped_name,
+            display_name: if generated.display_name.trim().is_empty() {
+                obj.name.clone()
+            } else {
+                generated.display_name
+            },
+            rule: generated.rule,
+            step: generated.step,
+            depends_on: generated.depends_on,
+            draft_path: generated.draft_path,
+        };
+        todo_doc.tasks.push(item);
+    }
+    if todo_doc.tasks.is_empty() {
+        return Err("generated todo yaml invalid: tasks is empty".to_string());
+    }
+
+    let prompt_path = action_resolve_build_funciton_prompt_path()?;
+    let prompt_template = fs::read_to_string(&prompt_path)
+        .map_err(|e| format!("failed to read {}: {}", prompt_path.display(), e))?;
+
+    for task in &mut todo_doc.tasks {
+        if task.display_name.trim().is_empty() {
+            task.display_name = task.name.clone();
+        }
+        let prompt = prompt_template
+            .replace("{{name}}", &task.display_name)
+            .replace(
+                "{{rule}}",
+                &if task.rule.is_empty() {
+                    "- (none)".to_string()
+                } else {
+                    task.rule
+                        .iter()
+                        .map(|v| format!("- {}", v))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                },
+            )
+            .replace(
+                "{{step}}",
+                &if task.step.is_empty() {
+                    "- (none)".to_string()
+                } else {
+                    task.step
+                        .iter()
+                        .map(|v| format!("- {}", v))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                },
+            );
+        let draft_raw = action_run_codex_exec_capture(&prompt)?;
+        let draft_yaml = action_normalize_draft_task_step_yaml(&calc_extract_yaml_block(&draft_raw))?;
+        let draft_doc: DraftDoc = serde_yaml::from_str(&draft_yaml)
+            .map_err(|e| format!("generated draft yaml invalid: {}", e))?;
+        let draft_issues = action_validate_draft_doc(&draft_doc);
+        if !draft_issues.is_empty() {
+            return Err(format!(
+                "generated draft yaml invalid: {}",
+                draft_issues.join(" | ")
+            ));
+        }
+        let draft_path = ui::action_resolve_feature_draft_path(&task.name);
+        if let Some(parent) = draft_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
+        }
+        fs::write(&draft_path, draft_yaml)
+            .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
+        task.depends_on = draft_doc.depends_on;
+        task.draft_path = draft_path.display().to_string();
+    }
+
+    action_validate_todo_doc(&todo_doc)?;
+    let todo_path = Path::new(TODOS_YAML_PATH);
+    action_save_todo_doc(todo_path, &todo_doc)?;
+    Ok(format!(
+        "todo generated from {}: {} item(s) -> {}",
+        INPUT_MD_PATH,
+        todo_doc.tasks.len(),
+        TODOS_YAML_PATH
+    ))
+}
+
+fn action_resolve_build_funciton_prompt_path() -> Result<PathBuf, String> {
+    let root = action_source_root();
+    let file_name = "build-funciton.txt";
+    let candidates = [
+        root.join("assets").join("code").join("prompts").join(file_name),
+        PathBuf::from("assets").join("code").join("prompts").join(file_name),
+        root.join("src").join("assets").join("code").join("prompts").join(file_name),
+        PathBuf::from("src").join("assets").join("code").join("prompts").join(file_name),
+    ];
+    for candidate in candidates {
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "build-function prompt not found: {} (source root: {})",
+        file_name,
+        root.display()
+    ))
+}
+
+fn action_resolve_build_funciton_todo_prompt_path() -> Result<PathBuf, String> {
+    let root = action_source_root();
+    let file_name = "build-funciton-todo.txt";
+    let candidates = [
+        root.join("assets").join("code").join("prompts").join(file_name),
+        PathBuf::from("assets").join("code").join("prompts").join(file_name),
+        root.join("src").join("assets").join("code").join("prompts").join(file_name),
+        PathBuf::from("src").join("assets").join("code").join("prompts").join(file_name),
+    ];
+    for candidate in candidates {
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "build-function todo prompt not found: {} (source root: {})",
+        file_name,
+        root.display()
+    ))
+}
+
+fn action_ensure_project_md_exists(project_root: &Path) -> Result<Option<String>, String> {
+    let project_dir = project_root.join(".project");
+    fs::create_dir_all(&project_dir)
+        .map_err(|e| format!("failed to create {}: {}", project_dir.display(), e))?;
+    let project_md_path = project_dir.join("project.md");
+    if project_md_path.exists() {
+        return Ok(None);
+    }
+    let created = action_generate_project_md_from_workspace(project_root)?;
+    if !project_md_path.exists() {
+        return Err(format!(
+            "failed to create {} from workspace",
+            project_md_path.display()
+        ));
+    }
+    Ok(Some(format!(
+        "initialized missing project.md from workspace: {} | {}",
+        project_md_path.display(),
+        created
+    )))
+}
+
+fn action_collect_workspace_file_hints(project_root: &Path) -> Result<Vec<String>, String> {
+    fn walk(base: &Path, dir: &Path, out: &mut Vec<String>, depth: usize) -> Result<(), String> {
+        if depth > 4 || out.len() >= 60 {
+            return Ok(());
+        }
+        let entries =
+            fs::read_dir(dir).map_err(|e| format!("failed to read {}: {}", dir.display(), e))?;
+        for entry in entries {
+            if out.len() >= 60 {
+                break;
+            }
+            let entry = entry.map_err(|e| format!("failed to read dir entry: {}", e))?;
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == ".git" || name == "target" || name == ".project" {
+                continue;
+            }
+            if path.is_dir() {
+                walk(base, &path, out, depth + 1)?;
+                continue;
+            }
+            let rel = path
+                .strip_prefix(base)
+                .map(|v| v.display().to_string())
+                .unwrap_or_else(|_| path.display().to_string());
+            out.push(rel);
+        }
+        Ok(())
+    }
+
+    let mut files = Vec::new();
+    walk(project_root, project_root, &mut files, 0)?;
+    files.sort();
+    Ok(files)
+}
+
+fn action_infer_workspace_spec(file_hints: &[String]) -> String {
+    let has = |name: &str| file_hints.iter().any(|v| v == name || v.ends_with(name));
+    if has("Cargo.toml") {
+        return "rust".to_string();
+    }
+    if has("package.json") {
+        if has("next.config.js") || has("next.config.ts") {
+            return "node, nextjs".to_string();
+        }
+        return "node".to_string();
+    }
+    if has("pyproject.toml") || has("requirements.txt") {
+        return "python".to_string();
+    }
+    "workspace".to_string()
+}
+
+fn action_generate_project_md_from_workspace(project_root: &Path) -> Result<String, String> {
+    let file_hints = action_collect_workspace_file_hints(project_root)?;
+    let project_name = project_root
+        .file_name()
+        .and_then(|v| v.to_str())
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or("project");
+    let file_text = if file_hints.is_empty() {
+        "- (empty)".to_string()
+    } else {
+        file_hints
+            .iter()
+            .take(40)
+            .map(|v| format!("- {}", v))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let description = format!(
+        "현재 폴더 파일을 기준으로 생성된 프로젝트입니다.\n주요 파일:\n{}",
+        file_text
+    );
+    let spec = action_infer_workspace_spec(&file_hints);
+    let goal = "현재 워크스페이스 파일 구조를 기반으로 project.md 설계를 초기화한다.";
+    action_generate_project_plan(
+        project_root,
+        project_name,
+        &description,
+        &spec,
+        goal,
+        &[],
+        "",
+        None,
+        true,
+    )
+}
+
+fn action_validate_todo_feedback_markdown(markdown: &str) -> Result<(), String> {
+    let required = ["# 구현 기능", "## 문제 해결", "## 미해결", "## 개선점"];
+    for header in required {
+        if !markdown
+            .lines()
+            .any(|line| line.trim().eq_ignore_ascii_case(header))
+        {
+            return Err(format!(
+                "feedback markdown format invalid: missing header `{}`",
+                header
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn action_write_todo_feedback(task_names: &[String], run_summary: &str) -> Result<String, String> {
+    let task_text = if task_names.is_empty() {
+        "- (none)".to_string()
+    } else {
+        task_names
+            .iter()
+            .map(|v| format!("- {}", v))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let prompt = format!(
+        "너는 구현 피드백 작성기다.\n\
+입력:\n\
+- 구현 대상 task 목록:\n{}\n\
+- 실행 결과 요약: {}\n\n\
+출력 규칙:\n\
+1) markdown 본문만 출력.\n\
+2) 아래 헤더를 정확히 유지.\n\
+   - # 구현 기능\n\
+   - ## 문제 해결\n\
+   - ## 미해결\n\
+   - ## 개선점\n\
+3) 각 섹션마다 `- ` 불릿 최소 1개.\n\
+4) 결과는 실제 실행 요약과 연결되게 작성.",
+        task_text, run_summary
+    );
+    let raw = action_run_codex_exec_capture_with_timeout(&prompt, 120)?;
+    let feedback_md = raw.trim().to_string();
+    action_validate_todo_feedback_markdown(&feedback_md)?;
+    let out_path = Path::new(".project").join("feedback.md");
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
+    }
+    fs::write(&out_path, feedback_md + "\n")
+        .map_err(|e| format!("failed to write {}: {}", out_path.display(), e))?;
+    Ok(format!("feedback saved: {}", out_path.display()))
+}
+
+fn calc_extract_next_input_markdown_block(raw: &str) -> Option<String> {
+    if let Some(start) = raw.find("```md") {
+        let rest = &raw[start + 5..];
+        if let Some(end) = rest.find("```") {
+            return Some(rest[..end].trim().to_string());
+        }
+    }
+    if let Some(start) = raw.find("```markdown") {
+        let rest = &raw[start + 11..];
+        if let Some(end) = rest.find("```") {
+            return Some(rest[..end].trim().to_string());
+        }
+    }
+    let lines: Vec<&str> = raw
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('#') || line.starts_with('>') || line.starts_with('-'))
+        .collect();
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n"))
+    }
+}
+
+fn feedback() -> Result<String, String> {
+    let feedback_path = Path::new(".project").join("feedback.md");
+    if !feedback_path.exists() {
+        return Err(format!("{} not found", feedback_path.display()));
+    }
+    let feedback_md = fs::read_to_string(&feedback_path)
+        .map_err(|e| format!("failed to read {}: {}", feedback_path.display(), e))?;
+    let input_body = fs::read_to_string(INPUT_MD_PATH).unwrap_or_default();
+    let prompt = format!(
+        "너는 다음 구현 사이클 결정기다.\n\
+피드백:\n{}\n\n\
+현재 input.md:\n{}\n\n\
+결정 규칙:\n\
+- 추가 구현이 필요하면 ACTION: NEXT 와 함께 input.md 본문(`#`, `>`, `-` 형식)을 출력.\n\
+- 모든 작업이 완료되면 ACTION: DONE 만 출력.\n\
+- 출력 형식:\n\
+ACTION: <NEXT|DONE>\n\
+```md\n\
+<NEXT일 때만 input.md 본문>\n\
+```",
+        feedback_md, input_body
+    );
+    let raw = action_run_codex_exec_capture_with_timeout(&prompt, 120)?;
+    let upper = raw.to_ascii_uppercase();
+    if upper.contains("ACTION: DONE") {
+        let input_path = Path::new(INPUT_MD_PATH);
+        if input_path.exists() {
+            fs::remove_file(input_path)
+                .map_err(|e| format!("failed to delete {}: {}", INPUT_MD_PATH, e))?;
+        }
+        return Ok(format!("feedback completed: removed {}", INPUT_MD_PATH));
+    }
+    if !upper.contains("ACTION: NEXT") {
+        return Err("feedback decision invalid: missing ACTION: NEXT|DONE".to_string());
+    }
+    let next_input = calc_extract_next_input_markdown_block(&raw)
+        .ok_or_else(|| "feedback NEXT output invalid: missing markdown block".to_string())?;
+    if next_input.trim().is_empty() {
+        return Err("feedback NEXT output invalid: empty input body".to_string());
+    }
+    fs::write(INPUT_MD_PATH, next_input + "\n")
+        .map_err(|e| format!("failed to write {}: {}", INPUT_MD_PATH, e))?;
+    Ok(format!("feedback completed: updated {}", INPUT_MD_PATH))
+}
+
+async fn build_function_auto() -> Result<String, String> {
+    let mut cycle_logs = Vec::new();
+    for cycle in 1..=5usize {
+        if !Path::new(INPUT_MD_PATH).exists() {
+            if cycle == 1 {
+                return Err(format!("{} not found", INPUT_MD_PATH));
+            }
+            break;
+        }
+        show_current_state("plan", &format!("cycle {}: input.md -> todos.yaml 생성 시작", cycle));
+        let todo_msg = action_build_todo_from_input_md()?;
+        if let Some(msg) = action_ensure_project_md_exists(Path::new("."))? {
+            cycle_logs.push(format!("cycle {} | {}", cycle, msg));
+        }
+        show_current_state("build", &format!("cycle {}: todo 병렬 구현 시작", cycle));
+        let build_msg = parallel::run_parallel_todo().await?;
+        let todo_doc = action_load_todo_doc(Path::new(TODOS_YAML_PATH))?;
+        let todo_names: Vec<String> = todo_doc.tasks.iter().map(|v| v.name.clone()).collect();
+        show_current_state("chcek", &format!("cycle {}: feedback.md 작성/검토 시작", cycle));
+        let feedback_write_msg = action_write_todo_feedback(&todo_names, &build_msg)?;
+        let feedback_msg = feedback()?;
+        cycle_logs.push(format!(
+            "cycle {} | {} | {} | {} | {}",
+            cycle, todo_msg, build_msg, feedback_write_msg, feedback_msg
+        ));
+        if !Path::new(INPUT_MD_PATH).exists() {
+            break;
+        }
+    }
+    if Path::new(INPUT_MD_PATH).exists() {
+        cycle_logs.push("stopped: max cycle reached with remaining input.md".to_string());
+    }
+    Ok(format!(
+        "build-function-auto completed\n{}",
+        cycle_logs.join("\n")
+    ))
+}
+
 fn add_func(request_input: Option<String>) -> Result<String, String> {
     let project_md = fs::read_to_string(PROJECT_MD_PATH)
         .map_err(|e| format!("failed to read {}: {}", PROJECT_MD_PATH, e))?;
@@ -1806,7 +1883,7 @@ fn add_func(request_input: Option<String>) -> Result<String, String> {
     let mut created_features = Vec::new();
     for obj in &objects {
         let draft_prompt = format!(
-            "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 객체:\n- name: {}\n- step:\n{}\n- rule:\n{}\n\n지시:\n- `draft.yaml`은 템플릿(`assets/code/templates/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$feature-name-prompt-rules` 스킬을 사용해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
+            "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 객체:\n- name: {}\n- step:\n{}\n- rule:\n{}\n\n지시:\n- `draft.yaml`은 템플릿(`assets/code/templates/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
             project_info,
             project_rules.join("\n- "),
             obj.name,
@@ -1831,7 +1908,7 @@ fn add_func(request_input: Option<String>) -> Result<String, String> {
         );
         let draft_raw = action_run_codex_exec_capture(&draft_prompt)?;
         let feature_name = calc_extract_feature_name(&draft_raw, &obj.name);
-        let draft_yaml = calc_extract_yaml_block(&draft_raw);
+        let draft_yaml = action_normalize_draft_task_step_yaml(&calc_extract_yaml_block(&draft_raw))?;
         let draft_doc: DraftDoc = serde_yaml::from_str(&draft_yaml)
             .map_err(|e| format!("generated draft yaml invalid: {}", e))?;
         let draft_issues = action_validate_draft_doc(&draft_doc);
@@ -1912,7 +1989,7 @@ fn action_generate_project_plan(
             ],
         ),
         None => format!(
-            "너는 project.md 생성기다.\n입력:\n- name: {}\n- description: {}\n- spec: {}\n- goal: {}\n- rules:\n{}\n\n지시:\n- 템플릿(`assets/code/templates/project.md`) 구조를 정확히 따른다.\n- 필수 헤더를 모두 포함한다: `# info`, `## rule`, `## plan`, `## features`, `## structure`, `# Domains`, `# Flow`(또는 `# Stage`), `# UI`, `# Step`, `# Constraints`, `# Verification`, `# Gate Checklist`.\n- `# Domains`에는 `### domain` 블록을 최소 1개 포함하고, 각 블록에 `- **name**:`, `- **description**:`, `- **state**:`, `- **action**:`, `- **rule**:`, `- **variable**:`를 모두 포함한다.\n- 규칙은 `$plan-project-code`, `$build_domain` 스킬을 사용해.\n- `## plan`에는 최소 5개의 기능 항목을 반드시 작성해.\n- 최종 출력은 markdown 본문만.",
+            "너는 project.md 생성기다.\n입력:\n- name: {}\n- description: {}\n- spec: {}\n- goal: {}\n- rules:\n{}\n\n지시:\n- 템플릿(`assets/code/templates/project.md`) 구조를 정확히 따른다.\n- 필수 헤더를 모두 포함한다: `# info`, `## rule`, `## plan`, `## features`, `## structure`, `# Domains`, `# Flow`(또는 `# Stage`), `# UI`, `# Step`, `# Constraints`, `# Verification`, `# Gate Checklist`.\n- `# Domains`에는 `### domain` 블록을 최소 1개 포함하고, 각 블록에 `- **name**:`, `- **description**:`, `- **state**:`, `- **action**:`, `- **rule**:`, `- **variable**:`를 모두 포함한다.\n- 규칙은 `$plan-project-code`, `$build_domain` 스킬을 사용해.\n- 특히 도메인 설계는 `/home/tree/ai/skills/build-domain/SKILL.md`를 참조해 결정한다.\n- `## plan`에는 최소 5개의 기능 항목을 반드시 작성해.\n- 최종 출력은 markdown 본문만.",
             project_name, description, spec, goal, rules_text
         ),
     };
@@ -2224,7 +2301,7 @@ pub(crate) fn action_check_and_improve_drafts_before_parallel() -> Result<String
             continue;
         }
         let dir = entry.path();
-        let draft_path = [dir.join("task.yaml"), dir.join("draft.yaml")]
+        let draft_path = [dir.join("draft.yaml"), dir.join("drafts.yaml")]
             .into_iter()
             .find(|p| p.exists());
         let Some(draft_path) = draft_path else { continue };
@@ -2335,6 +2412,143 @@ fn calc_extract_yaml_block(raw: &str) -> String {
     raw.trim().to_string()
 }
 
+fn action_normalize_draft_task_step_yaml(raw_yaml: &str) -> Result<String, String> {
+    fn value_to_text(v: &serde_yaml::Value) -> String {
+        match v {
+            serde_yaml::Value::String(s) => s.trim().to_string(),
+            serde_yaml::Value::Mapping(map) => {
+                let mut parts = Vec::new();
+                for (k, val) in map {
+                    let key = match k {
+                        serde_yaml::Value::String(s) => s.clone(),
+                        other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+                    };
+                    let value = match val {
+                        serde_yaml::Value::String(s) => s.clone(),
+                        other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+                    };
+                    if !key.is_empty() && !value.is_empty() {
+                        parts.push(format!("{}: {}", key, value));
+                    }
+                }
+                parts.join(" | ")
+            }
+            other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+        }
+    }
+
+    let mut root: serde_yaml::Value =
+        serde_yaml::from_str(raw_yaml).map_err(|e| format!("generated draft yaml invalid: {}", e))?;
+    let serde_yaml::Value::Mapping(root_map) = &mut root else {
+        return Ok(raw_yaml.to_string());
+    };
+    let task_key = serde_yaml::Value::String("task".to_string());
+    let Some(serde_yaml::Value::Sequence(tasks)) = root_map.get_mut(&task_key) else {
+        return Ok(raw_yaml.to_string());
+    };
+    for task in tasks {
+        let serde_yaml::Value::Mapping(task_map) = task else {
+            continue;
+        };
+        let step_key = serde_yaml::Value::String("step".to_string());
+        if let Some(serde_yaml::Value::Sequence(steps)) = task_map.get_mut(&step_key) {
+            let mut normalized = Vec::with_capacity(steps.len());
+            for step in steps.iter() {
+                let text = value_to_text(step);
+                if !text.is_empty() {
+                    normalized.push(serde_yaml::Value::String(text));
+                }
+            }
+            *steps = normalized;
+        }
+
+        let rule_key = serde_yaml::Value::String("rule".to_string());
+        if let Some(serde_yaml::Value::Sequence(rules)) = task_map.get_mut(&rule_key) {
+            let mut normalized = Vec::with_capacity(rules.len());
+            for rule in rules.iter() {
+                let mut text = value_to_text(rule);
+                if !text.is_empty() && !calc_is_auto_verifiable_rule(&text) {
+                    text = format!("check: {} should hold", text);
+                }
+                if !text.is_empty() {
+                    normalized.push(serde_yaml::Value::String(text));
+                }
+            }
+            *rules = normalized;
+        }
+    }
+    serde_yaml::to_string(&root).map_err(|e| format!("generated draft yaml invalid: {}", e))
+}
+
+fn action_normalize_todo_item_yaml(raw_yaml: &str) -> Result<String, String> {
+    fn value_to_text(v: &serde_yaml::Value) -> String {
+        match v {
+            serde_yaml::Value::String(s) => s.trim().to_string(),
+            serde_yaml::Value::Mapping(map) => {
+                let mut parts = Vec::new();
+                for (k, val) in map {
+                    let key = match k {
+                        serde_yaml::Value::String(s) => s.clone(),
+                        other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+                    };
+                    let value = match val {
+                        serde_yaml::Value::String(s) => s.clone(),
+                        other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+                    };
+                    if !key.is_empty() && !value.is_empty() {
+                        parts.push(format!("{}: {}", key, value));
+                    }
+                }
+                parts.join(" | ")
+            }
+            other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+        }
+    }
+
+    let mut root: serde_yaml::Value =
+        serde_yaml::from_str(raw_yaml).map_err(|e| format!("generated todo item yaml invalid: {}", e))?;
+    let serde_yaml::Value::Mapping(root_map) = &mut root else {
+        return Ok(raw_yaml.to_string());
+    };
+
+    for key in ["rule", "step", "depends_on"] {
+        let k = serde_yaml::Value::String(key.to_string());
+        let Some(value) = root_map.get_mut(&k) else {
+            continue;
+        };
+        match value {
+            serde_yaml::Value::Sequence(items) => {
+                let mut normalized = Vec::with_capacity(items.len());
+                for item in items.iter() {
+                    let text = value_to_text(item);
+                    if !text.is_empty() {
+                        normalized.push(serde_yaml::Value::String(text));
+                    }
+                }
+                *items = normalized;
+            }
+            other => {
+                let text = value_to_text(other);
+                *other = if text.is_empty() {
+                    serde_yaml::Value::Sequence(Vec::new())
+                } else {
+                    serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(text)])
+                };
+            }
+        }
+    }
+
+    for key in ["name", "display_name", "draft_path"] {
+        let k = serde_yaml::Value::String(key.to_string());
+        if let Some(value) = root_map.get_mut(&k) {
+            let text = value_to_text(value);
+            *value = serde_yaml::Value::String(text);
+        }
+    }
+
+    serde_yaml::to_string(&root).map_err(|e| format!("generated todo item yaml invalid: {}", e))
+}
+
 fn calc_extract_feature_name(raw: &str, fallback: &str) -> String {
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -2378,7 +2592,7 @@ fn action_collect_generated_draft_feature_names(project_root: &Path) -> Vec<Stri
         }
         let dir = entry.path();
         let has_task = [
-            dir.join("task.yaml"),
+            dir.join("draft.yaml"),
             dir.join("tasks.yaml"),
             dir.join("draft.yaml"),
             dir.join("drafts.yaml"),
@@ -2452,7 +2666,7 @@ pub(crate) fn action_preflight_parallel_build(path: &Path) -> Result<String, Str
     for name in &doc.planned {
         let dir = Path::new(".project").join("feature").join(name);
         let has_task = [
-            dir.join("task.yaml"),
+            dir.join("draft.yaml"),
             dir.join("tasks.yaml"),
             dir.join("draft.yaml"),
             dir.join("drafts.yaml"),
@@ -2473,6 +2687,28 @@ pub(crate) fn action_preflight_parallel_build(path: &Path) -> Result<String, Str
         "parallel-preflight ok: planned={} files_ready={}",
         doc.planned.len(),
         doc.planned.len()
+    ))
+}
+
+pub(crate) fn action_preflight_parallel_todo(path: &Path) -> Result<String, String> {
+    let doc = action_load_todo_doc(path)?;
+    let mut missing = Vec::new();
+    for task in &doc.tasks {
+        let task_path = Path::new(&task.draft_path);
+        if !task_path.exists() {
+            missing.push(task.name.clone());
+        }
+    }
+    if !missing.is_empty() {
+        return Err(format!(
+            "parallel-todo-preflight failed: missing draft path for tasks={:?}",
+            missing
+        ));
+    }
+    Ok(format!(
+        "parallel-todo-preflight ok: tasks={} files_ready={}",
+        doc.tasks.len(),
+        doc.tasks.len()
     ))
 }
 
@@ -2521,6 +2757,125 @@ fn action_promote_planned_to_features_doc(doc: &mut DraftsListDoc, items: &[Stri
     changed
 }
 
+fn calc_extract_list_key_from_markdown_line(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let body = if trimmed.starts_with("- ") {
+        trimmed.trim_start_matches("- ").trim().to_string()
+    } else if let Some((_, right)) = trimmed.split_once(". ") {
+        if trimmed
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+        {
+            right.trim().to_string()
+        } else {
+            return None;
+        }
+    } else {
+        return None;
+    };
+    if body.is_empty() {
+        return None;
+    }
+    let head = body
+        .split('|')
+        .next()
+        .unwrap_or(&body)
+        .split(':')
+        .next()
+        .unwrap_or(&body)
+        .trim();
+    let key = calc_feature_name_snake_like(head);
+    if calc_is_valid_snake_feature_key(&key) {
+        Some(key)
+    } else {
+        None
+    }
+}
+
+fn calc_markdown_section_bounds(lines: &[String], header: &str) -> Option<(usize, usize)> {
+    let start = lines
+        .iter()
+        .position(|line| line.trim().eq_ignore_ascii_case(header))?;
+    let mut end = start + 1;
+    while end < lines.len() {
+        if lines[end].trim().starts_with('#') {
+            break;
+        }
+        end += 1;
+    }
+    Some((start, end))
+}
+
+fn action_promote_project_md_plan_to_features(project_root: &Path, items: &[String]) -> Result<bool, String> {
+    if items.is_empty() {
+        return Ok(false);
+    }
+    let path = project_root.join(PROJECT_MD_PATH);
+    if !path.exists() {
+        return Ok(false);
+    }
+    let mut lines: Vec<String> = fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read {}: {}", path.display(), e))?
+        .lines()
+        .map(|v| v.to_string())
+        .collect();
+    let targets: HashSet<String> = items
+        .iter()
+        .map(|v| calc_feature_name_snake_like(v))
+        .filter(|v| calc_is_valid_snake_feature_key(v))
+        .collect();
+    if targets.is_empty() {
+        return Ok(false);
+    }
+    let mut changed = false;
+    if let Some((plan_start, plan_end)) = calc_markdown_section_bounds(&lines, "## plan") {
+        let mut kept = Vec::new();
+        for line in lines[(plan_start + 1)..plan_end].iter().cloned() {
+            let key = calc_extract_list_key_from_markdown_line(&line);
+            if key.as_ref().is_some_and(|k| targets.contains(k)) {
+                changed = true;
+                continue;
+            }
+            kept.push(line);
+        }
+        lines.splice((plan_start + 1)..plan_end, kept);
+    }
+
+    let mut features_bounds = calc_markdown_section_bounds(&lines, "## features");
+    if features_bounds.is_none() {
+        lines.push(String::new());
+        lines.push("## features".to_string());
+        lines.push(String::new());
+        features_bounds = calc_markdown_section_bounds(&lines, "## features");
+        changed = true;
+    }
+    if let Some((features_start, features_end)) = features_bounds {
+        let mut existing: HashSet<String> = HashSet::new();
+        for line in &lines[(features_start + 1)..features_end] {
+            if let Some(key) = calc_extract_list_key_from_markdown_line(line) {
+                existing.insert(key);
+            }
+        }
+        let mut append_lines = Vec::new();
+        for key in &targets {
+            if existing.insert(key.clone()) {
+                append_lines.push(format!("- {}", key));
+                changed = true;
+            }
+        }
+        if !append_lines.is_empty() {
+            lines.splice(features_end..features_end, append_lines);
+        }
+    }
+    if changed {
+        fs::write(&path, lines.join("\n") + "\n")
+            .map_err(|e| format!("failed to write {}: {}", path.display(), e))?;
+    }
+    Ok(changed)
+}
+
 fn action_promote_planned_to_features_at(path: &Path, items: &[String]) -> Result<(), String> {
     if items.is_empty() {
         return Ok(());
@@ -2534,7 +2889,35 @@ fn action_promote_planned_to_features_at(path: &Path, items: &[String]) -> Resul
 
 pub(crate) fn action_promote_planned_to_features(items: &[String]) -> Result<(), String> {
     let path = action_resolve_drafts_list_path(Path::new("."))?;
-    action_promote_planned_to_features_at(&path, items)
+    action_promote_planned_to_features_at(&path, items)?;
+    let _ = action_promote_project_md_plan_to_features(Path::new("."), items)?;
+    Ok(())
+}
+
+pub(crate) fn action_move_finished_features_to_clear(items: &[String]) -> Result<String, String> {
+    if items.is_empty() {
+        return Ok("move-finished skipped: no completed feature".to_string());
+    }
+    let feature_root = Path::new(".project").join("feature");
+    let clear_root = Path::new(".project").join("clear");
+    fs::create_dir_all(&clear_root)
+        .map_err(|e| format!("failed to create {}: {}", clear_root.display(), e))?;
+    let mut moved = 0usize;
+    for item in items {
+        let src = feature_root.join(item);
+        if !src.exists() {
+            continue;
+        }
+        let dst = clear_root.join(item);
+        if dst.exists() {
+            fs::remove_dir_all(&dst)
+                .map_err(|e| format!("failed to remove {}: {}", dst.display(), e))?;
+        }
+        fs::rename(&src, &dst)
+            .map_err(|e| format!("failed to move {} -> {}: {}", src.display(), dst.display(), e))?;
+        moved += 1;
+    }
+    Ok(format!("move-finished completed: moved={}", moved))
 }
 
 pub(crate) fn action_read_project_info() -> Result<String, String> {
@@ -2572,7 +2955,7 @@ fn action_run_check_code_after_draft_changes(
     let mut target_lines = Vec::new();
     for name in feature_names {
         target_lines.push(format!(
-            "- {}: .project/feature/{}/task.yaml (or draft.yaml)",
+            "- {}: .project/feature/{}/draft.yaml (or drafts.yaml)",
             name, name
         ));
     }
@@ -2700,28 +3083,22 @@ fn action_resolve_detail_project_prompt_path() -> Result<PathBuf, String> {
     let candidates = [
         root.join("assets")
             .join("code")
-            .join("prompt")
-            .join("detail-project.txt"),
-        root.join("assets")
-            .join("code")
             .join("prompts")
-            .join("detail-project.txt"),
-        PathBuf::from("assets")
-            .join("code")
-            .join("prompt")
             .join("detail-project.txt"),
         PathBuf::from("assets")
             .join("code")
             .join("prompts")
             .join("detail-project.txt"),
-        root.join("assets").join("prompt").join("detail-project.txt"),
-        root.join("assets").join("prompts").join("detail-project.txt"),
-        PathBuf::from("assets").join("prompt").join("detail-project.txt"),
-        PathBuf::from("assets").join("prompts").join("detail-project.txt"),
-        root.join("src").join("assets").join("prompt").join("detail-project.txt"),
-        root.join("src").join("assets").join("prompts").join("detail-project.txt"),
-        PathBuf::from("src").join("assets").join("prompt").join("detail-project.txt"),
-        PathBuf::from("src").join("assets").join("prompts").join("detail-project.txt"),
+        root.join("src")
+            .join("assets")
+            .join("code")
+            .join("prompts")
+            .join("detail-project.txt"),
+        PathBuf::from("src")
+            .join("assets")
+            .join("code")
+            .join("prompts")
+            .join("detail-project.txt"),
     ];
     for candidate in candidates {
         if candidate.exists() {
@@ -2742,14 +3119,18 @@ pub(crate) fn action_resolve_project_md_prompt_path(auto_mode: bool) -> Result<P
         "project-md-init.txt"
     };
     let candidates = [
-        root.join("assets").join("prompts").join(file_name),
-        root.join("assets").join("prompt").join(file_name),
-        PathBuf::from("assets").join("prompts").join(file_name),
-        PathBuf::from("assets").join("prompt").join(file_name),
         root.join("assets").join("code").join("prompts").join(file_name),
-        root.join("assets").join("code").join("prompt").join(file_name),
         PathBuf::from("assets").join("code").join("prompts").join(file_name),
-        PathBuf::from("assets").join("code").join("prompt").join(file_name),
+        root.join("src")
+            .join("assets")
+            .join("code")
+            .join("prompts")
+            .join(file_name),
+        PathBuf::from("src")
+            .join("assets")
+            .join("code")
+            .join("prompts")
+            .join(file_name),
     ];
     for candidate in candidates {
         if candidate.exists() {
@@ -2766,30 +3147,21 @@ pub(crate) fn action_resolve_project_md_prompt_path(auto_mode: bool) -> Result<P
 pub(crate) fn action_resolve_task_template_path() -> Result<PathBuf, String> {
     let root = action_source_root();
     let candidates = [
-        root.join("assets").join("code").join("prompt").join("tasks.txt"),
         root.join("assets").join("code").join("prompts").join("tasks.txt"),
-        root.join("assets")
-            .join("code")
-            .join("templates")
-            .join("prompts")
-            .join("tasks.txt"),
-        PathBuf::from("assets")
-            .join("code")
-            .join("prompt")
-            .join("tasks.txt"),
         PathBuf::from("assets")
             .join("code")
             .join("prompts")
             .join("tasks.txt"),
-        PathBuf::from("assets")
+        root.join("src")
+            .join("assets")
             .join("code")
-            .join("templates")
             .join("prompts")
             .join("tasks.txt"),
-        root.join("assets").join("templates").join("prompts").join("tasks.txt"),
-        PathBuf::from("assets").join("templates").join("prompts").join("tasks.txt"),
-        root.join("src").join("assets").join("templates").join("prompts").join("tasks.txt"),
-        PathBuf::from("src").join("assets").join("templates").join("prompts").join("tasks.txt"),
+        PathBuf::from("src")
+            .join("assets")
+            .join("code")
+            .join("prompts")
+            .join("tasks.txt"),
     ];
     for candidate in candidates {
         if candidate.exists() {
@@ -2799,6 +3171,89 @@ pub(crate) fn action_resolve_task_template_path() -> Result<PathBuf, String> {
     Err(format!(
         "tasks template not found (source root: {})",
         root.display()
+    ))
+}
+
+pub(crate) fn action_resolve_parallel_feedback_prompt_path() -> Result<PathBuf, String> {
+    let root = action_source_root();
+    let file_name = "parallel-feedback.txt";
+    let candidates = [
+        root.join("assets").join("code").join("prompts").join(file_name),
+        PathBuf::from("assets").join("code").join("prompts").join(file_name),
+        root.join("src")
+            .join("assets")
+            .join("code")
+            .join("prompts")
+            .join(file_name),
+        PathBuf::from("src")
+            .join("assets")
+            .join("code")
+            .join("prompts")
+            .join(file_name),
+    ];
+    for candidate in candidates {
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "parallel feedback prompt not found: {} (source root: {})",
+        file_name,
+        root.display()
+    ))
+}
+
+fn action_validate_parallel_feedback_markdown(markdown: &str) -> Result<(), String> {
+    let required = [
+        "# 구현 완료 피드백",
+        "## 해결된 문제",
+        "## 개선점",
+        "## 다음 점검",
+    ];
+    for header in required {
+        if !markdown
+            .lines()
+            .any(|line| line.trim().eq_ignore_ascii_case(header))
+        {
+            return Err(format!(
+                "parallel feedback markdown format invalid: missing header `{}`",
+                header
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn action_write_parallel_feedback(
+    finished_items: &[String],
+    failed_count: usize,
+    move_msg: &str,
+) -> Result<String, String> {
+    let prompt_path = action_resolve_parallel_feedback_prompt_path()?;
+    let template = fs::read_to_string(&prompt_path)
+        .map_err(|e| format!("failed to read {}: {}", prompt_path.display(), e))?;
+    let finished_text = if finished_items.is_empty() {
+        "- (none)".to_string()
+    } else {
+        finished_items
+            .iter()
+            .map(|v| format!("- {}", v))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let prompt = template
+        .replace("{{finished_items}}", &finished_text)
+        .replace("{{failed_count}}", &failed_count.to_string())
+        .replace("{{move_msg}}", move_msg);
+    let raw = action_run_codex_exec_capture_with_timeout(&prompt, 120)?;
+    let feedback_md = raw.trim().to_string();
+    action_validate_parallel_feedback_markdown(&feedback_md)?;
+    let out_path = Path::new(".project").join("feedback.md");
+    fs::write(&out_path, feedback_md + "\n")
+        .map_err(|e| format!("failed to write {}: {}", out_path.display(), e))?;
+    Ok(format!(
+        "parallel feedback saved: {}",
+        out_path.display()
     ))
 }
 
@@ -2873,7 +3328,7 @@ pub(crate) fn action_collect_parallel_feature_tasks() -> Result<Vec<ParallelFeat
         }
         let feature_dir = entry.path();
         let draft_candidates = [
-            feature_dir.join("task.yaml"),
+            feature_dir.join("draft.yaml"),
             feature_dir.join("tasks.yaml"),
             feature_dir.join("drafts.yaml"),
             feature_dir.join("draft.yaml"),
@@ -2895,6 +3350,20 @@ pub(crate) fn action_collect_parallel_feature_tasks() -> Result<Vec<ParallelFeat
             name,
             draft_path,
             depends_on,
+        });
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
+pub(crate) fn action_collect_parallel_todo_tasks(path: &Path) -> Result<Vec<ParallelFeatureTask>, String> {
+    let doc = action_load_todo_doc(path)?;
+    let mut out = Vec::new();
+    for task in doc.tasks {
+        out.push(ParallelFeatureTask {
+            name: task.name,
+            draft_path: PathBuf::from(task.draft_path),
+            depends_on: task.depends_on,
         });
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -2947,6 +3416,10 @@ async fn main() {
     let _ = action_load_app_config();
     let args: Vec<String> = env::args().collect();
     let program = cli::calc_program_name(&args);
+    if args.len() < 2 {
+        cli::print_usage(program);
+        return;
+    }
     if cli::calc_is_help_command(&args) {
         cli::print_usage(program);
         return;
@@ -3185,7 +3658,7 @@ mod tests {
         fs::create_dir_all(meta.join("feature").join("alpha_feature"))
             .expect("create generated feature dir");
         fs::write(
-            meta.join("feature").join("alpha_feature").join("task.yaml"),
+            meta.join("feature").join("alpha_feature").join("draft.yaml"),
             "task:\n- name: alpha\n",
         )
         .expect("write generated task");
@@ -3235,6 +3708,41 @@ mod tests {
         assert!(!doc.planned.iter().any(|v| v == "alpha_feature"));
         assert!(!doc.planned_items.iter().any(|v| v.name == "alpha_feature"));
         assert!(doc.planned_items.iter().any(|v| v.name == "beta_feature"));
+    }
+
+    #[test]
+    fn promote_project_md_plan_to_features_moves_completed_items() {
+        let root = make_temp_dir("orc_promote_project_md");
+        let project_dir = root.join("project");
+        let meta = project_dir.join(".project");
+        fs::create_dir_all(&meta).expect("create project meta");
+        let md = r#"# info
+- name: sample
+
+## plan
+- alpha_feature
+- beta_feature
+
+## features
+- existing_feature
+"#;
+        fs::write(meta.join("project.md"), md).expect("write project.md");
+
+        let changed = action_promote_project_md_plan_to_features(
+            &project_dir,
+            &["alpha_feature".to_string()],
+        )
+        .expect("promote project.md");
+        assert!(changed);
+
+        let updated = fs::read_to_string(meta.join("project.md")).expect("read project.md");
+        let plan = calc_extract_project_md_list_by_header(&updated, "## plan");
+        let features = calc_extract_project_md_list_by_header(&updated, "## features");
+        assert!(!plan.iter().any(|v| v == "alpha_feature"));
+        assert!(plan.iter().any(|v| v == "beta_feature"));
+        assert!(features.iter().any(|v| v == "existing_feature"));
+        assert!(features.iter().any(|v| v == "alpha_feature"));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

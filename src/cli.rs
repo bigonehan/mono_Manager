@@ -16,27 +16,31 @@ pub fn calc_is_help_command(args: &[String]) -> bool {
 
 pub fn print_usage(program: &str) {
     println!("usage:");
+    println!("  {program} help | -h | --help");
     println!("  {program} plan-project [llm]");
     println!("  {program} detail-project [llm]");
     println!("  {program} detail-project -d <description> -s <spec> [--llm <bin>]");
-    println!("  {program} list-projects");
+    println!("  {program} list-projects (alias: list)");
     println!("  {program} create-project <name> [path] [description]");
-    println!("  {program} select-project <name>");
-    println!("  {program} delete-project <name>");
+    println!("  {program} select-project <name> (alias: select)");
+    println!("  {program} delete-project <name> (alias: delete)");
     println!("  {program} validate-tasks <feature_name>");
-    println!("  {program} create-draft");
+    println!("  {program} create-draft (alias: draft-create)");
     println!("  {program} add-plan [hint]");
-    println!("  {program} add-draft <feature_name> [request]");
-    println!("  {program} delete-draft <feature_name>");
-    println!("  {program} add-function");
-    println!("  {program} open-ui");
+    println!("  {program} add-draft <feature_name> [request] (alias: draft-add)");
+    println!("  {program} delete-draft <feature_name> (alias: draft-delete)");
+    println!("  {program} add-function [request] (alias: add-func)");
+    println!("  {program} open-ui (alias: ui)");
     println!("  {program} run-auto [project_name]");
     println!("  {program} auto -d <description> -s <spec>");
     println!("  {program} auto-check");
     println!("  {program} auto-improve <request>");
     println!("  {program} draft-report");
-    println!("  {program} send-tmux <pane_id> <msg...> [enter|raw]");
+    println!("  {program} send-tmux <pane_id> <msg...> [enter|raw] (alias: tsend)");
     println!("  {program} build-parallel-code");
+    println!("  {program} build-parallel-todo");
+    println!("  {program} feedback");
+    println!("  {program} build-function-auto (alias: build-todo-auto, build-functon-auto)");
     println!("  {program} press-key <key>");
 }
 
@@ -215,6 +219,21 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         }
         "build-parallel-code" => {
             super::parallel::run_parallel_build_code().await
+        }
+        "build-parallel-todo" => {
+            super::parallel::run_parallel_todo().await
+        }
+        "feedback" => {
+            if args.len() != 2 {
+                return Err("feedback does not accept arguments".to_string());
+            }
+            super::run_feedback()
+        }
+        "build-function-auto" | "build-todo-auto" | "build-functon-auto" => {
+            if args.len() != 2 {
+                return Err("build-function-auto does not accept arguments".to_string());
+            }
+            super::build_function_auto().await
         }
         "press-key" => {
             if args.len() < 3 {

@@ -7,7 +7,7 @@
 
 ## stage_draft
 - show: planned list
-- create: `./.project/feature/<feature>/task.yaml`
+- create: `./.project/feature/<feature>/draft.yaml`
 - wait: set_draft, add_draft, enter_parallel
 
 ## stage_build
