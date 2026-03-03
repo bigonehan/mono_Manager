@@ -1,0 +1,37 @@
+rule:
+- command == "orc chat -n <name>"
+- matches(llm_id, "^[A-Za-z0-9]{8}$")
+- users.sender_id == llm_id
+features:
+  domain:
+  - chat
+  flow:
+  - chat_session_start
+task:
+- name: build_llm_id_and_bind_sender
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/chat.rs
+  - src/cli.rs
+  - src/main.rs
+  rule:
+  - 'check: matches(llm_id, "^[A-Za-z0-9]{8}$") should hold'
+  - users.sender_id == llm_id
+  - session_id_store_path != sender_id_store_path
+  step:
+  - src/chat.rs -> build_llm_id() 추가 -> 8자리 난수 ID 반환
+  - chat 시작 입력 처리 -> llm_id=session_id 저장 -> users.sender_id 갱신
+  - session_id 저장 경로와 sender_id 저장 경로를 분리해 기록
+  touches:
+  - llm_id
+  - session_id
+  - users.sender_id
+  - session_id_store_path
+  - sender_id_store_path
+  contracts:
+  - llm_id=matches("^[A-Za-z0-9]{8}$")
+  - users.sender_id==llm_id
+  - session_id_store_path!=sender_id_store_path

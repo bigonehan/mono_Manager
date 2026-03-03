@@ -13,9 +13,9 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -80,19 +80,78 @@ struct TodoItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct GeneratedTodoItem {
+struct ChatRoomDoc {
     #[serde(default)]
+    room_name: String,
+    #[serde(default)]
+    users: Vec<ChatUser>,
+    #[serde(default)]
+    messages: Vec<ChatMessage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct ChatUser {
+    user_id: String,
+    #[serde(default = "calc_default_chat_user_role")]
+    role: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct ChatMessage {
+    message_id: String,
+    command: String,
+    #[serde(default)]
+    data: Option<String>,
+    #[serde(default)]
+    receiver: Option<String>,
+    sender_id: String,
+    #[serde(default)]
+    created_at: String,
+}
+
+#[derive(Debug, Clone)]
+struct ChatCliArgs {
     name: String,
+    message: Option<String>,
+    receiver: Option<String>,
+    data: Option<String>,
+    background: bool,
+    watch: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ChatWaitArgs {
+    name: String,
+    react_all: bool,
+    target_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct ChatSessionDoc {
     #[serde(default)]
-    display_name: String,
+    sessions: Vec<ChatSessionRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct ChatSessionRecord {
+    session_key: String,
+    sender_id: String,
     #[serde(default)]
-    rule: Vec<String>,
-    #[serde(default)]
-    step: Vec<String>,
-    #[serde(default)]
-    depends_on: Vec<String>,
-    #[serde(default)]
-    draft_path: String,
+    updated_at: String,
+}
+
+struct ChatRoomLockGuard {
+    lock_path: PathBuf,
+}
+
+impl Drop for ChatRoomLockGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.lock_path);
+    }
+}
+
+fn calc_default_chat_user_role() -> String {
+    "user".to_string()
 }
 
 fn calc_now_unix() -> String {
@@ -1419,65 +1478,28 @@ fn action_build_todo_from_input_md() -> Result<String, String> {
     }
     let request_raw = fs::read_to_string(input_path)
         .map_err(|e| format!("failed to read {}: {}", INPUT_MD_PATH, e))?;
-    let objects = calc_parse_add_function_objects(&request_raw);
-    if objects.is_empty() {
+    let parsed = calc_parse_add_function_objects(&request_raw);
+    if parsed.is_empty() {
         return Err("input.md parse failed: expected `# / > / -` format".to_string());
     }
     let todo_prompt_path = action_resolve_build_funciton_todo_prompt_path()?;
     let todo_prompt_template = fs::read_to_string(&todo_prompt_path)
         .map_err(|e| format!("failed to read {}: {}", todo_prompt_path.display(), e))?;
-    let mut todo_doc = TodoDoc { tasks: Vec::new() };
-    for obj in &objects {
-        let rule_text = if obj.rules.is_empty() {
-            "- (none)".to_string()
-        } else {
-            obj.rules
-                .iter()
-                .map(|v| format!("- {}", v))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        let step_text = if obj.steps.is_empty() {
-            "- (none)".to_string()
-        } else {
-            obj.steps
-                .iter()
-                .map(|v| format!("- {}", v))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        let todo_prompt = todo_prompt_template
-            .replace("{name}", &obj.name)
-            .replace("{rule}", &rule_text)
-            .replace("{step}", &step_text);
-        let todo_raw = action_run_codex_exec_capture(&todo_prompt)?;
-        let todo_yaml = action_normalize_todo_item_yaml(&calc_extract_yaml_block(&todo_raw))?;
-        let generated: GeneratedTodoItem = serde_yaml::from_str(&todo_yaml)
-            .map_err(|e| format!("generated todo item yaml invalid: {}", e))?;
-        let fallback_name = calc_feature_name_snake_like(&obj.name);
-        let mapped_name = if generated.name.trim().is_empty() {
-            fallback_name
-        } else {
-            calc_feature_name_snake_like(&generated.name)
-        };
-        let item = TodoItem {
-            name: mapped_name,
-            display_name: if generated.display_name.trim().is_empty() {
-                obj.name.clone()
-            } else {
-                generated.display_name
-            },
-            rule: generated.rule,
-            step: generated.step,
-            depends_on: generated.depends_on,
-            draft_path: generated.draft_path,
-        };
-        todo_doc.tasks.push(item);
+    let todo_prompt = todo_prompt_template.replace("{input_md}", &request_raw);
+    let todo_raw = action_run_codex_exec_capture(&todo_prompt)?;
+    let todo_yaml = action_normalize_todo_doc_yaml(&todo_raw)?;
+    let mut todo_doc: TodoDoc =
+        serde_yaml::from_str(&todo_yaml).map_err(|e| format!("generated todo yaml invalid: {}", e))?;
+    for task in &mut todo_doc.tasks {
+        task.name = calc_feature_name_snake_like(&task.name);
+        if task.name.trim().is_empty() {
+            task.name = calc_feature_name_snake_like(&task.display_name);
+        }
+        if task.display_name.trim().is_empty() {
+            task.display_name = task.name.clone();
+        }
+        task.draft_path.clear();
     }
-    if todo_doc.tasks.is_empty() {
-        return Err("generated todo yaml invalid: tasks is empty".to_string());
-    }
-
     let prompt_path = action_resolve_build_funciton_prompt_path()?;
     let prompt_template = fs::read_to_string(&prompt_path)
         .map_err(|e| format!("failed to read {}: {}", prompt_path.display(), e))?;
@@ -1513,7 +1535,7 @@ fn action_build_todo_from_input_md() -> Result<String, String> {
                 },
             );
         let draft_raw = action_run_codex_exec_capture(&prompt)?;
-        let draft_yaml = action_normalize_draft_task_step_yaml(&calc_extract_yaml_block(&draft_raw))?;
+        let draft_yaml = action_normalize_draft_task_step_yaml(&draft_raw)?;
         let draft_doc: DraftDoc = serde_yaml::from_str(&draft_yaml)
             .map_err(|e| format!("generated draft yaml invalid: {}", e))?;
         let draft_issues = action_validate_draft_doc(&draft_doc);
@@ -1908,7 +1930,7 @@ fn add_func(request_input: Option<String>) -> Result<String, String> {
         );
         let draft_raw = action_run_codex_exec_capture(&draft_prompt)?;
         let feature_name = calc_extract_feature_name(&draft_raw, &obj.name);
-        let draft_yaml = action_normalize_draft_task_step_yaml(&calc_extract_yaml_block(&draft_raw))?;
+        let draft_yaml = action_normalize_draft_task_step_yaml(&draft_raw)?;
         let draft_doc: DraftDoc = serde_yaml::from_str(&draft_yaml)
             .map_err(|e| format!("generated draft yaml invalid: {}", e))?;
         let draft_issues = action_validate_draft_doc(&draft_doc);
@@ -2348,6 +2370,656 @@ pub(crate) fn action_load_app_config() -> Option<config::AppConfig> {
     None
 }
 
+fn calc_generate_chat_id_8() -> String {
+    const ALNUM: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    let mut seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0)
+        ^ (std::process::id() as u64);
+    let mut out = String::with_capacity(8);
+    for _ in 0..8 {
+        seed ^= seed << 7;
+        seed ^= seed >> 9;
+        seed ^= seed << 8;
+        let idx = (seed as usize) % ALNUM.len();
+        out.push(ALNUM[idx] as char);
+    }
+    out
+}
+
+fn calc_now_chat_timestamp() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{}Z", secs)
+}
+
+fn action_chat_room_path(name: &str) -> PathBuf {
+    action_source_root().join(".temp").join(format!("{}.yaml", name))
+}
+
+fn action_chat_room_lock_path(name: &str) -> PathBuf {
+    action_source_root().join(".temp").join(format!("{}.lock", name))
+}
+
+fn action_acquire_chat_room_lock(name: &str) -> Result<ChatRoomLockGuard, String> {
+    let lock_path = action_chat_room_lock_path(name);
+    if let Some(parent) = lock_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
+    }
+    let started = SystemTime::now();
+    loop {
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(_) => {
+                return Ok(ChatRoomLockGuard { lock_path });
+            }
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {
+                let elapsed = started
+                    .elapsed()
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                if elapsed >= 15 {
+                    return Err(format!("chat room lock timeout: {}", lock_path.display()));
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => {
+                return Err(format!(
+                    "failed to create chat room lock {}: {}",
+                    lock_path.display(),
+                    e
+                ));
+            }
+        }
+    }
+}
+
+fn action_chat_session_path(name: &str) -> PathBuf {
+    action_source_root()
+        .join(".temp")
+        .join(format!("{}.sessions.yaml", name))
+}
+
+fn calc_chat_session_key() -> String {
+    if let Ok(v) = env::var("ORC_CHAT_SESSION_KEY") {
+        let trimmed = v.trim();
+        if !trimmed.is_empty() {
+            return format!("env:{}", trimmed);
+        }
+    }
+
+    let ppid = fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|raw| {
+            raw.lines().find_map(|line| {
+                let t = line.trim();
+                if let Some(v) = t.strip_prefix("PPid:") {
+                    let value = v.trim();
+                    if value.is_empty() {
+                        None
+                    } else {
+                        Some(value.to_string())
+                    }
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let tty = fs::read_link("/proc/self/fd/0")
+        .ok()
+        .map(|p| p.display().to_string())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "none".to_string());
+
+    if let Ok(v) = env::var("TMUX_PANE") {
+        let trimmed = v.trim();
+        if !trimmed.is_empty() {
+            return format!("tmux-pane:{}", trimmed);
+        }
+    }
+    format!("ppid:{}|tty:{}", ppid, tty)
+}
+
+fn action_load_chat_sessions(path: &Path) -> Result<ChatSessionDoc, String> {
+    if !path.exists() {
+        return Ok(ChatSessionDoc::default());
+    }
+    let raw = fs::read_to_string(path).map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+    if raw.trim().is_empty() {
+        return Ok(ChatSessionDoc::default());
+    }
+    serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse {}: {}", path.display(), e))
+}
+
+fn action_save_chat_sessions(path: &Path, doc: &ChatSessionDoc) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
+    }
+    let raw = serde_yaml::to_string(doc).map_err(|e| format!("chat sessions yaml encode error: {}", e))?;
+    fs::write(path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
+}
+
+fn action_chat_sender_id_for_session(room_name: &str) -> Result<String, String> {
+    let path = action_chat_session_path(room_name);
+    let mut doc = action_load_chat_sessions(&path)?;
+    let session_key = calc_chat_session_key();
+    if let Some(found) = doc
+        .sessions
+        .iter_mut()
+        .find(|v| v.session_key == session_key)
+    {
+        if found.sender_id.trim().is_empty() {
+            found.sender_id = calc_generate_chat_id_8();
+        }
+        found.updated_at = calc_now_chat_timestamp();
+        let sender_id = found.sender_id.clone();
+        action_save_chat_sessions(&path, &doc)?;
+        return Ok(sender_id);
+    }
+    let sender_id = calc_generate_chat_id_8();
+    doc.sessions.push(ChatSessionRecord {
+        session_key,
+        sender_id: sender_id.clone(),
+        updated_at: calc_now_chat_timestamp(),
+    });
+    action_save_chat_sessions(&path, &doc)?;
+    Ok(sender_id)
+}
+
+fn action_parse_chat_args(args: &[String]) -> Result<ChatCliArgs, String> {
+    let mut name: Option<String> = None;
+    let mut message: Option<String> = None;
+    let mut receiver: Option<String> = None;
+    let mut data: Option<String> = None;
+    let mut background = false;
+    let mut watch = false;
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-n" => {
+                i += 1;
+                name = args.get(i).cloned();
+            }
+            "-m" => {
+                i += 1;
+                message = args.get(i).cloned();
+            }
+            "-i" => {
+                i += 1;
+                receiver = args.get(i).cloned();
+            }
+            "--data" => {
+                i += 1;
+                data = args.get(i).cloned();
+            }
+            "--background" => {
+                background = true;
+            }
+            "--watch" => {
+                watch = true;
+            }
+            other => {
+                return Err(format!("chat unknown option: {}", other));
+            }
+        }
+        i += 1;
+    }
+    let name = name
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| "chat requires -n <name>".to_string())?;
+    Ok(ChatCliArgs {
+        name,
+        message: message
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
+        receiver: receiver
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
+        data: data.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+        background,
+        watch,
+    })
+}
+
+fn action_parse_chat_wait_args(args: &[String]) -> Result<ChatWaitArgs, String> {
+    let mut name: Option<String> = None;
+    let mut react_all: Option<bool> = None;
+    let mut target_count: Option<usize> = None;
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-n" => {
+                i += 1;
+                name = args.get(i).cloned();
+            }
+            "-a" => {
+                i += 1;
+                let raw = args
+                    .get(i)
+                    .ok_or_else(|| "chat-wait requires -a <true|false>".to_string())?;
+                let value = match raw.as_str() {
+                    "true" => true,
+                    "false" => false,
+                    _ => return Err("chat-wait -a must be true or false".to_string()),
+                };
+                react_all = Some(value);
+            }
+            "-c" => {
+                i += 1;
+                let raw = args
+                    .get(i)
+                    .ok_or_else(|| "chat-wait requires -c <count>".to_string())?;
+                let parsed = raw
+                    .parse::<usize>()
+                    .map_err(|_| "chat-wait -c must be positive integer".to_string())?;
+                if parsed == 0 {
+                    return Err("chat-wait -c must be >= 1".to_string());
+                }
+                target_count = Some(parsed);
+            }
+            other => {
+                return Err(format!("chat-wait unknown option: {}", other));
+            }
+        }
+        i += 1;
+    }
+    let name = name
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| "chat-wait requires -n <name>".to_string())?;
+    let react_all = react_all.ok_or_else(|| "chat-wait requires -a <true|false>".to_string())?;
+    Ok(ChatWaitArgs {
+        name,
+        react_all,
+        target_count,
+    })
+}
+
+fn action_load_chat_room(path: &Path) -> Result<ChatRoomDoc, String> {
+    let room_name = path
+        .file_stem()
+        .and_then(|v| v.to_str())
+        .unwrap_or("")
+        .to_string();
+    let default_doc = ChatRoomDoc {
+        room_name: room_name.clone(),
+        users: Vec::new(),
+        messages: Vec::new(),
+    };
+
+    if !path.exists() {
+        action_save_chat_room(path, &default_doc)?;
+        return Ok(default_doc);
+    }
+    let raw = fs::read_to_string(path).map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+    if raw.trim().is_empty() {
+        action_save_chat_room(path, &default_doc)?;
+        return Ok(default_doc);
+    }
+    let mut doc: ChatRoomDoc =
+        serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse {}: {}", path.display(), e))?;
+    if doc.room_name.trim().is_empty() {
+        doc.room_name = room_name;
+        action_save_chat_room(path, &doc)?;
+    }
+    Ok(doc)
+}
+
+fn action_save_chat_room(path: &Path, doc: &ChatRoomDoc) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
+    }
+    let raw = serde_yaml::to_string(doc).map_err(|e| format!("chat room yaml encode error: {}", e))?;
+    fs::write(path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
+}
+
+fn action_print_chat_messages(room_name: &str, messages: &[ChatMessage]) {
+    for m in messages {
+        let receiver = m.receiver.as_deref().unwrap_or("*");
+        let data = m.data.as_deref().unwrap_or("null");
+        println!(
+            "[room:{}] {} | from={} | to={} | command={} | data={} | at={}",
+            room_name, m.message_id, m.sender_id, receiver, m.command, data, m.created_at
+        );
+    }
+}
+
+fn calc_chat_new_messages(messages: &[ChatMessage], last_read_message_id: Option<&str>) -> Vec<ChatMessage> {
+    if messages.is_empty() {
+        return Vec::new();
+    }
+    if let Some(last_id) = last_read_message_id {
+        if let Some(pos) = messages.iter().position(|m| m.message_id == last_id) {
+            return messages[pos + 1..].to_vec();
+        }
+    }
+    messages.to_vec()
+}
+
+fn action_chat_send(parsed: &ChatCliArgs) -> Result<String, String> {
+    let _guard = action_acquire_chat_room_lock(&parsed.name)?;
+    let path = action_chat_room_path(&parsed.name);
+    let mut room = action_load_chat_room(&path)?;
+    let llm_id = action_chat_sender_id_for_session(&parsed.name)?;
+    if !room.users.iter().any(|u| u.user_id == llm_id) {
+        room.users.push(ChatUser {
+            user_id: llm_id.clone(),
+            role: "user".to_string(),
+        });
+    }
+    let mut used_ids: HashSet<String> = room.messages.iter().map(|m| m.message_id.clone()).collect();
+    let mut message_id = calc_generate_chat_id_8();
+    while used_ids.contains(&message_id) {
+        message_id = calc_generate_chat_id_8();
+    }
+    used_ids.insert(message_id.clone());
+    room.messages.push(ChatMessage {
+        message_id: message_id.clone(),
+        command: parsed.message.clone().unwrap_or_default(),
+        data: parsed.data.clone(),
+        receiver: parsed.receiver.clone(),
+        sender_id: llm_id.clone(),
+        created_at: calc_now_chat_timestamp(),
+    });
+    if room.room_name.trim().is_empty() {
+        room.room_name = parsed.name.clone();
+    }
+    action_save_chat_room(&path, &room)?;
+    Ok(format!(
+        "chat message sent: room={} message_id={} sender_id={}",
+        parsed.name, message_id, llm_id
+    ))
+}
+
+fn calc_chat_max_read_time_sec() -> u64 {
+    action_load_app_config()
+        .as_ref()
+        .map_or(3, config::AppConfig::max_read_time_sec)
+        .max(1)
+}
+
+fn reaction(message: &ChatMessage) -> String {
+    let receiver = message.receiver.as_deref().unwrap_or("*");
+    let data = message.data.as_deref().unwrap_or("null");
+    format!(
+        "[reaction] {} | from={} | to={} | command={} | data={} | at={}",
+        message.message_id, message.sender_id, receiver, message.command, data, message.created_at
+    )
+}
+
+fn action_chat_watch_log_path(name: &str) -> PathBuf {
+    action_source_root()
+        .join(".temp")
+        .join(format!("{}.watch.log", name))
+}
+
+fn action_spawn_chat_background(name: &str) -> Result<String, String> {
+    let log_path = action_chat_watch_log_path(name);
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
+    }
+    let stdout = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|e| format!("failed to open {}: {}", log_path.display(), e))?;
+    let stderr = stdout
+        .try_clone()
+        .map_err(|e| format!("failed to clone log handle {}: {}", log_path.display(), e))?;
+    let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
+    let child = Command::new(exe)
+        .arg("chat")
+        .arg("-n")
+        .arg(name)
+        .arg("--watch")
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .spawn()
+        .map_err(|e| format!("failed to spawn background chat watcher: {}", e))?;
+    Ok(format!(
+        "chat watcher started: room={} pid={} log={}",
+        name,
+        child.id(),
+        log_path.display()
+    ))
+}
+
+fn action_chat_watch_loop(name: &str, path: &Path, mut last_read_message_id: Option<String>) -> Result<(), String> {
+    let max_read_time = calc_chat_max_read_time_sec();
+    loop {
+        thread::sleep(Duration::from_secs(max_read_time));
+        let latest = action_load_chat_room(path)?;
+        let new_messages = calc_chat_new_messages(&latest.messages, last_read_message_id.as_deref());
+        if !new_messages.is_empty() {
+            action_print_chat_messages(name, &new_messages);
+            last_read_message_id = latest.messages.last().map(|m| m.message_id.clone());
+        }
+    }
+}
+
+pub(crate) async fn chat_command(args: &[String]) -> Result<String, String> {
+    let parsed = action_parse_chat_args(args)?;
+    if parsed.background && parsed.watch {
+        return Err("chat cannot use --background and --watch together".to_string());
+    }
+    if parsed.message.is_some() {
+        if parsed.background || parsed.watch {
+            return Err("chat send mode (-m) cannot use --background/--watch".to_string());
+        }
+        return action_chat_send(&parsed);
+    }
+    if parsed.background {
+        return action_spawn_chat_background(&parsed.name);
+    }
+
+    let path = action_chat_room_path(&parsed.name);
+    let mut room = action_load_chat_room(&path)?;
+    let llm_id = action_chat_sender_id_for_session(&parsed.name)?;
+    if !room.users.iter().any(|u| u.user_id == llm_id) {
+        room.users.push(ChatUser {
+            user_id: llm_id.clone(),
+            role: "user".to_string(),
+        });
+        action_save_chat_room(&path, &room)?;
+    }
+
+    let mut last_read_message_id = room.messages.last().map(|m| m.message_id.clone());
+    if parsed.watch {
+        action_chat_watch_loop(&parsed.name, &path, last_read_message_id.clone())?;
+    }
+
+    println!("chat mode active: room={}, sender_id={}", parsed.name, llm_id);
+    println!("exit: Ctrl+D");
+    action_print_chat_messages(&parsed.name, &room.messages);
+
+    let max_read_time = calc_chat_max_read_time_sec();
+    use tokio::io::{self as tokio_io, AsyncBufReadExt};
+    let mut stdin = tokio_io::BufReader::new(tokio_io::stdin());
+    let mut input_line = String::new();
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(max_read_time)) => {
+                let latest = action_load_chat_room(&path)?;
+                let new_messages = calc_chat_new_messages(&latest.messages, last_read_message_id.as_deref());
+                if !new_messages.is_empty() {
+                    action_print_chat_messages(&parsed.name, &new_messages);
+                    last_read_message_id = latest.messages.last().map(|m| m.message_id.clone());
+                }
+            }
+            read = stdin.read_line(&mut input_line) => {
+                match read {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        input_line.clear();
+                    }
+                    Err(e) => return Err(format!("failed to read stdin: {}", e)),
+                }
+            }
+        }
+    }
+
+    Ok(format!("chat closed: room={} sender_id={}", parsed.name, llm_id))
+}
+
+pub(crate) async fn chat_wait_command(args: &[String]) -> Result<String, String> {
+    let parsed = action_parse_chat_wait_args(args)?;
+    let path = action_chat_room_path(&parsed.name);
+    let mut room = action_load_chat_room(&path)?;
+    let self_id = action_chat_sender_id_for_session(&parsed.name)?;
+    if !room.users.iter().any(|u| u.user_id == self_id) {
+        room.users.push(ChatUser {
+            user_id: self_id.clone(),
+            role: "user".to_string(),
+        });
+        action_save_chat_room(&path, &room)?;
+    }
+
+    println!(
+        "chat-wait active: room={} self_id={} react_all={} target_count={}",
+        parsed.name,
+        self_id,
+        parsed.react_all,
+        parsed.target_count.unwrap_or(0)
+    );
+    let mut last_read_message_id = room.messages.last().map(|m| m.message_id.clone());
+    let max_read_time = calc_chat_max_read_time_sec();
+    let mut reacted_count = 0usize;
+    loop {
+        tokio::time::sleep(Duration::from_secs(max_read_time)).await;
+        let latest = action_load_chat_room(&path)?;
+        let new_messages = calc_chat_new_messages(&latest.messages, last_read_message_id.as_deref());
+        if !new_messages.is_empty() {
+            for message in &new_messages {
+                let should_react = if parsed.react_all {
+                    true
+                } else {
+                    message.receiver.as_deref() == Some(self_id.as_str())
+                };
+                if should_react {
+                    println!("{}", reaction(message));
+                    reacted_count += 1;
+                }
+            }
+            last_read_message_id = latest.messages.last().map(|m| m.message_id.clone());
+            if let Some(target_count) = parsed.target_count {
+                if reacted_count >= target_count {
+                    return Ok(format!(
+                        "chat-wait done: room={} reacted={} target={}",
+                        parsed.name, reacted_count, target_count
+                    ));
+                }
+            }
+        }
+    }
+}
+
+fn action_resolve_parallel_order_prompt_path(file_name: &str) -> Result<PathBuf, String> {
+    let root = action_source_root();
+    let candidates = [
+        root.join("assets").join("code").join("prompts").join(file_name),
+        PathBuf::from("assets").join("code").join("prompts").join(file_name),
+    ];
+    for candidate in candidates {
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "parallel order prompt not found: {} (source root: {})",
+        file_name,
+        root.display()
+    ))
+}
+
+pub(crate) async fn run_parallel_test() -> Result<String, String> {
+    fn calc_shell_single_quote(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "'\"'\"'"))
+    }
+
+    let room_name = "test";
+    let room_path = action_chat_room_path(room_name);
+    let mut room = action_load_chat_room(&room_path)?;
+    let self_id = action_chat_sender_id_for_session(room_name)?;
+    if !room.users.iter().any(|u| u.user_id == self_id) {
+        room.users.push(ChatUser {
+            user_id: self_id.clone(),
+            role: "user".to_string(),
+        });
+        action_save_chat_room(&room_path, &room)?;
+    }
+
+    let order_prompt_path = action_resolve_parallel_order_prompt_path("parallel_order.txt")?;
+    let unit_prompt_path = action_resolve_parallel_order_prompt_path("parallel_oredr_unit.txt")?;
+    let order_prompt = fs::read_to_string(&order_prompt_path)
+        .map_err(|e| format!("failed to read {}: {}", order_prompt_path.display(), e))?;
+    let unit_prompt = fs::read_to_string(&unit_prompt_path)
+        .map_err(|e| format!("failed to read {}: {}", unit_prompt_path.display(), e))?;
+
+    let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
+    let exe_q = calc_shell_single_quote(&exe.display().to_string());
+    let room_q = calc_shell_single_quote(room_name);
+    let self_q = calc_shell_single_quote(&self_id);
+    let mut spawned = 0usize;
+    for index in 1..=10usize {
+        let unit_text = unit_prompt
+            .replace("{index}", &index.to_string())
+            .replace("{room}", room_name)
+            .replace("{receiver_id}", &self_id);
+        let message = format!("parallel_unit_{}_complete", index);
+        let data_q = calc_shell_single_quote(&unit_text.replace('\n', "\\n"));
+        let script = format!(
+            "sleep 3; {exe} chat -n {room} -m {msg} -i {receiver} --data {data}; kill -9 $$",
+            exe = exe_q,
+            room = room_q,
+            msg = calc_shell_single_quote(&message),
+            receiver = self_q,
+            data = data_q
+        );
+        let mut cmd = Command::new("bash");
+        cmd.arg("-lc").arg(script);
+        let _child = cmd
+            .spawn()
+            .map_err(|e| format!("failed to spawn parallel unit {}: {}", index, e))?;
+        spawned += 1;
+    }
+
+    println!(
+        "[run_parallel_test] room={} self_id={} spawned={} order_prompt={} unit_prompt={}",
+        room_name,
+        self_id,
+        spawned,
+        order_prompt.lines().next().unwrap_or(""),
+        unit_prompt_path.display()
+    );
+
+    let wait_args = vec![
+        "-n".to_string(),
+        room_name.to_string(),
+        "-a".to_string(),
+        "false".to_string(),
+        "-c".to_string(),
+        "10".to_string(),
+    ];
+    let wait_result = chat_wait_command(&wait_args).await?;
+    Ok(format!(
+        "run_parallel_test done: room={} self_id={} spawned={} | {}",
+        room_name, self_id, spawned, wait_result
+    ))
+}
+
 fn calc_extract_project_info(project_md: &str) -> String {
     let mut in_info = false;
     let mut lines = Vec::new();
@@ -2437,8 +3109,37 @@ fn action_normalize_draft_task_step_yaml(raw_yaml: &str) -> Result<String, Strin
         }
     }
 
-    let mut root: serde_yaml::Value =
-        serde_yaml::from_str(raw_yaml).map_err(|e| format!("generated draft yaml invalid: {}", e))?;
+    let mut parse_error = String::new();
+    let block = calc_extract_yaml_block(raw_yaml);
+    let task_start = raw_yaml
+        .find("\ntask:")
+        .map(|idx| idx + 1)
+        .or_else(|| raw_yaml.find("task:"));
+    let tail = task_start.map(|idx| raw_yaml[idx..].to_string()).unwrap_or_default();
+    let candidates = [raw_yaml.to_string(), block, tail];
+    let mut parsed_root: Option<serde_yaml::Value> = None;
+    for candidate in candidates {
+        let trimmed = candidate.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match serde_yaml::from_str::<serde_yaml::Value>(trimmed) {
+            Ok(v) => {
+                parsed_root = Some(v);
+                break;
+            }
+            Err(e) => {
+                parse_error = e.to_string();
+            }
+        }
+    }
+    let mut root = if let Some(parsed) = parsed_root {
+        parsed
+    } else {
+        let repaired = action_repair_draft_yaml_with_llm(raw_yaml)?;
+        serde_yaml::from_str::<serde_yaml::Value>(&repaired)
+            .map_err(|e| format!("generated draft yaml invalid: {} | repair: {}", parse_error, e))?
+    };
     let serde_yaml::Value::Mapping(root_map) = &mut root else {
         return Ok(raw_yaml.to_string());
     };
@@ -2478,6 +3179,23 @@ fn action_normalize_draft_task_step_yaml(raw_yaml: &str) -> Result<String, Strin
         }
     }
     serde_yaml::to_string(&root).map_err(|e| format!("generated draft yaml invalid: {}", e))
+}
+
+fn action_repair_draft_yaml_with_llm(raw: &str) -> Result<String, String> {
+    let prompt = format!(
+        "너는 YAML 포맷 복구기다.\n\
+다음 깨진 draft 출력을 `assets/code/templates/draft.yaml` 스키마로 복구해라.\n\
+규칙:\n\
+- 루트는 `task:` 배열이어야 한다.\n\
+- task item 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n\
+- `step`,`rule`,`depends_on`,`touches`는 문자열 배열.\n\
+- `contracts`는 문자열 배열.\n\
+- 설명/코드블록/마크다운 없이 YAML 본문만 출력.\n\n\
+입력 원문:\n{}",
+        raw
+    );
+    let repaired_raw = action_run_codex_exec_capture(&prompt)?;
+    Ok(calc_extract_yaml_block(&repaired_raw))
 }
 
 fn action_normalize_todo_item_yaml(raw_yaml: &str) -> Result<String, String> {
@@ -2547,6 +3265,73 @@ fn action_normalize_todo_item_yaml(raw_yaml: &str) -> Result<String, String> {
     }
 
     serde_yaml::to_string(&root).map_err(|e| format!("generated todo item yaml invalid: {}", e))
+}
+
+fn action_normalize_todo_doc_yaml(raw_yaml: &str) -> Result<String, String> {
+    let mut parse_error = String::new();
+    let block = calc_extract_yaml_block(raw_yaml);
+    let tasks_start = raw_yaml
+        .find("\ntasks:")
+        .map(|idx| idx + 1)
+        .or_else(|| raw_yaml.find("tasks:"));
+    let tail = tasks_start.map(|idx| raw_yaml[idx..].to_string()).unwrap_or_default();
+    let candidates = [raw_yaml.to_string(), block, tail];
+    let mut parsed_root: Option<serde_yaml::Value> = None;
+    for candidate in candidates {
+        let trimmed = candidate.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match serde_yaml::from_str::<serde_yaml::Value>(trimmed) {
+            Ok(v) => {
+                parsed_root = Some(v);
+                break;
+            }
+            Err(e) => {
+                parse_error = e.to_string();
+            }
+        }
+    }
+    let root = parsed_root
+        .ok_or_else(|| format!("generated todo yaml invalid: {}", parse_error))?;
+    let tasks = match root {
+        serde_yaml::Value::Sequence(seq) => seq,
+        serde_yaml::Value::Mapping(mut map) => {
+            let tasks_key = serde_yaml::Value::String("tasks".to_string());
+            if let Some(value) = map.remove(&tasks_key) {
+                match value {
+                    serde_yaml::Value::Sequence(seq) => seq,
+                    one => vec![one],
+                }
+            } else {
+                vec![serde_yaml::Value::Mapping(map)]
+            }
+        }
+        _ => {
+            return Err(
+                "generated todo yaml invalid: expected mapping with `tasks` or sequence".to_string(),
+            )
+        }
+    };
+    if tasks.is_empty() {
+        return Err("generated todo yaml invalid: tasks is empty".to_string());
+    }
+    let mut normalized_tasks = Vec::with_capacity(tasks.len());
+    for task in tasks {
+        let raw_item = serde_yaml::to_string(&task)
+            .map_err(|e| format!("generated todo yaml invalid: {}", e))?;
+        let normalized_item = action_normalize_todo_item_yaml(&raw_item)?;
+        let parsed_item: serde_yaml::Value = serde_yaml::from_str(&normalized_item)
+            .map_err(|e| format!("generated todo yaml invalid: {}", e))?;
+        normalized_tasks.push(parsed_item);
+    }
+    let mut root_map = serde_yaml::Mapping::new();
+    root_map.insert(
+        serde_yaml::Value::String("tasks".to_string()),
+        serde_yaml::Value::Sequence(normalized_tasks),
+    );
+    serde_yaml::to_string(&serde_yaml::Value::Mapping(root_map))
+        .map_err(|e| format!("generated todo yaml invalid: {}", e))
 }
 
 fn calc_extract_feature_name(raw: &str, fallback: &str) -> String {

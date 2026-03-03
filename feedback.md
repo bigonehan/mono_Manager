@@ -25,3 +25,19 @@
 ## 2026-03-03 failure fix
 - 적용: `build-function-auto` 시작 시 `.project/project.md`가 없으면 `assets/code/templates/project.md`로 자동 생성하도록 보강.
 - 기대: `parallel::run_parallel_todo`의 project info 로딩 실패 방지.
+
+## 2026-03-03 chat command validation failure
+- cause: `cargo run --bin orc -- chat -n does-not-exist-room` failed because `.temp/does-not-exist-room.yaml` does not exist (expected by spec: no auto-create).
+- retry: create a valid room yaml fixture under `.temp/` and rerun `orc chat` path with existing room to verify success.
+
+## 2026-03-03 background-chat compile failure
+- cause: `chat --watch` 분기 추가 후 `last_read_message_id`를 watch 루프로 move한 뒤 interactive 분기에서 재사용해 소유권 오류(E0382) 발생.
+- retry: watch 분기 호출 시 `last_read_message_id.clone()` 전달로 move를 방지하고 `cargo test` 동일 경로를 재실행.
+
+## 2026-03-03 run_parallel_test write-race failure
+- cause: 10 background workers wrote `.temp/test.yaml` concurrently via `orc chat`, causing lost updates (read-modify-write race) and `chat-wait -c 10` hang.
+- retry: add room-level lock in chat send path to serialize yaml writes, then rerun `cargo run --bin orc -- run_parallel_test`.
+
+## 2026-03-03 run_parallel_test failure fix
+- apply: room-level lock (`.temp/<room>.lock`) added in chat send path to serialize YAML updates.
+- result: `cargo run --bin orc -- run_parallel_test` completed with 10/10 reactions.

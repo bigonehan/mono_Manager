@@ -1,0 +1,47 @@
+rule:
+- split_manage(session_id,sender_id,message_id) == true
+- matches(session_id, '^[A-Za-z0-9]{8}$') == true
+- matches(sender_id, '^[A-Za-z0-9]{8}$') == true
+- unique(message_id) == true
+features:
+  domain:
+  - chat
+  flow:
+  - generate_chat_identifiers
+  - unify_llm_id_assignment
+task:
+- name: generate_chat_identifiers
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/chat/session.rs
+  - src/chat/message.rs
+  - src/cli/chat.rs
+  rule:
+  - 'check: build_llm_id() returns session_id should hold'
+  - len(session_id) == 8
+  - len(sender_id) == 8
+  - message_id != session_id and message_id != sender_id
+  - llm_id == session_id
+  step:
+  - 'input: call build_llm_id() -> output: 8-char random session_id'
+  - 'input: send context -> output: sender_id from dedicated sender_id generator'
+  - 'input: message context -> output: unique message_id from dedicated message_id generator'
+  - 'input: generated session_id -> output: llm_id assigned through shared internal path'
+  - 'input: sender_id and message_id -> output: message payload persisted with separated identifiers'
+  touches:
+  - build_llm_id
+  - generate_sender_id
+  - generate_message_id
+  - llm_id
+  - session_id
+  - sender_id
+  - message_id
+  contracts:
+  - session_id_format=matches('^[A-Za-z0-9]{8}$')
+  - sender_id_format=matches('^[A-Za-z0-9]{8}$')
+  - message_id_uniqueness=unique(message_id)==true
+  - llm_id_equals_session_id=true
+  - id_separation=session_id!=sender_id and sender_id!=message_id and session_id!=message_id

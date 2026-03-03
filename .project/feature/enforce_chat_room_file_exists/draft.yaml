@@ -1,0 +1,35 @@
+rule:
+- file_exists(".temp/{name}.yaml") == true
+- auto_create_chat_room_file == false
+features:
+  domain:
+  - chat
+  flow:
+  - chat_entry_file_guard
+task:
+- name: validate_chat_room_file_exists
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/cli/chat.rs
+  - src/cli/send.rs
+  - src/error.rs
+  rule:
+  - file_exists(".temp/{name}.yaml") == true
+  - auto_create_chat_room_file == false
+  - applies_to("interactive") == true
+  - applies_to("send") == true
+  step:
+  - 'input: chat 진입 name -> output: .temp/{name}.yaml 경로 계산'
+  - 'input: interactive 실행 -> output: .temp/{name}.yaml 존재 여부 검사'
+  - 'input: send 실행 -> output: .temp/{name}.yaml 존재 여부 검사'
+  - 'input: file_exists == false -> output: 명확한 에러 반환 후 후속 로직 중단'
+  touches: []
+  contracts:
+  - interactive_requires_file=file_exists(".temp/{name}.yaml") == true
+  - send_requires_file=file_exists(".temp/{name}.yaml") == true
+  - missing_file_error=error.code == "chat_room_file_not_found"
+  - no_auto_create_on_missing=auto_create_chat_room_file == false
+  - stop_followup_on_missing=next_logic_executed == false

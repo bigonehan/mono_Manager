@@ -1,0 +1,65 @@
+rule:
+- room_name.type == string
+- users.type == array
+- messages.type == array
+- messages[*].message_id.type == string
+- messages[*].command.type == string
+- messages[*].data.type in [null, any]
+- messages[*].receiver.type in [null, any]
+- messages[*].sender_id.type == string
+- messages[*].created_at.type == string
+- id_type_separation(session_id,sender_id,message_id) == true
+- yaml_missing_field_rejected == true
+- yaml_type_error_rejected == true
+features:
+  domain:
+  - chat_room
+  flow:
+  - define_chat_room_yaml_model_with_validation
+task:
+- name: define_chat_room_yaml_model
+  type: action
+  domain:
+  - chat_room
+  depends_on: []
+  scope:
+  - src/chat_room/yaml_model.rs
+  - src/chat_room/yaml_io.rs
+  - tests/chat_room_yaml_model_definition.rs
+  rule:
+  - yaml_deserialize_success == true
+  - required_user_message_fields_present == true
+  - nullable_fields_limited_to_data_and_receiver == true
+  - id_types_are_separated == true
+  - yaml_serialize_success == true
+  - missing_or_invalid_field_returns_error == true
+  step:
+  - 'input: chat room yaml text -> output: ChatRoomYaml struct or parse error'
+  - 'input: parsed users entries -> output: error if required user fields are missing or invalid'
+  - 'input: parsed messages entries -> output: error if message_id command sender_id created_at is missing or invalid'
+  - 'input: parsed messages entries -> output: allow only nullable data and receiver fields'
+  - 'input: parsed identifiers -> output: session_id sender_id message_id mapped to separated id types'
+  - 'input: valid ChatRoomYaml struct -> output: serialized yaml text preserving schema'
+  - 'input: yaml with missing field or wrong type -> output: boundary validation error'
+  touches:
+  - chat_room
+  - user
+  - message
+  - session_id
+  - sender_id
+  - message_id
+  contracts:
+  - room_name:type==string
+  - users:type==array
+  - messages:type==array
+  - messages[*].message_id:type==string
+  - messages[*].command:type==string
+  - messages[*].data:type in [null, any]
+  - messages[*].receiver:type in [null, any]
+  - messages[*].sender_id:type==string
+  - messages[*].created_at:type==string
+  - session_id:type==SessionId
+  - sender_id:type==SenderId
+  - message_id:type==MessageId
+  - yaml_missing_field:error==returned
+  - yaml_type_mismatch:error==returned

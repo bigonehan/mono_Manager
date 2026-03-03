@@ -1,0 +1,40 @@
+rule:
+- chat_mode == true
+- read_messages_since(last_read_message_id) == messages_filtered
+- wait_time <= config.MAX_read_time
+- has_new_messages == true => last_read_message_id updates_to latest_message_id
+features:
+  domain:
+  - chat
+  flow:
+  - chat_receive_message_polling
+task:
+- name: poll_chat_messages_since_last_read
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/cli/chat.rs
+  - src/chat/session.rs
+  - src/chat/*.rs
+  rule:
+  - initial_last_read_message_id != null
+  - 'check: messages = read_messages_since(last_read_message_id) should hold'
+  - wait(config.MAX_read_time) executes_between_reads == true
+  - new_messages_count > 0 => print(new_messages) == true
+  - new_messages_count > 0 => last_read_message_id == new_messages[-1].message_id
+  step:
+  - chat 모드 시작 시 last_read_message_id를 계산하고 그 이후 메시지만 필터링한다.
+  - config.MAX_read_time 동안 대기한 뒤 같은 기준으로 messages를 재조회한다.
+  - 신규 메시지가 있으면 출력하고 last_read_message_id를 최신 message_id로 갱신한다.
+  touches:
+  - last_read_message_id
+  - messages
+  - config.MAX_read_time
+  - stdout
+  contracts:
+  - last_read_message_id=matches('^[A-Za-z0-9_-]+$')
+  - poll_wait_seconds<=config.MAX_read_time
+  - printed_messages_count==new_messages_count
+  - pointer_update_on_new_messages=true

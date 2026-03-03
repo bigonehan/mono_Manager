@@ -1,0 +1,37 @@
+rule:
+- chat_mode_enabled == true
+features:
+  domain:
+  - chat
+  flow:
+  - start_chat_mode
+  - show_exit_help
+  - detect_stdin_eof
+  - signal_chat_shutdown
+  - cleanup_and_return_zero
+task:
+- name: chat_exit_help_ctrl_d
+  type: action
+  domain:
+  - chat
+  depends_on: []
+  scope:
+  - src/
+  rule:
+  - stdout.contains("Ctrl+D") == true
+  - stdin.eof == true -> shutdown_signal == emitted
+  - shutdown_signal == emitted -> process.exit_code == 0
+  step:
+  - chat 모드 시작 시 종료 도움말에 Ctrl+D 문구를 출력한다.
+  - 표준입력 EOF를 감지하면 종료 신호를 즉시 처리한다.
+  - 종료 시 입력 루프와 리소스를 정리하고 종료 코드 0으로 반환한다.
+  touches:
+  - chat_loop
+  - stdin_reader
+  - shutdown_signal
+  - exit_help_output
+  contracts:
+  - help_output_has_ctrl_d=true
+  - eof_triggers_shutdown=true
+  - shutdown_applied_without_loop_conflict=true
+  - exit_code==0

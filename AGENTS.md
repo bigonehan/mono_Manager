@@ -3,10 +3,13 @@
 ## CLI Rename Sync Rule
 - If any CLI command name, subcommand alias, or file name shown by CLI help is changed, update all related help/documentation in the same change.
 - Minimum sync targets:
-  - `src/cli/mod.rs` usage/help output
+  - `src/cli.rs` usage/help output
   - `README.md` command list/examples
   - Any command examples in repo docs
 - Do not finish the task until `cargo run --bin orc -- --help` matches the documented command names.
+
+## CLI Help Update Rule
+- Whenever a feature addition introduces or changes CLI behavior/commands, update the `orc` help command list in the same change.
 
 ## Completion Log Auto-Write Rule
 - Any task that adds or changes behavior must update `./.agents/log.md` in the same turn.
