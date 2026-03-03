@@ -1,18 +1,25 @@
-recentActivepane: LCts
+recentActivepane: Crqr
 projects:
+- id: Crqr
+  name: blender-bots
+  path: /home/tree/project/blender-bots
+  description: 3d viewport에서 사용자의 마우스 위치를 따라서 자율적으로 움직이는 cube를 생성하는 blender plugin
+  created_at: '1772408071'
+  updated_at: '1772408071'
+  selected: false
 - id: g1SH
   name: tree
   path: /home/tree
   description: todo manager app
   created_at: '1772265581'
   updated_at: '1772265581'
-  selected: false
+  selected: true
 - id: 501S
   name: temp
   path: /home/tree/temp
-  description: todo app
+  description: threefiber hello object
   created_at: '1772265929'
-  updated_at: '1772282911'
+  updated_at: '1772291878'
   selected: false
 - id: LCts
   name: temp2
@@ -20,4 +27,4 @@ projects:
   description: calculator app
   created_at: '1772286223'
   updated_at: '1772288543'
-  selected: true
+  selected: false

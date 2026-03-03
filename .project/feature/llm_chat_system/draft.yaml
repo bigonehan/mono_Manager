@@ -1,0 +1,51 @@
+rule:
+- chat_mode_enabled_by_command('orc chat -n "{name}"') == true
+- chat_file_format('.temp/{name}.yaml') == 'yaml'
+features:
+  domain:
+  - util
+  flow:
+  - chat_mode_session_polling
+task:
+- name: activate_llm_chat_mode
+  type: action
+  domain:
+  - util
+  depends_on: []
+  scope:
+  - .temp/{name}.yaml
+  - src/cli/chat.rs
+  - src/chat/session.rs
+  rule:
+  - file_exists('.temp/{name}.yaml') == true
+  - matches(session_id, '^[0-9]{8}$') == true
+  - llm_id == session_id
+  - yaml_has_keys('.temp/{name}.yaml', ['users','messages']) == true
+  - message_has_keys(['message_id','command','data','receiver','sender_id']) == true
+  - help_contains('ctrl+d') == true
+  - missing_file_autocreate == false
+  step:
+  - run_command('orc chat -n "a"')
+  - check_file_exists('.temp/a.yaml')
+  - if_file_missing_print_error_and_exit('.temp/a.yaml')
+  - session_id = build_llm_id()
+  - set_variable('llm_id', session_id)
+  - update_yaml_users_sender_id('.temp/a.yaml', session_id)
+  - messages = read_yaml_messages_since('.temp/a.yaml', 'last_read_message_id')
+  - wait(config.MAX_read_time)
+  - new_messages = read_yaml_messages_since('.temp/a.yaml', 'last_read_message_id')
+  - if_new_messages_print_and_update_last_read_message_id(new_messages)
+  touches:
+  - build_llm_id
+  - llm_id
+  - users.sender_id
+  - messages
+  - last_read_message_id
+  - config.MAX_read_time
+  contracts:
+  - session_id_format=matches('^[0-9]{8}$')
+  - llm_id_equals_session_id=true
+  - chat_file_required=true
+  - chat_file_autocreate=false
+  - message_schema=message_id,command,data,receiver,sender_id
+  - help_exit_hint=ctrl+d

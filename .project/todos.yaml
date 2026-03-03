@@ -1,0 +1,58 @@
+tasks:
+- name: llm_chat_system
+  display_name: llm chat system
+  rule:
+  - orc chat -n "이름" 명령을 호출하면 chat 모드가 활성화된다.
+  - chat 모드 활성화 시 모든 대화 내용은 orc 설치 폴더의 .temp/이름.yaml 파일에 기록된다.
+  - orc chat -n "이름" 명령을 호출하면 현재 세션에 임의의 8자리 난수 session_id를 할당한다.
+  - 내부 변수 llm_id에는 방금 생성한 session_id 값을 저장한다.
+  - chat 모드의 messages 레코드는 message_id, command, data, receiver, sender_id 의미를 가진다.
+  - chat 모드 실행 시 도움말로 종료 방법(ctrl+d)을 출력한다.
+  - .temp/이름.yaml 파일이 없으면 에러를 출력하고 종료하며 파일을 자동 생성하지 않는다.
+  - 채팅방 파일 형식은 YAML이다.
+  step:
+  - orc chat -n "a" 명령을 호출한다.
+  - orc 설치 폴더의 .temp/a.yaml 파일 존재 여부를 확인한다.
+  - 파일이 없으면 에러를 출력하고 종료한다.
+  - 파일이 있으면 build_llm_id() 함수를 호출해 8자리 난수 session_id를 생성한다.
+  - 내부 변수 llm_id에 생성한 8자리 난수를 저장한다.
+  - users에 sender_id(session_id)를 반영한다.
+  - .temp/이름.yaml 파일의 messages를 last_read_message_id 기준으로 읽는다.
+  - config 옵션 MAX_read_time 동안 대기한 뒤 다시 이름.yaml의 messages 값을 가져온다.
+  - 새로운 메시지 값이 있으면 출력하고 last_read_message_id를 갱신한다.
+  depends_on: []
+  draft_path: .project/feature/llm_chat_system/draft.yaml
+- name: llm_chat_system_send
+  display_name: llm chat system - send
+  rule:
+  - orc chat -n "이름" -m "메시지" -i "receiver_id"(옵션) --data "data"(옵션)으로 메시지를 보낼 수 있다.
+  - orc 설치폴더 .temp/이름.yaml 이 없으면 에러를 출력하고 종료하며 자동 생성하지 않는다.
+  - 메시지를 보내면 message_id | command | data | receiver | sender_id 의미에 맞게 YAML messages 에 저장한다.
+  - receiver 는 생략할 수 있다.
+  - data 는 생략할 수 있다.
+  - ID 분리 규칙은 session_id(세션), sender_id(발신자), message_id(메시지)이다.
+  step:
+  - orc chat -n "a" -m "hello" 를 입력한다.
+  - orc 설치 폴더 .temp/a.yaml 파일이 있는지 검사한다.
+  - 파일이 없으면 에러를 출력하고 종료한다.
+  - 파일이 있으면 sender_id 용 임의 아이디 8자리를 생성한다.
+  - 내부 변수 llm_id 에 방금 만든 난수를 저장한다.
+  - messages 에 message_id=<new_id>, command="hello", data=null, receiver=null, sender_id=<llm_id> 를 기록한다.
+  depends_on: []
+  draft_path: .project/feature/llm_chat_system_send/draft.yaml
+- name: chat_room_yaml_format
+  display_name: chat room yaml format
+  rule:
+  - chat room 파일은 아래 필드를 가진 YAML 구조를 사용한다.
+  step:
+  - room_name은 문자열이다.
+  - users는 user_id와 role을 포함한 객체 배열이다.
+  - messages는 message_id, command, data, receiver, sender_id, created_at을 포함한 객체 배열이다.
+  - message_id는 문자열이다.
+  - command는 문자열이다.
+  - data는 null 허용이다.
+  - receiver는 null 허용이다.
+  - sender_id는 문자열이다.
+  - created_at은 RFC3339 UTC 문자열이다.
+  depends_on: []
+  draft_path: .project/feature/chat_room_yaml_format/draft.yaml

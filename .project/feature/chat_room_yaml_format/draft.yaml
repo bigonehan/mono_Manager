@@ -1,0 +1,55 @@
+rule:
+- room_name.type == string
+- users.type == array
+- users[*].user_id.type == string
+- users[*].role.type == string
+- messages.type == array
+- messages[*].message_id.type == string
+- messages[*].command.type == string
+- messages[*].data.type in [null, any]
+- messages[*].receiver.type in [null, any]
+- messages[*].sender_id.type == string
+- messages[*].created_at.matches(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$) == true
+features:
+  domain:
+  - chat_room
+  flow:
+  - validate_chat_room_yaml_schema
+task:
+- name: validate_chat_room_yaml_format
+  type: calc
+  domain:
+  - chat_room
+  depends_on: []
+  scope:
+  - src/chat_room/yaml_schema.rs
+  - tests/chat_room_yaml_format.rs
+  rule:
+  - input_yaml_parsed == true
+  - required_keys_present == true
+  - nullable_fields_limited_to_data_and_receiver == true
+  - created_at_is_rfc3339_utc == true
+  step:
+  - 'input: yaml text -> output: parsed object or parse error'
+  - 'input: parsed object -> output: error if room_name/users/messages key is missing'
+  - 'input: users items -> output: error if user_id or role is not string'
+  - 'input: messages items -> output: error if message_id/command/sender_id/created_at is not string'
+  - 'input: messages items -> output: error if data or receiver is not null-allowed value'
+  - 'input: created_at string -> output: error if RFC3339 UTC format check fails'
+  - 'input: valid parsed object -> output: validated chat room model'
+  touches:
+  - chat_room
+  - user
+  - message
+  contracts:
+  - room_name:type==string
+  - users:type==array
+  - users[*].user_id:type==string
+  - users[*].role:type==string
+  - messages:type==array
+  - messages[*].message_id:type==string
+  - messages[*].command:type==string
+  - messages[*].data:type in [null, any]
+  - messages[*].receiver:type in [null, any]
+  - messages[*].sender_id:type==string
+  - messages[*].created_at:format==rfc3339_utc

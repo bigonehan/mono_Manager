@@ -84,19 +84,27 @@ fn action_fallback_stage_output_status(project_root: &Path, stage: FallbackStage
         }
         FallbackStage::Draft => {
             let feature_root = project_root.join(".project").join("feature");
+            let clear_root = project_root.join(".project").join("clear");
             let mut generated = 0usize;
-            if let Ok(entries) = fs::read_dir(&feature_root) {
-                for entry in entries.flatten() {
-                    let feature_dir = entry.path();
-                    if feature_dir.join("task.yaml").exists() || feature_dir.join("draft.yaml").exists()
-                    {
-                        generated += 1;
+            for root in [&feature_root, &clear_root] {
+                if let Ok(entries) = fs::read_dir(root) {
+                    for entry in entries.flatten() {
+                        let feature_dir = entry.path();
+                        if feature_dir.join("draft.yaml").exists()
+                            || feature_dir.join("drafts.yaml").exists()
+                        {
+                            generated += 1;
+                        }
                     }
                 }
             }
             lines.push(format!(
                 "- `.project/feature`: {}",
                 if feature_root.exists() { "exists" } else { "missing" }
+            ));
+            lines.push(format!(
+                "- `.project/clear`: {}",
+                if clear_root.exists() { "exists" } else { "missing" }
             ));
             lines.push(format!("- 생성된 draft 파일 수: {}", generated));
             if generated > 0 {
@@ -168,7 +176,7 @@ fn action_write_auto_plan_md(project_root: &Path, description: &str, spec: &str)
         return Ok(path);
     }
     let body = format!(
-        "# auto execution plan\n\n## 문제\n- 목표: `orc auto`로 앱이 실제 생성되는지 검증\n- 설명: {}\n- 스펙: {}\n\n## 해결책\n- 1) project.md/drafts_list 생성\n- 2) create-draft 실행\n- 3) draft report 생성\n\n## 검증\n- `.project/project.md` 존재\n- `.project/drafts_list.yaml` 존재\n- `.project/feature/*/(task.yaml|draft.yaml)` 최소 1개 존재\n\n## 피드백\n- 실행 결과/실패 원인/다음 개선점을 기록\n",
+        "# auto execution plan\n\n## 문제\n- 목표: `orc auto`로 앱이 실제 생성되는지 검증\n- 설명: {}\n- 스펙: {}\n\n## 해결책\n- 1) project.md/drafts_list 생성\n- 2) create-draft 실행\n- 3) draft report 생성\n\n## 검증\n- `.project/project.md` 존재\n- `.project/drafts_list.yaml` 존재\n- `.project/feature/*/(draft.yaml|drafts.yaml)` 최소 1개 존재\n\n## 피드백\n- 실행 결과/실패 원인/다음 개선점을 기록\n",
         description.trim(),
         spec.trim()
     );
@@ -197,12 +205,15 @@ fn action_verify_auto_bootstrap_outputs(project_root: &Path) -> (bool, String) {
     let project_md = project_root.join(".project").join("project.md");
     let drafts_list = project_root.join(".project").join("drafts_list.yaml");
     let feature_root = project_root.join(".project").join("feature");
+    let clear_root = project_root.join(".project").join("clear");
     let mut draft_count = 0usize;
-    if let Ok(entries) = fs::read_dir(&feature_root) {
-        for entry in entries.flatten() {
-            let dir = entry.path();
-            if dir.join("task.yaml").exists() || dir.join("draft.yaml").exists() {
-                draft_count += 1;
+    for root in [&feature_root, &clear_root] {
+        if let Ok(entries) = fs::read_dir(root) {
+            for entry in entries.flatten() {
+                let dir = entry.path();
+                if dir.join("draft.yaml").exists() || dir.join("drafts.yaml").exists() {
+                    draft_count += 1;
+                }
             }
         }
     }
@@ -747,8 +758,8 @@ pub(crate) fn draft_report() -> Result<String, String> {
         let feature = entry.file_name().to_string_lossy().to_string();
         feature_names.insert(feature.clone());
         let feature_dir = entry.path();
-        let draft_path = if feature_dir.join("task.yaml").exists() {
-            feature_dir.join("task.yaml")
+        let draft_path = if feature_dir.join("draft.yaml").exists() {
+            feature_dir.join("draft.yaml")
         } else {
             feature_dir.join("draft.yaml")
         };
@@ -853,7 +864,10 @@ pub(crate) fn auto_improve(request: &str) -> Result<String, String> {
 지시:\n\
 - 최소 변경으로 구현하고, dead path를 만들지 마.\n\
 - 수정 후 테스트 기준(Playwright) 실패 원인을 제거해야 한다.\n\
-- 파일 수정/추가 후 변경 요약을 간단히 출력해.\n\n\
+- 파일 수정/추가 후 변경 요약을 간단히 출력해.\n\
+- auto 모드이므로 질문/선택지/확인 요청을 절대 출력하지 마.\n\
+- 사용자 지시를 기다리는 문장을 출력하지 마.\n\
+- 응답 마지막 줄은 반드시 `RESULT: APPLIED` 또는 `RESULT: NO_CHANGE`로 끝내라.\n\n\
 사용자 요청:\n{}\n\n\
 최근 점검 리포트:\n{}\n",
         request.trim(),
@@ -862,6 +876,23 @@ pub(crate) fn auto_improve(request: &str) -> Result<String, String> {
     let timeout_sec = calc_timeout_sec_from_config();
     let summary =
         crate::action_run_codex_exec_capture_in_dir_with_timeout(&cwd, &prompt, timeout_sec)?;
+    if summary.contains("진행 방법을 선택")
+        || summary.contains("진행 방식만 지정")
+        || summary.contains("지시해 주세요")
+        || summary.contains("선택해 주세요")
+        || summary.contains("확인해 주세요")
+    {
+        return Err(
+            "auto-improve produced interactive response in auto mode; retry with non-interactive output"
+                .to_string(),
+        );
+    }
+    let normalized = summary.trim_end();
+    if !normalized.ends_with("RESULT: APPLIED") && !normalized.ends_with("RESULT: NO_CHANGE") {
+        return Err(
+            "auto-improve response contract violated: missing terminal RESULT line".to_string(),
+        );
+    }
     let report = format!("# auto-improve\n\n- request: {}\n\n```\n{}\n```\n", request.trim(), summary);
     let report_path = action_write_runtime_report(&cwd, "auto-improve.md", &report)?;
     Ok(format!("auto-improve completed: {}", report_path.display()))
