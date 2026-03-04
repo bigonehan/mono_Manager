@@ -6,8 +6,12 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MODE_LIST: [&str; 4] = ["project", "plan", "draft", "report"];
+const CODE_SUBCOMMAND_TIMEOUT_SEC: u64 = 600;
+const IMPL_DRAFT_LLM_TIMEOUT_SEC: u64 = 240;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct CodePlanDrafts {
@@ -62,6 +66,14 @@ struct DraftItemDoc {
 struct CodeDraftsDoc {
     #[serde(default)]
     draft: Vec<DraftItemDoc>,
+    #[serde(default)]
+    planned: Vec<String>,
+    #[serde(default)]
+    worked: Vec<String>,
+    #[serde(default)]
+    complete: Vec<String>,
+    #[serde(default)]
+    failed: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -108,7 +120,7 @@ pub(crate) fn init_code_project(args: &[String]) -> Result<String, String> {
     }
     let current_empty = is_current_dir_empty()?;
     if opts.auto {
-        action_debug_log_auto_stage(
+        debug_log_auto_stage(
             "project-create",
             if current_empty {
                 "empty workspace: create project.md"
@@ -128,28 +140,22 @@ pub(crate) fn init_code_project(args: &[String]) -> Result<String, String> {
     let detail_msg = detail_code_project()?;
     enforce_project_md_primary_path()?;
     if opts.auto {
-        action_debug_log_auto_stage("project-detail", "detail_code_project completed");
+        debug_log_auto_stage("project-detail", "detail_code_project completed");
     }
     let domain_msg = create_code_domain()?;
     enforce_project_md_primary_path()?;
     if opts.auto {
-        action_debug_log_auto_stage("domain-create", "create_code_domain completed");
+        debug_log_auto_stage("domain-create", "create_code_domain completed");
     }
     if opts.auto {
-        action_debug_log_auto_stage("bootstrap", "bootstrap_code_project start");
+        debug_log_auto_stage("bootstrap", "bootstrap_code_project start");
     }
     let bootstrap_msg = bootstrap_code_project()?;
     enforce_project_md_primary_path()?;
     if opts.auto {
-        action_debug_log_auto_stage("bootstrap", "bootstrap_code_project completed");
+        debug_log_auto_stage("bootstrap", "bootstrap_code_project completed");
     }
     result = format!("{} | {} | {} | {}", result, detail_msg, domain_msg, bootstrap_msg);
-    if opts.auto {
-        action_debug_log_auto_stage("plan-init", "init_code_plan -a start");
-        let plan_msg = run_code_subcommand_in_new_session("init_code_plan", &["-a"])?;
-        action_debug_log_auto_stage("plan-init", "init_code_plan -a completed");
-        result = format!("{} | {}", result, plan_msg);
-    }
     Ok(format!("mode={:?} | {}", MODE_LIST, result))
 }
 
@@ -209,10 +215,10 @@ pub(crate) fn create_code_domain() -> Result<String, String> {
 pub(crate) fn bootstrap_code_project() -> Result<String, String> {
     let md = fs::read_to_string(crate::PROJECT_MD_PATH)
         .map_err(|e| format!("failed to read {}: {}", crate::PROJECT_MD_PATH, e))?;
-    let info = crate::calc_extract_project_info(&md);
+    let info = crate::extract_project_info(&md);
     let name = extract_info_value(&info, "name").unwrap_or_else(|| "project".to_string());
-    let spec = extract_info_value(&info, "spec").unwrap_or_else(|| "next js".to_string());
-    let status = crate::ui::action_apply_bootstrap_by_spec(Path::new("."), &name, &spec)?;
+    let spec = extract_project_spec_from_md(&md).unwrap_or_else(|| "next js".to_string());
+    let status = crate::ui::apply_bootstrap_by_spec(Path::new("."), &name)?;
     let verify = ensure_bootstrap_spec_artifacts(Path::new("."), &spec)?;
     Ok(format!(
         "bootstrap_code_project completed: {} | {} | spec={}",
@@ -235,7 +241,7 @@ pub(crate) fn init_code_plan(args: &[String]) -> Result<String, String> {
     let mut doc = infer_plan_doc_with_llm(&project_md)?;
     sync_plan_doc(&mut doc);
     save_plan_doc(&doc)?;
-    action_debug_log_auto_stage(
+    debug_log_auto_stage(
         "plan-yaml",
         &format!(
             "plan.yaml generated: domains={} planned={} worked={} complete={}",
@@ -245,20 +251,12 @@ pub(crate) fn init_code_plan(args: &[String]) -> Result<String, String> {
             doc.drafts.complete.len()
         ),
     );
-    let mut out = format!(
+    let out = format!(
         "init_code_plan completed: domains={} planned={}",
         doc.domains.len(),
         doc.drafts.planned.len()
     );
-    if auto {
-        action_debug_log_auto_stage("input-build", "build_input_md_auto start");
-        let input_msg = build_input_md_auto()?;
-        action_debug_log_auto_stage("input-build", "build_input_md_auto completed");
-        action_debug_log_auto_stage("draft-create", "add_code_draft -a start");
-        let draft_msg = run_code_subcommand_in_new_session("add_code_draft", &["-a"])?;
-        action_debug_log_auto_stage("draft-create", "add_code_draft -a completed");
-        out = format!("{} | {} | {}", out, input_msg, draft_msg);
-    }
+    let _ = auto;
     Ok(out)
 }
 
@@ -309,11 +307,9 @@ pub(crate) fn add_code_plan(args: &[String]) -> Result<String, String> {
     save_plan_doc(&doc)?;
     let mut out = format!("add_code_plan completed: planned={}", doc.drafts.planned.len());
     if auto {
-        let draft_msg = run_code_subcommand_in_new_session("add_code_draft", &[])?;
-        out = format!("{} | {}", out, draft_msg);
         return Ok(out);
     }
-    if ask_yes_no("add_code_draft()를 호출할까요? [y/N]: ")? {
+    if !use_file && ask_yes_no("add_code_draft()를 호출할까요? [y/N]: ")? {
         let draft_msg = run_code_subcommand_in_new_session("add_code_draft", &[])?;
         out = format!("{} | {}", out, draft_msg);
     }
@@ -343,6 +339,8 @@ pub(crate) fn add_code_draft(args: &[String]) -> Result<String, String> {
     }
     if auto {
         use_file = true;
+        let build_msg = build_input_md_auto()?;
+        debug_log_auto_stage("input-md", &build_msg);
     }
 
     ensure_drafts_yaml_initialized()?;
@@ -371,7 +369,10 @@ pub(crate) fn add_code_draft(args: &[String]) -> Result<String, String> {
             }
             plan_items.push(name.clone());
             if !plan.drafts.planned.iter().any(|v| v == &name) {
-                plan.drafts.planned.push(name);
+                plan.drafts.planned.push(name.clone());
+            }
+            if !drafts.planned.iter().any(|v| v == &name) {
+                drafts.planned.push(name.clone());
             }
         }
         sync_plan_doc(&mut plan);
@@ -390,6 +391,9 @@ pub(crate) fn add_code_draft(args: &[String]) -> Result<String, String> {
             from_input,
         );
         drafts.draft.push(inferred);
+        if !drafts.planned.iter().any(|v| v == name) {
+            drafts.planned.push(name.clone());
+        }
     }
 
     if let Some(msg) = message {
@@ -402,27 +406,26 @@ pub(crate) fn add_code_draft(args: &[String]) -> Result<String, String> {
                 None,
             );
             drafts.draft.push(inferred);
+            if !drafts.planned.iter().any(|v| v == &name) {
+                drafts.planned.push(name.clone());
+            }
         }
     }
 
+    sync_drafts_doc(&mut drafts);
     save_drafts_doc(&drafts)?;
-    action_debug_log_auto_stage(
+    debug_log_auto_stage(
         "draft-yaml",
         &format!("drafts.yaml generated: draft={}", drafts.draft.len()),
     );
     let check = check_code_draft(false)?;
-    action_debug_log_auto_stage("draft-yaml", "drafts.yaml checked");
-    let mut out = format!(
+    debug_log_auto_stage("draft-yaml", "drafts.yaml checked");
+    let out = format!(
         "add_code_draft completed: draft={} | {}",
         drafts.draft.len(),
         check
     );
-    if auto {
-        action_debug_log_auto_stage("impl", "impl_code_draft start");
-        let impl_msg = run_impl_code_draft_via_cli()?;
-        action_debug_log_auto_stage("impl", "impl_code_draft completed");
-        out = format!("{} | {}", out, impl_msg);
-    }
+    let _ = auto;
     Ok(out)
 }
 
@@ -431,16 +434,55 @@ pub(crate) fn add_code_draft_item(args: &[String]) -> Result<String, String> {
 }
 
 pub(crate) fn auto_code_message(message: &str) -> Result<String, String> {
-    action_debug_log_auto_stage("auto", "auto message flow start");
-    let out = run_code_subcommand_in_new_session("init_code_project", &["-a", message])?;
-    action_debug_log_auto_stage("auto", "auto message flow completed");
-    Ok(out)
+    debug_log_auto_stage("auto", "auto message flow start");
+    match run_code_subcommand_in_new_session("init_code_project", &["-a", message.trim()]) {
+        Ok(out) => {
+            debug_log_auto_stage("auto", "auto message flow completed");
+            Ok(out)
+        }
+        Err(err) => {
+            write_feedback_md("auto_code_message failed", &err)?;
+            Err(format!("auto flow failed; check feedback.md: {}", err))
+        }
+    }
+}
+
+pub(crate) fn auto_code_from_input_file() -> Result<String, String> {
+    let input_path = Path::new(crate::INPUT_MD_PATH);
+    if !input_path.exists() {
+        return Err(format!(
+            "auto -f requires {} in current directory",
+            crate::INPUT_MD_PATH
+        ));
+    }
+    let parsed = parse_input_md_objects(input_path)?;
+    if parsed.is_empty() {
+        return Err("auto -f failed: input.md has no valid feature object".to_string());
+    }
+
+    debug_log_auto_stage("auto-file", "auto -f flow start");
+    let init_msg = run_code_subcommand_in_new_session("init_code_project", &[])?;
+    let plan_msg = if plan_yaml_path()?.exists() {
+        "init_code_plan skipped: .project/plan.yaml already exists".to_string()
+    } else {
+        run_code_subcommand_in_new_session("init_code_plan", &["-a"])?
+    };
+    let add_plan_msg = run_code_subcommand_in_new_session("add_code_plan", &["-f"])?;
+    let add_draft_msg = run_code_subcommand_in_new_session("add_code_draft", &["-f"])?;
+    let impl_msg = run_code_subcommand_in_new_session("impl_code_draft", &[])?;
+    debug_log_auto_stage("auto-file", "auto -f flow completed");
+
+    Ok(format!(
+        "auto -f completed: {} | {} | {} | {} | {}",
+        init_msg, plan_msg, add_plan_msg, add_draft_msg, impl_msg
+    ))
 }
 
 pub(crate) async fn impl_code_draft() -> Result<String, String> {
     let mut plan = load_plan_doc()?;
     sync_plan_doc(&mut plan);
-    let drafts = load_drafts_doc()?;
+    let mut drafts = load_drafts_doc()?;
+    sync_drafts_doc(&mut drafts);
     if drafts.draft.is_empty() || plan.drafts.planned.is_empty() {
         return Ok("impl_code_draft skipped: no drafts.yaml.planned item".to_string());
     }
@@ -448,9 +490,12 @@ pub(crate) async fn impl_code_draft() -> Result<String, String> {
     let moved_to_worked = plan.drafts.planned.clone();
     for name in &moved_to_worked {
         change_state_plan(&mut plan, name, "planned", "worked")?;
+        change_state_drafts(&mut drafts, name, "planned", "worked")?;
     }
     sync_plan_doc(&mut plan);
+    sync_drafts_doc(&mut drafts);
     save_plan_doc(&plan)?;
+    save_drafts_doc(&drafts)?;
 
     let worked_items: Vec<DraftItemDoc> = plan
         .drafts
@@ -458,31 +503,51 @@ pub(crate) async fn impl_code_draft() -> Result<String, String> {
         .iter()
         .filter_map(|name| drafts.draft.iter().find(|v| &v.name == name).cloned())
         .collect();
-    action_debug_log_auto_stage(
+    debug_log_auto_stage(
         "parallel-start",
         &format!("parallel execution start: {} item(s)", worked_items.len()),
     );
-    let run_msg = match action_impl_code_draft_parallel(worked_items).await {
+    let run_msg = match impl_code_draft_parallel(worked_items).await {
         Ok(run) => {
             for name in &run.succeeded {
                 change_state_plan(&mut plan, name, "worked", "complete")?;
+                change_state_drafts(&mut drafts, name, "worked", "complete")?;
+            }
+            for (name, _) in &run.failed {
+                change_state_plan(&mut plan, name, "worked", "planned")?;
+                change_state_drafts(&mut drafts, name, "worked", "failed")?;
             }
             sync_plan_doc(&mut plan);
+            sync_drafts_doc(&mut drafts);
             save_plan_doc(&plan)?;
+            save_drafts_doc(&drafts)?;
             if run.failed.is_empty() {
                 format!("impl_code_draft parallel completed: {}", run.succeeded.join(", "))
             } else {
                 let msg = format!(
                     "partial success: succeeded=[{}], failed=[{}]",
                     run.succeeded.join(", "),
-                    run.failed.join(" | ")
+                    run.failed
+                        .iter()
+                        .map(|(name, detail)| format!("{}: {}", name, detail))
+                        .collect::<Vec<_>>()
+                        .join(" | ")
                 );
-                action_write_feedback_md("impl_code_draft partial failure", &msg)?;
+                write_feedback_md("impl_code_draft partial failure", &msg)?;
                 return Err(format!("impl_code_draft failed: {}", msg));
             }
         }
         Err(e) => {
-            action_write_feedback_md("impl_code_draft failed", &e)?;
+            let current_worked = plan.drafts.worked.clone();
+            for name in current_worked {
+                let _ = change_state_plan(&mut plan, &name, "worked", "planned");
+                let _ = change_state_drafts(&mut drafts, &name, "worked", "failed");
+            }
+            sync_plan_doc(&mut plan);
+            sync_drafts_doc(&mut drafts);
+            let _ = save_plan_doc(&plan);
+            let _ = save_drafts_doc(&drafts);
+            write_feedback_md("impl_code_draft failed", &e)?;
             return Err(format!(
                 "impl_code_draft failed after sync; check feedback.md: {}",
                 e
@@ -496,10 +561,10 @@ pub(crate) async fn impl_code_draft() -> Result<String, String> {
 
 struct ImplRunResult {
     succeeded: Vec<String>,
-    failed: Vec<String>,
+    failed: Vec<(String, String)>,
 }
 
-async fn action_impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<ImplRunResult, String> {
+async fn impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<ImplRunResult, String> {
     if items.is_empty() {
         return Ok(ImplRunResult {
             succeeded: Vec::new(),
@@ -513,10 +578,12 @@ async fn action_impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<Imp
     let prompt_template = fs::read_to_string(&prompt_path)
         .unwrap_or_else(|_| "impl_code_draft prompt\n- draft_item을 구현하고 제약 만족 여부를 보고한다.".to_string());
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
+    let llm_timeout_sec = impl_draft_llm_timeout_sec();
     let mut handles = Vec::new();
     for item in items {
         let permit_pool = semaphore.clone();
         let prompt_template = prompt_template.clone();
+        let llm_timeout_sec = llm_timeout_sec;
         handles.push(tokio::spawn(async move {
             let _permit = permit_pool
                 .acquire_owned()
@@ -529,7 +596,9 @@ async fn action_impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<Imp
                 prompt_template, raw
             );
             let name = item.name.clone();
-            let output = tokio::task::spawn_blocking(move || crate::action_run_codex_exec_capture(&prompt))
+            let output = tokio::task::spawn_blocking(move || {
+                crate::run_codex_exec_capture_with_timeout(&prompt, llm_timeout_sec)
+            })
                 .await
                 .map_err(|e| format!("spawn blocking join failed for {}: {}", name, e))??;
             let tail = output.lines().last().unwrap_or("").to_ascii_lowercase();
@@ -540,14 +609,21 @@ async fn action_impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<Imp
         }));
     }
     let mut done = Vec::new();
-    let mut failed = Vec::new();
+    let mut failed: Vec<(String, String)> = Vec::new();
     for handle in handles {
         match handle
             .await
             .map_err(|e| format!("parallel task join failed: {}", e))?
         {
             Ok(name) => done.push(name),
-            Err(err) => failed.push(err),
+            Err(err) => {
+                let name = err
+                    .split_once(':')
+                    .map(|(left, _)| left.trim().to_string())
+                    .filter(|v| !v.is_empty())
+                    .unwrap_or_else(|| "unknown".to_string());
+                failed.push((name, err));
+            }
         }
     }
     Ok(ImplRunResult {
@@ -556,11 +632,22 @@ async fn action_impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<Imp
     })
 }
 
-fn action_write_feedback_md(summary: &str, detail: &str) -> Result<(), String> {
-    let body = format!(
-        "# feedback\n\n- status: failed\n- summary: {}\n- detail: {}\n- action: fallback implementation applied\n",
-        summary, detail
-    );
+fn write_feedback_md(summary: &str, detail: &str) -> Result<(), String> {
+    let mut body = fs::read_to_string("feedback.md").unwrap_or_else(|_| "# feedback\n".to_string());
+    if !body.starts_with("# feedback") {
+        body = format!("# feedback\n\n{}", body);
+    }
+    if !body.ends_with('\n') {
+        body.push('\n');
+    }
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|v| v.as_secs())
+        .unwrap_or(0);
+    body.push_str(&format!(
+        "\n## entry-{}\n- status: failed\n- summary: {}\n- detail: {}\n",
+        ts, summary, detail
+    ));
     fs::write("feedback.md", body).map_err(|e| format!("failed to write feedback.md: {}", e))
 }
 
@@ -569,8 +656,11 @@ fn run_impl_code_draft_via_cli() -> Result<String, String> {
 }
 
 fn run_code_subcommand_in_new_session(command: &str, args: &[&str]) -> Result<String, String> {
+    if should_use_tmux_worker_pane() {
+        return run_code_subcommand_via_tmux_pane(command, args);
+    }
     let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
-    action_debug_log_auto_stage(
+    debug_log_auto_stage(
         "session",
         &format!("new session start: {} {}", command, args.join(" ")),
     );
@@ -579,16 +669,46 @@ fn run_code_subcommand_in_new_session(command: &str, args: &[&str]) -> Result<St
     for arg in args {
         cmd.arg(arg);
     }
-    let status = cmd
+    let mut child = cmd
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
-        .status()
+        .spawn()
         .map_err(|e| format!("failed to execute {}: {}", command, e))?;
+    let timeout_sec = code_subcommand_timeout_sec();
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if started.elapsed() >= Duration::from_secs(timeout_sec) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    debug_log_auto_stage(
+                        "session",
+                        &format!(
+                            "new session timeout: {} | timeout={}s",
+                            command, timeout_sec
+                        ),
+                    );
+                    return Err(format!(
+                        "{} failed: timeout after {}s",
+                        command, timeout_sec
+                    ));
+                }
+                thread::sleep(Duration::from_millis(250));
+            }
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("failed while waiting {}: {}", command, e));
+            }
+        }
+    };
     if status.success() {
-        action_debug_log_auto_stage("session", &format!("new session completed: {}", command));
+        debug_log_auto_stage("session", &format!("new session completed: {}", command));
         Ok(format!("{} completed", command))
     } else {
-        action_debug_log_auto_stage(
+        debug_log_auto_stage(
             "session",
             &format!("new session failed: {} | code={:?}", command, status.code()),
         );
@@ -600,13 +720,145 @@ fn run_code_subcommand_in_new_session(command: &str, args: &[&str]) -> Result<St
     }
 }
 
+fn should_use_tmux_worker_pane() -> bool {
+    if !env_flag_true("ORC_USE_TMUX_PANES") {
+        return false;
+    }
+    env::var("TMUX")
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false)
+}
+
+fn env_flag_true(name: &str) -> bool {
+    match env::var(name) {
+        Ok(v) => {
+            let lowered = v.trim().to_ascii_lowercase();
+            lowered == "1" || lowered == "true" || lowered == "yes" || lowered == "on"
+        }
+        Err(_) => false,
+    }
+}
+
+fn quote_sh(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn run_code_subcommand_via_tmux_pane(command: &str, args: &[&str]) -> Result<String, String> {
+    let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
+    let cwd = env::current_dir().map_err(|e| format!("failed to read cwd: {}", e))?;
+    let runtime = Path::new(".project").join("runtime");
+    fs::create_dir_all(&runtime)
+        .map_err(|e| format!("failed to create {}: {}", runtime.display(), e))?;
+    let token = format!("{}-{}-{}", now_unix_ts(), std::process::id(), normalize_feature_key(command));
+    let script_path = runtime.join(format!("tmux-subcmd-{}.sh", token));
+    let stdout_path = runtime.join(format!("tmux-subcmd-{}.stdout.log", token));
+    let stderr_path = runtime.join(format!("tmux-subcmd-{}.stderr.log", token));
+    let code_path = runtime.join(format!("tmux-subcmd-{}.code", token));
+
+    let mut quoted_args = Vec::new();
+    for arg in args {
+        quoted_args.push(quote_sh(arg));
+    }
+    let args_joined = if quoted_args.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", quoted_args.join(" "))
+    };
+    let script = format!(
+        "#!/usr/bin/env bash\n\
+set +e\n\
+cd {cwd}\n\
+echo \"[orc-worker] start: {command}{args}\"\n\
+echo \"[orc-worker] cwd: {cwd_display}\"\n\
+{exe} {command}{args} > >(tee {stdout}) 2> >(tee {stderr} >&2)\n\
+status=$?\n\
+printf \"%s\" \"$status\" > {code}\n",
+        cwd = quote_sh(&cwd.display().to_string()),
+        cwd_display = cwd.display(),
+        exe = quote_sh(&exe.display().to_string()),
+        command = quote_sh(command),
+        args = args_joined,
+        stdout = quote_sh(&stdout_path.display().to_string()),
+        stderr = quote_sh(&stderr_path.display().to_string()),
+        code = quote_sh(&code_path.display().to_string()),
+    );
+    fs::write(&script_path, script)
+        .map_err(|e| format!("failed to write {}: {}", script_path.display(), e))?;
+    let parent_pane = crate::tmux::current_pane_id().ok();
+    debug_log_auto_stage(
+        "session",
+        &format!("worker pane start: {} {}", command, args.join(" ")),
+    );
+    let pane_id = crate::tmux::split_window_run(&format!("bash {}", quote_sh(&script_path.display().to_string())))
+        .map_err(|e| format!("failed to spawn tmux worker pane: {}", e))?;
+    let _ = crate::tmux::rename_pane(&pane_id, &format!("orc-{}", command));
+    let timeout_sec = code_subcommand_timeout_sec();
+    let started = Instant::now();
+    while !code_path.exists() {
+        if started.elapsed() >= Duration::from_secs(timeout_sec) {
+            let _ = crate::tmux::display_message(
+                parent_pane.as_deref().unwrap_or(""),
+                &format!("orc worker timeout: {}", command),
+            );
+            let _ = crate::tmux::kill_pane(&pane_id);
+            return Err(format!("{} failed: timeout after {}s", command, timeout_sec));
+        }
+        thread::sleep(Duration::from_millis(200));
+    }
+    let code_raw = fs::read_to_string(&code_path)
+        .map_err(|e| format!("failed to read {}: {}", code_path.display(), e))?;
+    let code = code_raw.trim().parse::<i32>().unwrap_or(1);
+    let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
+    let _ = crate::tmux::kill_pane(&pane_id);
+    if let Some(parent) = parent_pane.as_deref() {
+        let status_msg = if code == 0 {
+            format!("orc worker done: {}", command)
+        } else {
+            format!("orc worker failed: {} (code={})", command, code)
+        };
+        let _ = crate::tmux::display_message(parent, &status_msg);
+    }
+    if code == 0 {
+        debug_log_auto_stage("session", &format!("worker pane done: {}", command));
+        Ok(format!("{} completed", command))
+    } else {
+        let detail = stderr.lines().next().unwrap_or("").trim().to_string();
+        Err(format!(
+            "{} failed: code={}{}",
+            command,
+            code,
+            if detail.is_empty() {
+                "".to_string()
+            } else {
+                format!(" | {}", detail)
+            }
+        ))
+    }
+}
+
+fn code_subcommand_timeout_sec() -> u64 {
+    env::var("ORC_CODE_SUBCOMMAND_TIMEOUT_SEC")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(CODE_SUBCOMMAND_TIMEOUT_SEC)
+}
+
+fn impl_draft_llm_timeout_sec() -> u64 {
+    env::var("ORC_IMPL_DRAFT_LLM_TIMEOUT_SEC")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(IMPL_DRAFT_LLM_TIMEOUT_SEC)
+}
+
 fn build_input_md_auto() -> Result<String, String> {
     let project_md = fs::read_to_string(crate::PROJECT_MD_PATH)
         .map_err(|e| format!("failed to read {}: {}", crate::PROJECT_MD_PATH, e))?;
     let plan_path = plan_yaml_path()?;
     let plan_yaml = fs::read_to_string(&plan_path)
         .map_err(|e| format!("failed to read {}: {}", plan_path.display(), e))?;
-    let prompt_path = crate::action_source_root()
+    let prompt_path = crate::source_root()
         .join("assets")
         .join("code")
         .join("prompts")
@@ -622,8 +874,8 @@ fn build_input_md_auto() -> Result<String, String> {
         "{}\n\nproject.md:\n{}\n\nplan.yaml:\n{}\n\n출력은 반드시 input.md 본문만 반환한다.",
         prompt_template, project_md, plan_yaml
     );
-    let raw = crate::action_run_codex_exec_capture(&prompt)?;
-    let body = crate::calc_extract_markdown_block(&raw);
+    let raw = crate::run_codex_exec_capture(&prompt)?;
+    let body = crate::extract_markdown_block(&raw);
     if body.trim().is_empty() {
         return Err("build_input_md_auto failed: empty input.md body".to_string());
     }
@@ -655,14 +907,14 @@ pub(crate) fn check_code_draft(auto_yes: bool) -> Result<String, String> {
     ensure_default_scenario_file()?;
     validate_scenario_file()?;
     let reference_dir = ensure_project_reference_dir()?;
-    let debug_enabled = crate::action_load_app_config()
+    let debug_enabled = crate::load_app_config()
         .as_ref()
         .is_none_or(crate::config::AppConfig::debug_enabled);
     let mut debug_pane = String::new();
-    if debug_enabled {
+    if debug_enabled && env_flag_true("ORC_ENABLE_CHECK_DEBUG_PANE") {
         let debug_cmd = "mkdir -p .project/reference && touch .project/reference/check-code.log && tail -n 200 -f .project/reference/check-code.log";
-        if let Ok(pane_id) = crate::tmux::action_split_window_run(debug_cmd) {
-            let _ = crate::tmux::action_rename_pane(&pane_id, "check-code-debug");
+        if let Ok(pane_id) = crate::tmux::split_window_run(debug_cmd) {
+            let _ = crate::tmux::rename_pane(&pane_id, "check-code-debug");
             debug_pane = pane_id;
         }
     }
@@ -670,13 +922,14 @@ pub(crate) fn check_code_draft(auto_yes: bool) -> Result<String, String> {
     let mut names: HashSet<String> = drafts.draft.iter().map(|v| v.name.clone()).collect();
     let mut list: Vec<String> = names.into_iter().collect();
     list.sort();
-    let follow = crate::action_run_check_code_after_draft_changes(&list, "check_code_draft")?;
+    let follow = crate::run_check_code_after_draft_changes(&list, "check_code_draft")?;
     let test_result = match crate::test_command() {
         Ok(v) => v,
         Err(e) => format!("test failed: {}", e),
     };
     let report = Path::new("report.md");
     let issues = collect_check_draft_issues(&follow, &test_result);
+    crate::append_spec_checkpoint_issues("check_code_draft", &issues)?;
     let body = render_check_report_from_template(
         &list,
         &follow,
@@ -725,7 +978,7 @@ fn infer_from_message(msg: &str) -> (String, String, String) {
 }
 
 fn infer_spec_with_llm(message: &str, workspace_hint: Option<&str>) -> Option<String> {
-    let prompt_path = crate::action_source_root()
+    let prompt_path = crate::source_root()
         .join("assets")
         .join("code")
         .join("prompts")
@@ -738,12 +991,12 @@ fn infer_spec_with_llm(message: &str, workspace_hint: Option<&str>) -> Option<St
         "{}\n\nmessage:\n{}\n\nworkspace_hint:\n{}\n\n반드시 `spec: ...` 한 줄만 출력.",
         template, message, hint
     );
-    let raw = crate::action_run_codex_exec_capture(&prompt).ok()?;
+    let raw = crate::run_codex_exec_capture(&prompt).ok()?;
     parse_inferred_spec(&raw)
 }
 
 fn parse_inferred_spec(raw: &str) -> Option<String> {
-    let body = crate::calc_extract_markdown_block(raw);
+    let body = crate::extract_markdown_block(raw);
     let source = if body.trim().is_empty() { raw } else { &body };
     for line in source.lines() {
         let trimmed = line.trim();
@@ -802,7 +1055,7 @@ struct DraftItemInferOut {
 }
 
 fn infer_draft_fields_with_llm(project_md: &str, name: &str, domain: &str, item_type: &str) -> DraftFieldsInferOut {
-    let prompt_path = crate::action_source_root()
+    let prompt_path = crate::source_root()
         .join("assets")
         .join("code")
         .join("prompts")
@@ -814,10 +1067,10 @@ fn infer_draft_fields_with_llm(project_md: &str, name: &str, domain: &str, item_
         "{}\n\nproject_md:\n{}\n\nname: {}\ndomain: {}\ntype: {}",
         prompt_template, project_md, name, domain, item_type
     );
-    let Ok(raw) = crate::action_run_codex_exec_capture(&prompt) else {
+    let Ok(raw) = crate::run_codex_exec_capture(&prompt) else {
         return DraftFieldsInferOut::default();
     };
-    let yaml = crate::calc_extract_yaml_block(&raw);
+    let yaml = crate::extract_yaml_block(&raw);
     serde_yaml::from_str::<DraftFieldsInferOut>(&yaml).unwrap_or_default()
 }
 
@@ -833,7 +1086,7 @@ fn infer_draft_item_with_llm(
     let input_steps = from_input
         .map(|v| v.steps.join(" | "))
         .unwrap_or_default();
-    let prompt_path = crate::action_source_root()
+    let prompt_path = crate::source_root()
         .join("assets")
         .join("code")
         .join("prompts")
@@ -845,13 +1098,13 @@ fn infer_draft_item_with_llm(
         "{}\n\nproject_md:\n{}\n\nplan_yaml:\n{}\n\nname: {}\ninput_rules: {}\ninput_steps: {}",
         prompt_template, project_md, plan_yaml, name, input_rules, input_steps
     );
-    let Ok(raw) = crate::action_run_codex_exec_capture(&prompt) else {
+    let Ok(raw) = crate::run_codex_exec_capture(&prompt) else {
         return DraftItemDoc {
             name: name.to_string(),
             ..DraftItemDoc::default()
         };
     };
-    let yaml = crate::calc_extract_yaml_block(&raw);
+    let yaml = crate::extract_yaml_block(&raw);
     let item_out = serde_yaml::from_str::<DraftItemInferOut>(&yaml).unwrap_or_default();
     let inferred_type = if item_out.item_type.trim().is_empty() {
         infer_item_type(name)
@@ -887,7 +1140,7 @@ fn infer_draft_item_with_llm(
 }
 
 fn infer_project_detail_with_llm(project_md: &str) -> Result<String, String> {
-    let prompt_path = crate::action_source_root()
+    let prompt_path = crate::source_root()
         .join("assets")
         .join("code")
         .join("prompts")
@@ -898,15 +1151,15 @@ fn infer_project_detail_with_llm(project_md: &str) -> Result<String, String> {
         "{}\n\nproject.md:\n{}\n\n출력은 project.md 전체 markdown만 반환한다.",
         template, project_md
     );
-    let raw = crate::action_run_codex_exec_capture(&prompt)?;
-    let out = crate::calc_extract_markdown_block(&raw);
+    let raw = crate::run_codex_exec_capture(&prompt)?;
+    let out = crate::extract_markdown_block(&raw);
     let next = if out.trim().is_empty() { raw } else { out };
     validate_project_md_headers(&next)?;
     Ok(format!("{}\n", next.trim_end()))
 }
 
 fn infer_domain_block_with_llm(project_md: &str) -> Result<String, String> {
-    let prompt_path = crate::action_source_root()
+    let prompt_path = crate::source_root()
         .join("assets")
         .join("code")
         .join("prompts")
@@ -917,8 +1170,8 @@ fn infer_domain_block_with_llm(project_md: &str) -> Result<String, String> {
         "{}\n\nproject.md:\n{}\n\n출력은 # domains 아래 body markdown만 반환한다.",
         template, project_md
     );
-    let raw = crate::action_run_codex_exec_capture(&prompt)?;
-    let out = crate::calc_extract_markdown_block(&raw);
+    let raw = crate::run_codex_exec_capture(&prompt)?;
+    let out = crate::extract_markdown_block(&raw);
     let body = if out.trim().is_empty() { raw } else { out };
     if !body.lines().any(|v| v.trim_start().starts_with("## ")) {
         return Err("create_code_domain failed: inferred domains block has no domain header".to_string());
@@ -927,7 +1180,7 @@ fn infer_domain_block_with_llm(project_md: &str) -> Result<String, String> {
 }
 
 fn infer_plan_doc_with_llm(project_md: &str) -> Result<CodePlanDoc, String> {
-    let prompt_path = crate::action_source_root()
+    let prompt_path = crate::source_root()
         .join("assets")
         .join("code")
         .join("prompts")
@@ -939,8 +1192,8 @@ fn infer_plan_doc_with_llm(project_md: &str) -> Result<CodePlanDoc, String> {
         "{}\n\nproject.md:\n{}\n\nplan template:\n{}\n\n출력은 plan.yaml YAML만 반환한다.",
         template, project_md, plan_template
     );
-    let raw = crate::action_run_codex_exec_capture(&prompt)?;
-    let yaml = crate::calc_extract_yaml_block(&raw);
+    let raw = crate::run_codex_exec_capture(&prompt)?;
+    let yaml = crate::extract_yaml_block(&raw);
     let mut doc: CodePlanDoc =
         serde_yaml::from_str(&yaml).map_err(|e| format!("infer_plan_yaml parse failed: {}", e))?;
     sync_plan_doc(&mut doc);
@@ -1017,8 +1270,8 @@ fn ensure_bootstrap_spec_artifacts(project_root: &Path, spec: &str) -> Result<St
     Ok("bootstrap-verify: spec dependency ok".to_string())
 }
 
-fn action_debug_log_auto_stage(stage: &str, message: &str) {
-    let debug_enabled = crate::action_load_app_config()
+fn debug_log_auto_stage(stage: &str, message: &str) {
+    let debug_enabled = crate::load_app_config()
         .as_ref()
         .is_none_or(crate::config::AppConfig::debug_enabled);
     if !debug_enabled {
@@ -1054,6 +1307,13 @@ fn extract_info_value(info: &str, key: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn extract_project_spec_from_md(project_md: &str) -> Option<String> {
+    let info = crate::extract_project_info(project_md);
+    extract_info_value(&info, "spec")
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
 }
 
 #[derive(Default)]
@@ -1298,21 +1558,86 @@ fn load_drafts_doc() -> Result<CodeDraftsDoc, String> {
     let path = drafts_yaml_path()?;
     if !path.exists() {
         let raw = read_code_template("drafts.yaml")?;
-        let doc: CodeDraftsDoc =
+        let mut doc: CodeDraftsDoc =
             serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse drafts template: {}", e))?;
+        sync_drafts_doc(&mut doc);
         return Ok(doc);
     }
     let raw = fs::read_to_string(&path)
         .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
-    let doc: CodeDraftsDoc =
+    let mut doc: CodeDraftsDoc =
         serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse {}: {}", path.display(), e))?;
+    sync_drafts_doc(&mut doc);
     Ok(doc)
 }
 
 fn save_drafts_doc(doc: &CodeDraftsDoc) -> Result<(), String> {
     let path = drafts_yaml_path()?;
-    let raw = serde_yaml::to_string(doc).map_err(|e| format!("failed to encode drafts yaml: {}", e))?;
+    let mut next = doc.clone();
+    sync_drafts_doc(&mut next);
+    let raw = serde_yaml::to_string(&next).map_err(|e| format!("failed to encode drafts yaml: {}", e))?;
     fs::write(&path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
+}
+
+fn sync_drafts_doc(doc: &mut CodeDraftsDoc) {
+    dedup_vec(&mut doc.planned);
+    dedup_vec(&mut doc.worked);
+    dedup_vec(&mut doc.complete);
+    dedup_vec(&mut doc.failed);
+    doc.worked.retain(|v| !doc.complete.iter().any(|c| c == v));
+    doc.planned.retain(|v| {
+        !doc.complete.iter().any(|c| c == v) && !doc.worked.iter().any(|w| w == v)
+    });
+    doc.failed.retain(|v| {
+        !doc.complete.iter().any(|c| c == v)
+            && !doc.worked.iter().any(|w| w == v)
+            && !doc.planned.iter().any(|p| p == v)
+    });
+    doc.planned
+        .retain(|name| doc.draft.iter().any(|item| &item.name == name));
+    doc.worked
+        .retain(|name| doc.draft.iter().any(|item| &item.name == name));
+    doc.complete
+        .retain(|name| doc.draft.iter().any(|item| &item.name == name));
+    doc.failed
+        .retain(|name| doc.draft.iter().any(|item| &item.name == name));
+}
+
+fn change_state_drafts(
+    doc: &mut CodeDraftsDoc,
+    name: &str,
+    from: &str,
+    to: &str,
+) -> Result<(), String> {
+    let from_list = match from {
+        "planned" => &mut doc.planned,
+        "worked" => &mut doc.worked,
+        "complete" => &mut doc.complete,
+        "failed" => &mut doc.failed,
+        _ => return Err(format!("invalid from state: {}", from)),
+    };
+    if let Some(pos) = from_list.iter().position(|v| v == name) {
+        from_list.remove(pos);
+    }
+    let to_list = match to {
+        "planned" => &mut doc.planned,
+        "worked" => &mut doc.worked,
+        "complete" => &mut doc.complete,
+        "failed" => &mut doc.failed,
+        _ => return Err(format!("invalid to state: {}", to)),
+    };
+    if !to_list.iter().any(|v| v == name) {
+        to_list.push(name.to_string());
+    }
+    sync_drafts_doc(doc);
+    Ok(())
+}
+
+fn now_unix_ts() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|v| v.as_secs())
+        .unwrap_or(0)
 }
 
 fn validate_scenario_file() -> Result<(), String> {
@@ -1357,7 +1682,7 @@ fn ensure_default_scenario_file() -> Result<(), String> {
 }
 
 fn extract_domains_from_project_md(project_md: &str) -> Vec<String> {
-    crate::calc_extract_project_md_domain_names(project_md)
+    crate::extract_project_md_domain_names(project_md)
 }
 
 fn extract_domain_subsection_items(project_md: &str, domain: &str, subsection: &str) -> Vec<String> {
@@ -1547,8 +1872,8 @@ fn infer_plan_items_with_llm() -> Result<Vec<String>, String> {
         "{}\n\nproject.md:\n{}\n\n출력은 YAML만:\nplanned:\n  - <snake_case>",
         prompt_template, md
     );
-    let raw = crate::action_run_codex_exec_capture(&prompt)?;
-    let yaml = crate::calc_extract_yaml_block(&raw);
+    let raw = crate::run_codex_exec_capture(&prompt)?;
+    let yaml = crate::extract_yaml_block(&raw);
     #[derive(Deserialize)]
     struct PlannedOut {
         #[serde(default)]
@@ -1623,31 +1948,10 @@ fn write_project_md(body: &str) -> Result<(), String> {
 }
 
 fn enforce_project_md_primary_path() -> Result<(), String> {
-    let primary = Path::new(".project").join("project.md");
-    let legacy = Path::new("project").join("project.md");
-    if !legacy.exists() {
-        return Ok(());
-    }
+    let primary = Path::new(".project");
     if !primary.exists() {
-        if let Some(parent) = primary.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
-        }
-        fs::rename(&legacy, &primary).map_err(|e| {
-            format!(
-                "failed to move legacy project.md {} -> {}: {}",
-                legacy.display(),
-                primary.display(),
-                e
-            )
-        })?;
-    } else {
-        fs::remove_file(&legacy)
-            .map_err(|e| format!("failed to remove legacy {}: {}", legacy.display(), e))?;
-    }
-    let legacy_dir = Path::new("project");
-    if legacy_dir.exists() && fs::read_dir(legacy_dir).map(|mut v| v.next().is_none()).unwrap_or(false) {
-        let _ = fs::remove_dir(legacy_dir);
+        fs::create_dir_all(primary)
+            .map_err(|e| format!("failed to create {}: {}", primary.display(), e))?;
     }
     Ok(())
 }
@@ -1775,7 +2079,7 @@ fn extract_plain_list_under_header(markdown: &str, header: &str) -> Vec<String> 
 }
 
 fn read_code_template(file_name: &str) -> Result<String, String> {
-    let path = crate::action_source_root()
+    let path = crate::source_root()
         .join("assets")
         .join("code")
         .join("templates")
