@@ -19,11 +19,6 @@ pub struct AiConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ClientConfig {
-    pub tui: Option<bool>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     pub max_parallel: Option<usize>,
     pub timeout_sec: Option<u64>,
@@ -35,7 +30,6 @@ pub struct AppConfig {
     pub llm_retry_count: Option<u32>,
     pub keymap: Option<KeymapConfig>,
     pub ai: Option<AiConfig>,
-    pub client: Option<ClientConfig>,
     pub performance: Option<PerformanceConfig>,
 }
 
@@ -89,10 +83,4 @@ impl AppConfig {
         self.llm_retry_count.unwrap_or(2)
     }
 
-    pub fn tui_enabled(&self) -> bool {
-        self.client
-            .as_ref()
-            .and_then(|c| c.tui)
-            .unwrap_or(true)
-    }
 }

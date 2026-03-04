@@ -1,0 +1,20 @@
+type: implementation
+domain:
+  - workspace_bootstrap
+depends_on:
+  - 프로젝트 루트 작업 디렉터리 유효성 확인 로직 구현
+  - tmux 세션 존재 확인 및 필요 시 생성(중복 생성 방지)
+  - 대상 윈도우/패인 분할 구성 적용
+rule:
+  - 상태 전이는 not_initialized -> session_checked -> workspace_ready -> split_configured -> verification_passed|verification_failed 순서를 따른다.
+  - 상태 판별은 tmux list-sessions, tmux list-windows, tmux list-panes 결과만 사용한다.
+  - verification_failed 상태에서는 후속 분할 작업을 수행하지 않는다.
+step:
+  - tmux list-sessions 출력으로 대상 세션 존재 여부를 판별해 session_checked 상태를 확정한다.
+  - tmux list-windows 출력으로 대상 윈도우 존재 및 활성 상태를 판별해 workspace_ready 상태를 확정한다.
+  - tmux list-panes 출력으로 대상 윈도우의 패인 목록을 수집해 split_configured 전제 상태를 확정한다.
+  - 각 상태 판별 결과를 성공/실패와 함께 기록하고 다음 단계에서 재사용 가능한 형식으로 반환한다.
+constraints:
+  - 구현은 bash 비대화형 실행을 전제로 하며 set -euo pipefail 정책과 충돌하지 않아야 한다.
+  - tmux 명령 실패 시 즉시 중단하되 재시도는 최대 1회 이내로 제한한다.
+  - 프로젝트 루트 외부 파일 생성/수정 없이 상태 판별과 로그 출력만 수행한다.

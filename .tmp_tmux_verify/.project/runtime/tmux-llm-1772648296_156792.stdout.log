@@ -1,0 +1,21 @@
+scope:
+  - "/home/tree/project/rust-orc/.tmp_tmux_verify 경로 고정으로 tmux 워커 pane 분할 및 출력 전달 검증 자동화 경로를 정의한다."
+  - "workspace_bootstrap -> tmux_session_control -> worker_output_flow 순서의 재실행 가능한 검증 흐름을 구성한다."
+  - "성공/실패 판정은 tmux 세션 상태와 pane 출력 캡처 로그를 근거로 기록한다."
+tasks:
+  - "현재 작업 경로가 /home/tree/project/rust-orc/.tmp_tmux_verify 와 일치하는지 확인하고 불일치 시 즉시 실패 처리한다."
+  - "tmux, bash 바이너리 가용성을 확인하고 누락 시 후속 검증 없이 종료한다."
+  - "검증 전용 tmux 세션 식별자를 생성 또는 재사용하여 기존 사용자 세션을 침해하지 않게 준비한다."
+  - "초기 pane 개수를 수집한 뒤 지정된 방식으로 pane 분할을 수행하고 pane 개수 증가를 검증한다."
+  - "대상 pane을 명시적 pane id 또는 index로 선택하고 active pane 및 레이아웃 정보를 수집한다."
+  - "선택한 pane에 워커 명령을 전송하여 stdout/stderr가 해당 pane으로 전달되는지 관찰한다."
+  - "pane 출력 캡처를 수행하고 사전 정의된 키워드 또는 패턴으로 매칭해 output_verified 또는 output_mismatch를 판정한다."
+  - "출력 누락 시 재시도 횟수와 타임아웃을 적용하고 무한 대기 없이 종료한다."
+  - "실패 원인을 분할 실패, 타깃 pane 지정 실패, 출력 미전달로 구분해 근거 텍스트와 함께 기록한다."
+check:
+  - "bootstrap 완료 상태(workspace_ready, dependencies_ready)에서만 pane/출력 검증 단계가 실행된다."
+  - "tmux 레이아웃, pane index, active pane 정보가 분할 전후로 일관되게 수집되고 세션 식별자가 유지된다."
+  - "명령 전송 pane과 출력 캡처 pane이 동일함이 확인된다."
+  - "stdout/stderr 관찰 결과와 패턴 매칭 결과가 성공/실패 판정 근거로 남는다."
+  - "동일 입력 재실행 시 동일 판정 기준으로 결과가 재현된다."
+  - "검증은 tmux와 bash만 사용하며 프로젝트 범위 외 전역 설정 변경이 없다."

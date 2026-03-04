@@ -1,0 +1,182 @@
+draft:
+- name: 작업 경로(`/home/tree/project/rust-orc/.tmp_tmux_test2`) 존재 확인 및 기본 파일 구조 점검
+  type: action
+  domain:
+  - app
+  depends_on: []
+  scope:
+  - /home/tree/project/rust-orc/.tmp_tmux_test2 경로 고정 사용 및 workspace_bootstrap 도메인 실행 경로 추론
+  - tmux split 기반 비대화형 검증 흐름(초기->준비->실행->완료/실패) 구성
+  - school landing page 정적 자산(index.html, styles.css, script.js) 구조 유지 및 갱신
+  - bash 기준 결정적 검증 절차와 로그 확인 경로 확정
+  rule:
+  - 모든 실행 검증은 tmux split 환경에서 재현 가능해야 한다.
+  - 스크립트는 bash 기준으로 동작해야 하며 실행 순서가 명확해야 한다.
+  - 상태 전이는 초기 -> 준비 -> 실행 -> 완료 순서를 기본으로 한다.
+  - 각 액션은 재실행 가능해야 하며 중복 실행 시 기존 상태를 안전하게 처리해야 한다.
+  step:
+  - 작업 루트를 `/home/tree/project/rust-orc/.tmp_tmux_test2`로 고정하고 디렉토리 존재 여부를 확인한다.
+  - 프로젝트 루트 기준으로 기본 정적 웹 자산 파일 구조(html, css, javascript)와 검증 스크립트 배치 상태를 점검한다.
+  - 누락 항목이 있으면 이후 단계에서 생성 가능하도록 점검 결과를 결정적으로 기록한다.
+  tasks:
+  - 작업 경로 존재 여부와 기본 파일 구조(html/css/javascript) 사전 점검
+  - 세션/패널 이름 충돌 방지를 위한 고유 식별자 생성 후 tmux 세션 생성
+  - tmux split 패널 구성 완료 상태를 명령 결과로 검증
+  - index.html, styles.css, script.js를 생성 또는 갱신하여 landing page 출력 일관성 확보
+  - 각 tmux 패널에서 bash 검증 명령을 순차 실행하고 실패 시 즉시 실패 상태 전이
+  - 실행 로그와 최종 산출물을 점검해 성공/실패를 확정하고 재실행 가능성 확인
+  constraints:
+  - 작업 경로는 `/home/tree/project/rust-orc/.tmp_tmux_test2`로 고정한다.
+  - 기술 스택은 tmux, bash, html, css, javascript 범위를 벗어나지 않는다.
+  - 경로 참조는 프로젝트 루트 기준으로 일관되게 사용한다.
+  - 빌드 도구나 프레임워크를 추가 도입하지 않는다.
+  check:
+  - 동일 입력 재실행 시 동일 로그/동일 산출물 생성 여부 확인
+  - tmux 세션/패널 생성이 비대화형으로 재현 가능하고 이름 충돌이 없는지 확인
+  - 검증 스크립트가 bash 문법만 사용하며 실행 순서가 명확한지 확인
+  - 정적 웹 자산 구조가 유지되고 프레임워크/빌드 도구 추가가 없는지 확인
+  - 경로 참조가 프로젝트 루트 기준으로 일관되며 혼용 오류가 없는지 확인
+- name: 고유 식별자를 포함한 tmux 세션 생성 및 split 패널 비대화형 구성
+  type: action
+  domain:
+  - app
+  depends_on: []
+  scope:
+  - 프로젝트 루트(`/home/tree/project/rust-orc/.tmp_tmux_test2`)에서 고유 식별자를 포함한 tmux 세션을 비대화형으로 생성하고 split 패널을 구성한다.
+  - school landing page 정적 자산(`index.html`, `styles.css`, `script.js`)을 생성/갱신해 구조 일관성을 유지한다.
+  - 각 tmux 패널에서 bash 검증 스크립트를 순차 실행해 결정적 재현이 가능한 검증 흐름을 확립한다.
+  rule:
+  - 모든 실행 검증은 tmux split 환경에서 재현 가능해야 한다.
+  - 상태 전이는 `초기 -> 준비` 순서를 충족해야 한다.
+  - tmux 세션/패널 생성 명령은 비대화형으로 수행 가능해야 한다.
+  - 실패 조건이 발생하면 즉시 실패 상태로 전이하고 원인 로그를 남긴다.
+  step:
+  - 작업 디렉토리를 기준으로 tmux 세션 고유 식별자 생성 규칙을 확정한다.
+  - 고유 식별자를 포함한 tmux 세션을 생성한다.
+  - 검증에 필요한 pane 수만큼 split을 비대화형 명령으로 구성한다.
+  - 생성된 세션/패널 이름과 레이아웃을 기록해 후속 실행 단계 입력으로 전달한다.
+  - 동일 입력 재실행 시 세션/패널 충돌 없이 안전 처리되는지 확인한다.
+  tasks:
+  - '작업 경로 존재 확인 및 고유 식별자(예: 타임스탬프/난수 접미사) 기반 tmux 세션명 계산 로직을 bash로 정의한다.'
+  - tmux `new-session`과 `split-window`를 사용해 비대화형 패널 구성을 수행하고 패널 인덱스를 고정한다.
+  - 정적 웹 자산 파일을 루트 기준 일관 경로로 작성하고 html에서 css/javascript를 상대 경로로 연결한다.
+  - tmux `send-keys`로 패널별 bash 검증 명령(파일 존재, 내용 검사, 종료코드 수집)을 실행한다.
+  - 검증 로그 파일을 생성해 상태 전이(`초기 -> 준비 -> 실행 -> 완료/실패`)와 실패 원인을 기록한다.
+  - 재실행 시 기존 세션 충돌을 회피하거나 안전 정리 후 동일 절차로 다시 실행되도록 idempotent 처리를 추가한다.
+  constraints:
+  - 작업 경로는 `/home/tree/project/rust-orc/.tmp_tmux_test2`로 고정한다.
+  - 기술 스택은 `tmux`, `bash` 범위 내에서 구성한다.
+  - tmux 세션/패널 이름 충돌 방지를 위해 고유 식별자를 반드시 사용한다.
+  - 경로 참조 방식은 프로젝트 루트 기준으로 일관되게 유지한다.
+  check:
+  - 동일 입력으로 2회 이상 실행 시 tmux 세션/패널 충돌 없이 동일한 로그 결과와 동일한 자산 해시를 생성한다.
+  - tmux 세션 생성, split 구성, 패널 명령 실행이 모두 비대화형으로 완료되고 각 단계 종료코드가 0임을 확인한다.
+  - '`index.html`, `styles.css`, `script.js`가 모두 존재하고 html 참조 경로가 실제 파일과 일치한다.'
+  - 실패 조건(세션 생성 실패, 스크립트 오류, 산출물 누락) 발생 시 즉시 실패 상태 로그가 남고 후속 단계가 중단된다.
+  - 검증 절차 전체가 bash 문법만 사용하며 tmux/bash/html/css/javascript 범위를 벗어나는 도구 도입이 없다.
+- name: school landing page 정적 자산(html/css/javascript) 생성 또는 갱신
+  type: action
+  domain:
+  - app
+  depends_on: []
+  scope:
+  - /home/tree/project/rust-orc/.tmp_tmux_test2 경로에서 school landing page 정적 자산(html/css/javascript) 생성 또는 갱신 작업을 수행한다.
+  - tmux split 기반 재현 가능한 검증 흐름(세션 생성, 패널 분할, 패널별 bash 실행, 로그 확인)을 workspace_bootstrap 규칙에 맞게 구성한다.
+  - 기술 범위는 tmux, bash, html, css, javascript로 제한하고 추가 빌드 도구/프레임워크는 도입하지 않는다.
+  rule:
+  - 결과물은 school landing page의 정적 웹 자산(html, css, javascript) 구조를 유지해야 한다.
+  - 검증 절차는 동일 입력에서 동일 결과를 내도록 결정적이어야 한다.
+  - 각 액션은 재실행 가능해야 하며 중복 실행 시 기존 상태를 안전하게 처리해야 한다.
+  step:
+  - 프로젝트 루트 기준으로 landing page용 html/css/javascript 대상 파일을 식별한다.
+  - school landing page 요구에 맞게 정적 자산 파일을 생성하거나 기존 파일을 갱신한다.
+  - 자산 간 참조 관계(html의 css/javascript 연결)를 일관된 경로 기준으로 정리한다.
+  - 재실행 시 동일 산출물이 유지되도록 파일 생성/갱신 로직을 멱등적으로 맞춘다.
+  tasks:
+  - 프로젝트 루트 존재와 정적 자산 대상 파일 경로를 확인하고 경로 표기 방식을 루트 기준으로 일관화한다.
+  - landing page의 html/css/javascript 파일을 정적 구조로 생성 또는 갱신하고 동일 입력에서 동일 출력이 나오도록 내용과 생성 절차를 결정적으로 유지한다.
+  - 고유 식별자를 포함한 tmux 세션명을 정의해 세션 생성 및 split 패널 구성을 비대화형 명령으로 실행 가능하게 만든다.
+  - 각 패널에서 실행할 bash 검증 명령을 순서화해 자산 생성/검증/로그 수집이 재실행 가능하도록 스크립트화한다.
+  - 실패 시 즉시 중단하고 원인 로그를 남기며 성공 시 산출물과 검증 로그를 확인하는 상태 전이(초기→준비→실행→완료/실패)를 반영한다.
+  constraints:
+  - 작업 경로는 `/home/tree/project/rust-orc/.tmp_tmux_test2`로 고정한다.
+  - 기술 스택은 `tmux`, `bash`, `html`, `css`, `javascript` 범위를 벗어나지 않는다.
+  - 빌드 도구나 프레임워크를 추가 도입하지 않는다.
+  - 웹 자산은 정적 파일로 유지하고 런타임 서버 의존을 강제하지 않는다.
+  - 경로 참조는 프로젝트 루트 기준으로 일관되게 사용한다.
+  check:
+  - tmux 세션/패널 생성이 충돌 없이 완료되고 동일 명령 재실행 시 안전하게 동작하는지 확인한다.
+  - bash 검증 스크립트가 tmux split 환경에서 비대화형으로 순차 실행되며 실행 순서와 결과가 로그에 명확히 남는지 확인한다.
+  - landing page html/css/javascript 산출물이 존재하고 정적 자산 구조를 유지하는지 확인한다.
+  - 동일 입력으로 재검증 시 동일 결과가 재현되는지 확인한다.
+  - 오류 발생 경로에서 실패 상태 전이와 원인 로그 기록이 수행되는지 확인한다.
+- name: 각 tmux 패널에서 bash 검증 명령을 정해진 순서로 실행
+  type: action
+  domain:
+  - app
+  depends_on: []
+  scope:
+  - 프로젝트 루트 `/home/tree/project/rust-orc/.tmp_tmux_test2`에서 `workspace_bootstrap` 도메인의 상태 전이 `초기 -> 준비 -> 실행 -> 완료`를 tmux split 환경으로 재현한다.
+  - 기술 범위를 `tmux`, `bash`, `html`, `css`, `javascript`로 제한하고 정적 landing page 자산 구조를 유지한다.
+  - 비대화형 tmux 세션/패널 구성과 고유 식별자 적용으로 세션/패널 이름 충돌을 방지한다.
+  rule:
+  - 모든 실행 검증은 tmux split 환경에서 재현 가능해야 한다.
+  - 스크립트는 bash 기준으로 동작해야 하며 실행 순서가 명확해야 한다.
+  - 상태 전이는 `초기 -> 준비 -> 실행 -> 완료` 순서를 기본으로 한다.
+  - 실패 조건이 발생하면 즉시 `실패 상태`로 전이하고 원인 로그를 남긴다.
+  step:
+  - tmux 각 패널에 실행할 bash 검증 명령을 패널 역할별로 고정 매핑한다.
+  - 패널 간 선후행 의존을 반영해 동일한 순서로 비대화형 실행한다.
+  - 각 단계 종료 코드를 확인하고 실패 시 즉시 중단 후 실패 로그를 기록한다.
+  - 성공 시 패널별 실행 로그를 수집해 다음 점검 단계로 전달한다.
+  tasks:
+  - 작업 디렉토리와 필수 파일 구조 존재 여부를 확인하고 누락 시 동일 경로 기준으로 생성한다.
+  - 고유 세션명을 사용해 tmux 세션을 생성하고 검증 순서에 맞는 split 패널 레이아웃을 구성한다.
+  - school landing page용 `html`, `css`, `javascript` 정적 파일을 생성 또는 갱신한다.
+  - 각 tmux 패널에서 bash 검증 명령을 정해진 순서로 실행하고 실패 시 즉시 실패 상태로 전이한다.
+  - 실행 로그와 산출물 결과를 수집해 성공/실패를 결정하고 재실행 가능성을 확인한다.
+  constraints:
+  - tmux 세션/패널 이름은 고유 식별자를 사용해 충돌을 방지한다.
+  - 검증 명령은 bash 한정 문법으로 작성한다.
+  - 작업 경로는 `/home/tree/project/rust-orc/.tmp_tmux_test2`로 고정한다.
+  - 경로 참조 방식은 일관되게 유지하고 재실행 시 동일 결과를 보장한다.
+  check:
+  - 동일 입력으로 재실행 시 동일 로그/동일 산출물이 생성되는 결정적 검증 결과를 확인한다.
+  - tmux 세션/패널 생성, split 구성, 명령 실행이 모두 비대화형으로 동작하는지 확인한다.
+  - landing page 정적 자산 구조와 파일 참조 경로 일관성이 유지되는지 확인한다.
+  - 실패 조건 발생 시 원인 로그가 남고 상태가 즉시 실패로 전이되는지 확인한다.
+- name: 실행 로그와 산출물을 점검해 성공/실패를 확정하고 재실행 가능성 확인
+  type: action
+  domain:
+  - app
+  depends_on: []
+  scope:
+  - /home/tree/project/rust-orc/.tmp_tmux_test2 경로에서 tmux split 기반 workspace_bootstrap 실행 검증 흐름을 구성한다.
+  - 정적 웹 자산 index.html, styles.css, script.js를 생성/갱신해 school landing page 구조를 유지한다.
+  - 초기->준비->실행->완료 상태 전이를 bash 비대화형 명령으로 재현 가능하게 만든다.
+  rule:
+  - 모든 실행 검증은 tmux split 환경에서 재현 가능해야 한다.
+  - 검증 절차는 동일 입력에서 동일 결과를 내도록 결정적이어야 한다.
+  - 실패 조건이 발생하면 즉시 실패 상태로 전이하고 원인 로그를 남긴다.
+  - 각 액션은 재실행 가능해야 하며 중복 실행 시 기존 상태를 안전하게 처리해야 한다.
+  step:
+  - 각 tmux 패널 실행 로그를 수집해 명령 실행 순서와 종료 상태를 확인한다.
+  - html/css/javascript 산출물이 기대 경로와 구조를 유지하는지 검증한다.
+  - 성공 기준 충족 여부를 판단해 완료 또는 실패 상태를 확정한다.
+  - 동일 입력으로 재실행해 결과 일관성과 재실행 가능성을 확인한다.
+  tasks:
+  - 작업 디렉토리 존재를 확인하고 산출물/로그 경로를 프로젝트 루트 기준으로 일관되게 정의한다.
+  - 고유 식별자 세션명으로 tmux 새 세션을 생성하고 split 패널을 구성한다.
+  - 각 패널에서 bash 검증 명령을 순차 실행하도록 스크립트를 작성해 실행 순서를 고정한다.
+  - landing page html/css/javascript 파일을 생성 또는 갱신하고 동일 입력 시 동일 출력이 나오도록 결정적으로 구성한다.
+  - 실패 조건 발생 시 즉시 실패 상태로 종료하고 원인 로그를 남기며 재실행 시 기존 세션/파일 충돌을 안전 처리한다.
+  constraints:
+  - 작업 경로는 `/home/tree/project/rust-orc/.tmp_tmux_test2`로 고정한다.
+  - tmux 세션/패널 이름 충돌 방지를 위해 고유 식별자를 사용한다.
+  - 검증 명령은 bash 한정 문법으로 유지한다.
+  - 경로 참조 방식은 프로젝트 루트 기준으로 일관되게 유지한다.
+  check:
+  - tmux 세션/패널 생성이 비대화형으로 성공하고 이름 충돌 없이 고유 식별자가 적용되는지 확인한다.
+  - bash 스크립트가 각 패널에서 실행되며 실행 로그에 상태 전이(초기/준비/실행/완료 또는 실패)가 기록되는지 확인한다.
+  - index.html, styles.css, script.js 산출물이 존재하고 school landing page 정적 자산 구조를 유지하는지 확인한다.
+  - 동일 명령 재실행 시 결과와 로그가 결정적으로 재현되고 중복 실행으로 인한 오류가 없는지 확인한다.

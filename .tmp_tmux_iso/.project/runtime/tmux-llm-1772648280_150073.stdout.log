@@ -1,0 +1,16 @@
+scope:
+  - "workspace_bootstrap 도메인에서 tmux 상태 판별 흐름(not_initialized -> session_checked -> workspace_ready -> split_configured -> verification_passed|verification_failed) 구현"
+  - "프로젝트 루트(/home/tree/project/rust-orc/.tmp_tmux_iso) 기준 비대화형 bash 스크립트로 세션/윈도우/패인 검증 및 분할 자동화 구성"
+  - "tmux list-sessions/list-windows/list-panes 출력만으로 상태를 판별하고 재실행 시 동일 입력 동일 결과를 보장하는 검증 로직 적용"
+tasks:
+  - "scripts/workspace_bootstrap.sh 작성: set -euo pipefail, 작업 디렉터리 유효성 확인, 실패 시 즉시 중단 및 최소 로그 출력"
+  - "세션 검사/생성 로직 구현: tmux has-session 또는 list-sessions 기반 존재 확인 후 없으면 생성, 있으면 재사용, tmux 실패 시 1회 이내 재시도"
+  - "윈도우/패인 구성 로직 구현: 대상 세션/윈도우 이름을 입력값 또는 고정 규칙으로 일관 처리하여 split-window 적용"
+  - "검증 로직 구현: list-panes로 패인 개수 확인, list-windows로 레이아웃 확인, 둘 다 일치 시 verification_passed 아니면 verification_failed"
+  - "종료 코드 정책 구현: 성공 시 0, 검증 실패 또는 명령 실패 시 비0 반환, 단계별 상태/결과 로그를 명시적으로 출력"
+check:
+  - "bash -n scripts/workspace_bootstrap.sh 구문 검증 통과"
+  - "비대화형 실행으로 not_initialized부터 verification_passed까지 순차 상태 전이 로그 확인"
+  - "동일 입력 재실행 시 세션 중복 생성 없이 재사용되고 동일 패인 수/레이아웃 검증 결과가 재현되는지 확인"
+  - "의도적 불일치 조건에서 verification_failed 발생 및 후속 분할 작업 중단, 비0 종료 코드 반환 확인"
+  - "모든 파일 변경이 /home/tree/project/rust-orc/.tmp_tmux_iso 내부에만 발생했는지 확인"

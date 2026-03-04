@@ -1,0 +1,39 @@
+add_detail_project_code prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/마크다운 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- #info를 근거로 rules/constraints를 보강한다.
+- `# domains` 아래는 `## <domain_name>` 블록 리스트로 유지하고, 각 도메인 블록의 `### states`, `### action`, `### rules`를 보존한다.
+- `### states`, `### action`, `### rules`의 내용은 모두 `-` 불릿 리스트 형식으로 유지한다.
+- 파일 경로는 반드시 `./.project/project.md`만 사용한다.
+- `./project/project.md`를 생성/수정/참조하지 않는다.
+
+
+project.md:
+# info
+name : tmux_split_verification_for_school_landing_page
+description : tmux split verification for school landing page
+spec : tmux, bash, html, css, javascript
+path : /home/tree/project/rust-orc/.tmp_tmux_test2
+
+# features
+- workspace_bootstrap
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+출력은 project.md 전체 markdown만 반환한다.

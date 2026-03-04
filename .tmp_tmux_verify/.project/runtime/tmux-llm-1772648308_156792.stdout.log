@@ -1,0 +1,23 @@
+type: draft_item
+domain:
+- tmux_session_control
+depends_on:
+- workspace_bootstrap
+rule:
+- 세션이 없으면 생성 후 검증을 시작한다.
+- pane 분할 이후 pane 개수 증가가 확인되어야 한다.
+- 대상 pane 선택은 명시적 pane id 또는 index 기반으로 수행한다.
+- 검증 중 세션 식별자는 일관되게 유지한다.
+- pane 분할 검증은 tmux 실제 세션 상태(레이아웃, pane index, active pane)를 기준으로 판단한다.
+step:
+- 검증 경로에서 tmux 세션 존재 여부를 확인하고 없으면 검증용 세션을 생성 또는 재사용한다.
+- 분할 전 pane 개수, 레이아웃, active pane 상태를 조회한다.
+- 지정된 방식으로 pane을 분할하고 분할 후 pane 개수 증가를 검증한다.
+- target pane을 명시적으로 지정하고 target 지정 상태와 active pane 상태를 검증한다.
+- 세션 식별자, pane index, 레이아웃, active pane, target pane 결과를 기록한다.
+constraints:
+- tmux와 bash 환경만 사용한다.
+- 기존 사용자 tmux 세션을 파괴하지 않는다.
+- 분할 방식은 검증 시나리오에서 지정한 방식만 사용한다.
+- 프로젝트 범위를 벗어나는 전역 설정 변경을 하지 않는다.
+- 자동화 가능한 명령 흐름으로 재실행 가능해야 한다.

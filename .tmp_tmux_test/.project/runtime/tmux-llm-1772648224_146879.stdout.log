@@ -1,0 +1,21 @@
+type: implementation
+domain:
+  - tmux_split_verification
+depends_on:
+  - workspace_bootstrap
+  - school_landing_page
+rule:
+  - 프로젝트 루트(`/home/tree/project/rust-orc/.tmp_tmux_test`)에서 동일 명령으로 반복 실행 가능해야 한다.
+  - tmux 2개 pane 분할 상태에서 pane 역할을 서빙/검증으로 명확히 분리해 기술한다.
+  - 검증은 수동 추측이 아닌 실행 가능한 명령과 텍스트 기반 성공/실패 기준으로 기록한다.
+  - 문서의 명령, 파일명, 실행 순서는 코드/자산 구성과 일치해야 한다.
+step:
+  - tmux 세션을 생성하고 대상 프로젝트 루트로 작업 디렉터리를 고정한다.
+  - pane을 2개로 분할하고 한 pane은 정적 페이지 서빙, 다른 pane은 검증 명령 실행 역할로 지정한다.
+  - 서빙 pane에서 정적 파일 실행 명령을 수행하고 검증 pane에서 HTTP 응답/콘텐츠 확인 명령을 실행한다.
+  - 성공/실패 판정 기준을 명령 출력 기준으로 문서화하고 동일 절차 재실행 가능성을 확인한다.
+constraints:
+  - tmux 미설치 환경을 전제로 한 대체 절차를 포함하지 않는다.
+  - GUI 수동 조작만으로 성립하는 검증 절차를 사용하지 않는다.
+  - 외부 빌드 도구나 추가 패키지 의존성을 도입하지 않는다.
+  - 검증 절차는 최소 2개 pane 분할 상태를 전제로 해야 한다.

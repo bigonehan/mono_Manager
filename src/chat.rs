@@ -9,7 +9,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const CODEX_DANGEROUS_FLAG: &str = "--dangerously-bypass-approvals-and-sandbox";
 
-fn action_append_chat_log(project_root: &Path, role: &str, message: &str) {
+fn append_chat_log(project_root: &Path, role: &str, message: &str) {
     let path = project_root.join(".project").join("chat.log");
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
@@ -25,14 +25,14 @@ fn action_append_chat_log(project_root: &Path, role: &str, message: &str) {
     }
 }
 
-fn calc_codex_exec_timeout_sec() -> u64 {
-    crate::action_load_app_config()
+fn codex_exec_timeout_sec() -> u64 {
+    crate::load_app_config()
         .as_ref()
         .map_or(300, crate::config::AppConfig::default_timeout_sec)
         .max(1)
 }
 
-fn action_run_command_with_timeout(
+fn run_command_with_timeout(
     mut command: Command,
     timeout_sec: u64,
     timeout_label: &str,
@@ -74,25 +74,38 @@ struct LlmExecResult {
     stderr: String,
 }
 
-fn calc_should_use_tmux_for_llm() -> bool {
-    let debug_enabled = crate::action_load_app_config()
+fn should_use_tmux_for_llm() -> bool {
+    if !env_flag_true("ORC_USE_TMUX_PANES") {
+        return false;
+    }
+    let debug_enabled = crate::load_app_config()
         .as_ref()
         .is_none_or(crate::config::AppConfig::debug_enabled);
     debug_enabled && env::var("TMUX").map(|v| !v.trim().is_empty()).unwrap_or(false)
 }
 
-fn calc_llm_retry_count() -> u32 {
-    crate::action_load_app_config()
+fn env_flag_true(name: &str) -> bool {
+    match env::var(name) {
+        Ok(v) => {
+            let lowered = v.trim().to_ascii_lowercase();
+            lowered == "1" || lowered == "true" || lowered == "yes" || lowered == "on"
+        }
+        Err(_) => false,
+    }
+}
+
+fn llm_retry_count() -> u32 {
+    crate::load_app_config()
         .as_ref()
         .map_or(2, crate::config::AppConfig::llm_retry_count)
         .max(1)
 }
 
-fn calc_quote_sh(value: &str) -> String {
+fn quote_sh(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
-fn action_run_llm_via_tmux(
+fn run_llm_via_tmux(
     dir: &Path,
     llm_bin: &str,
     prompt: &str,
@@ -104,7 +117,7 @@ fn action_run_llm_via_tmux(
     let runtime = dir.join(".project").join("runtime");
     fs::create_dir_all(&runtime)
         .map_err(|e| format!("failed to create runtime dir {}: {}", runtime.display(), e))?;
-    let stamp = crate::calc_now_unix();
+    let stamp = crate::now_unix();
     let token = format!("{}_{}", stamp, std::process::id());
     let prompt_path = runtime.join(format!("tmux-llm-{}.prompt.txt", token));
     let script_path = runtime.join(format!("tmux-llm-{}.sh", token));
@@ -129,34 +142,37 @@ fn action_run_llm_via_tmux(
     let script = format!(
         "#!/usr/bin/env bash\n\
 cd {dir}\n\
-{llm} exec{flags} \"$(cat {prompt})\" > {stdout} 2> {stderr}\n\
+echo \"[orc-llm] start: {llm} exec\"\n\
+echo \"[orc-llm] cwd: {dir_display}\"\n\
+{llm} exec{flags} \"$(cat {prompt})\" > >(tee {stdout}) 2> >(tee {stderr} >&2)\n\
 status=$?\n\
 printf \"%s\" \"$status\" > {code}\n",
-        dir = calc_quote_sh(&dir.display().to_string()),
-        llm = calc_quote_sh(llm_bin),
+        dir = quote_sh(&dir.display().to_string()),
+        dir_display = dir.display(),
+        llm = quote_sh(llm_bin),
         flags = flags_joined,
-        prompt = calc_quote_sh(&prompt_path.display().to_string()),
-        stdout = calc_quote_sh(&stdout_path.display().to_string()),
-        stderr = calc_quote_sh(&stderr_path.display().to_string()),
-        code = calc_quote_sh(&code_path.display().to_string()),
+        prompt = quote_sh(&prompt_path.display().to_string()),
+        stdout = quote_sh(&stdout_path.display().to_string()),
+        stderr = quote_sh(&stderr_path.display().to_string()),
+        code = quote_sh(&code_path.display().to_string()),
     );
     fs::write(&script_path, script)
         .map_err(|e| format!("failed to write {}: {}", script_path.display(), e))?;
 
-    let script_cmd = format!("bash {}", calc_quote_sh(&script_path.display().to_string()));
-    let pane_id = crate::tmux::action_split_window_run(&script_cmd)
+    let script_cmd = format!("bash {}", quote_sh(&script_path.display().to_string()));
+    let pane_id = crate::tmux::split_window_run(&script_cmd)
         .map_err(|e| format!("{} (tmux split/run failed: {})", timeout_label, e))?;
-    let _ = crate::tmux::action_rename_pane(&pane_id, "llm-debug");
+    let _ = crate::tmux::rename_pane(&pane_id, "llm-debug");
 
     let started = Instant::now();
     while !code_path.exists() {
         if started.elapsed() >= Duration::from_secs(timeout_sec) {
-            let _ = crate::tmux::action_kill_pane(&pane_id);
+            let _ = crate::tmux::kill_pane(&pane_id);
             return Err(format!("{} timed out after {}s", timeout_label, timeout_sec));
         }
         thread::sleep(Duration::from_millis(200));
     }
-    let _ = crate::tmux::action_kill_pane(&pane_id);
+    let _ = crate::tmux::kill_pane(&pane_id);
 
     let code_raw = fs::read_to_string(&code_path)
         .map_err(|e| format!("failed to read {}: {}", code_path.display(), e))?;
@@ -170,19 +186,19 @@ printf \"%s\" \"$status\" > {code}\n",
     })
 }
 
-pub(crate) fn action_run_codex_exec_capture_with_timeout(
+pub(crate) fn run_codex_exec_capture_with_timeout(
     prompt: &str,
     timeout_sec: u64,
 ) -> Result<String, String> {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    action_append_chat_log(&cwd, "LLM_PROMPT", prompt);
-    let model_bin = crate::action_default_model_bin();
-    let dangerous = crate::calc_model_supports_dangerous_flag(&model_bin);
-    let total_attempts = calc_llm_retry_count();
+    append_chat_log(&cwd, "LLM_PROMPT", prompt);
+    let model_bin = crate::default_model_bin();
+    let dangerous = crate::model_supports_dangerous_flag(&model_bin);
+    let total_attempts = llm_retry_count();
     let mut last_error = "unknown llm error".to_string();
     for attempt in 1..=total_attempts {
-        if calc_should_use_tmux_for_llm() {
-            match action_run_llm_via_tmux(
+        if should_use_tmux_for_llm() {
+            match run_llm_via_tmux(
                 &cwd,
                 &model_bin,
                 prompt,
@@ -193,7 +209,7 @@ pub(crate) fn action_run_codex_exec_capture_with_timeout(
             ) {
                 Ok(result) => {
                     if result.success {
-                        action_append_chat_log(&cwd, "LLM_RESPONSE", &result.stdout);
+                        append_chat_log(&cwd, "LLM_RESPONSE", &result.stdout);
                         return Ok(result.stdout);
                     }
                     last_error = result.stderr;
@@ -209,14 +225,14 @@ pub(crate) fn action_run_codex_exec_capture_with_timeout(
                 command.arg(CODEX_DANGEROUS_FLAG);
             }
             command.arg(prompt);
-            match action_run_command_with_timeout(
+            match run_command_with_timeout(
                 command,
                 timeout_sec,
                 &format!("{} exec", model_bin),
             ) {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
+                    append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
                     return Ok(stdout);
                 }
                 Ok(output) => {
@@ -227,37 +243,37 @@ pub(crate) fn action_run_codex_exec_capture_with_timeout(
                 }
             }
         }
-        action_append_chat_log(
+        append_chat_log(
             &cwd,
             "LLM_RETRY",
             &format!("attempt {}/{} failed: {}", attempt, total_attempts, last_error),
         );
     }
-    action_append_chat_log(&cwd, "LLM_ERROR", &last_error);
+    append_chat_log(&cwd, "LLM_ERROR", &last_error);
     Err(last_error)
 }
 
-pub(crate) fn action_run_codex_exec_capture(prompt: &str) -> Result<String, String> {
-    action_run_codex_exec_capture_with_timeout(prompt, calc_codex_exec_timeout_sec())
+pub(crate) fn run_codex_exec_capture(prompt: &str) -> Result<String, String> {
+    run_codex_exec_capture_with_timeout(prompt, codex_exec_timeout_sec())
 }
 
-pub(crate) fn action_run_codex_exec_capture_in_dir(dir: &Path, prompt: &str) -> Result<String, String> {
-    action_run_codex_exec_capture_in_dir_with_timeout(dir, prompt, calc_codex_exec_timeout_sec())
+pub(crate) fn run_codex_exec_capture_in_dir(dir: &Path, prompt: &str) -> Result<String, String> {
+    run_codex_exec_capture_in_dir_with_timeout(dir, prompt, codex_exec_timeout_sec())
 }
 
-pub(crate) fn action_run_codex_exec_capture_in_dir_with_timeout(
+pub(crate) fn run_codex_exec_capture_in_dir_with_timeout(
     dir: &Path,
     prompt: &str,
     timeout_sec: u64,
 ) -> Result<String, String> {
-    action_append_chat_log(dir, "LLM_PROMPT", prompt);
-    let model_bin = crate::action_default_model_bin();
-    let dangerous = crate::calc_model_supports_dangerous_flag(&model_bin);
-    let total_attempts = calc_llm_retry_count();
+    append_chat_log(dir, "LLM_PROMPT", prompt);
+    let model_bin = crate::default_model_bin();
+    let dangerous = crate::model_supports_dangerous_flag(&model_bin);
+    let total_attempts = llm_retry_count();
     let mut last_error = "unknown llm error".to_string();
     for attempt in 1..=total_attempts {
-        if calc_should_use_tmux_for_llm() {
-            match action_run_llm_via_tmux(
+        if should_use_tmux_for_llm() {
+            match run_llm_via_tmux(
                 dir,
                 &model_bin,
                 prompt,
@@ -268,7 +284,7 @@ pub(crate) fn action_run_codex_exec_capture_in_dir_with_timeout(
             ) {
                 Ok(result) => {
                     if result.success {
-                        action_append_chat_log(dir, "LLM_RESPONSE", &result.stdout);
+                        append_chat_log(dir, "LLM_RESPONSE", &result.stdout);
                         return Ok(result.stdout);
                     }
                     last_error = result.stderr;
@@ -284,14 +300,14 @@ pub(crate) fn action_run_codex_exec_capture_in_dir_with_timeout(
                 command.arg(CODEX_DANGEROUS_FLAG);
             }
             command.arg(prompt);
-            match action_run_command_with_timeout(
+            match run_command_with_timeout(
                 command,
                 timeout_sec,
                 &format!("{} exec in {}", model_bin, dir.display()),
             ) {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    action_append_chat_log(dir, "LLM_RESPONSE", &stdout);
+                    append_chat_log(dir, "LLM_RESPONSE", &stdout);
                     return Ok(stdout);
                 }
                 Ok(output) => {
@@ -302,26 +318,26 @@ pub(crate) fn action_run_codex_exec_capture_in_dir_with_timeout(
                 }
             }
         }
-        action_append_chat_log(
+        append_chat_log(
             dir,
             "LLM_RETRY",
             &format!("attempt {}/{} failed: {}", attempt, total_attempts, last_error),
         );
     }
-    action_append_chat_log(dir, "LLM_ERROR", &last_error);
+    append_chat_log(dir, "LLM_ERROR", &last_error);
     Err(last_error)
 }
 
-pub(crate) fn action_run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, String> {
+pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, String> {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    action_append_chat_log(&cwd, "LLM_PROMPT", prompt);
-    let timeout_sec = calc_codex_exec_timeout_sec().max(30);
-    let use_dangerous = crate::calc_model_supports_dangerous_flag(llm);
-    let total_attempts = calc_llm_retry_count();
+    append_chat_log(&cwd, "LLM_PROMPT", prompt);
+    let timeout_sec = codex_exec_timeout_sec().max(30);
+    let use_dangerous = crate::model_supports_dangerous_flag(llm);
+    let total_attempts = llm_retry_count();
     let mut last_error = "unknown llm error".to_string();
     for attempt in 1..=total_attempts {
-        if calc_should_use_tmux_for_llm() {
-            match action_run_llm_via_tmux(
+        if should_use_tmux_for_llm() {
+            match run_llm_via_tmux(
                 &cwd,
                 llm,
                 prompt,
@@ -331,11 +347,11 @@ pub(crate) fn action_run_llm_exec_capture(llm: &str, prompt: &str) -> Result<Str
                 &format!("{} exec -y", llm),
             ) {
                 Ok(result) if result.success => {
-                    action_append_chat_log(&cwd, "LLM_RESPONSE", &result.stdout);
+                    append_chat_log(&cwd, "LLM_RESPONSE", &result.stdout);
                     return Ok(result.stdout);
                 }
                 Ok(result) if result.stderr.contains("unexpected argument '-y'") => {
-                    match action_run_llm_via_tmux(
+                    match run_llm_via_tmux(
                         &cwd,
                         llm,
                         prompt,
@@ -345,7 +361,7 @@ pub(crate) fn action_run_llm_exec_capture(llm: &str, prompt: &str) -> Result<Str
                         &format!("{} exec", llm),
                     ) {
                         Ok(retry) if retry.success => {
-                            action_append_chat_log(&cwd, "LLM_RESPONSE", &retry.stdout);
+                            append_chat_log(&cwd, "LLM_RESPONSE", &retry.stdout);
                             return Ok(retry.stdout);
                         }
                         Ok(retry) => {
@@ -370,14 +386,14 @@ pub(crate) fn action_run_llm_exec_capture(llm: &str, prompt: &str) -> Result<Str
                 command.arg(CODEX_DANGEROUS_FLAG);
             }
             command.arg(prompt);
-            match action_run_command_with_timeout(
+            match run_command_with_timeout(
                 command,
                 timeout_sec,
                 &format!("{} exec -y", llm),
             ) {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
+                    append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
                     return Ok(stdout);
                 }
                 Ok(output) => {
@@ -389,14 +405,14 @@ pub(crate) fn action_run_llm_exec_capture(llm: &str, prompt: &str) -> Result<Str
                             retry_command.arg(CODEX_DANGEROUS_FLAG);
                         }
                         retry_command.arg(prompt);
-                        match action_run_command_with_timeout(
+                        match run_command_with_timeout(
                             retry_command,
                             timeout_sec,
                             &format!("{} exec", llm),
                         ) {
                             Ok(retry) if retry.status.success() => {
                                 let stdout = String::from_utf8_lossy(&retry.stdout).to_string();
-                                action_append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
+                                append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
                                 return Ok(stdout);
                             }
                             Ok(retry) => {
@@ -416,12 +432,12 @@ pub(crate) fn action_run_llm_exec_capture(llm: &str, prompt: &str) -> Result<Str
                 }
             }
         }
-        action_append_chat_log(
+        append_chat_log(
             &cwd,
             "LLM_RETRY",
             &format!("attempt {}/{} failed: {}", attempt, total_attempts, last_error),
         );
     }
-    action_append_chat_log(&cwd, "LLM_ERROR", &last_error);
+    append_chat_log(&cwd, "LLM_ERROR", &last_error);
     Err(last_error)
 }

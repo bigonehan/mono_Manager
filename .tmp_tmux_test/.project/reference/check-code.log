@@ -1,0 +1,15 @@
+[1772648250] 시작/프롬프트 전송 | trigger=check_code_draft timeout=300s
+[1772648265] 무응답 보호 | check-code LLM 응답 대기 중 (15s)
+[1772648280] 무응답 보호 | check-code LLM 응답 대기 중 (30s)
+[1772648295] 무응답 보호 | check-code LLM 응답 대기 중 (45s)
+[1772648310] 무응답 보호 | check-code LLM 응답 대기 중 (60s)
+[1772648325] LLM 응답 수신 | check-code 응답 수신
+[1772648325] 완료/실패 | 완료: CHECK_CODE_RESULT
+[1772648377] 시작/프롬프트 전송 | trigger=check_code_draft timeout=300s
+[1772648392] 무응답 보호 | check-code LLM 응답 대기 중 (15s)
+[1772648407] 무응답 보호 | check-code LLM 응답 대기 중 (30s)
+[1772648422] 무응답 보호 | check-code LLM 응답 대기 중 (45s)
+[1772648437] 무응답 보호 | check-code LLM 응답 대기 중 (60s)
+[1772648452] 무응답 보호 | check-code LLM 응답 대기 중 (75s)
+[1772648467] LLM 응답 수신 | check-code 응답 수신
+[1772648467] 완료/실패 | 완료: CHECK_CODE_RESULT

@@ -1,0 +1,7 @@
+[1772648260] project-create | non-empty workspace: load project.md
+[1772648283] project-detail | detail_code_project completed
+[1772648283] domain-create | create_code_domain completed
+[1772648283] bootstrap | bootstrap_code_project start
+[1772648360] bootstrap | bootstrap_code_project completed
+[1772648360] plan-init | init_code_plan -a start
+[1772648360] session | new session start: init_code_plan -a

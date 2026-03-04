@@ -1,3 +1,5 @@
+# feedback
+
 # 문제
 - `~/temp` 1차 시도에서 출력 파일(`project.md`, `src/*`, `package.json`)은 생성됐지만 `.project/feature/*` draft는 생성되지 않았다.
 - 즉, 정지 지점은 UI 갱신 문제가 아니라 `create_code_draft` 이전 단계다.
@@ -41,3 +43,13 @@
 ## 2026-03-03 run_parallel_test failure fix
 - apply: room-level lock (`.temp/<room>.lock`) added in chat send path to serialize YAML updates.
 - result: `cargo run --bin orc -- run_parallel_test` completed with 10/10 reactions.
+
+## entry-1772646602
+- status: failed
+- summary: auto_code_message failed (attempt 1/3)
+- detail: error: init_code_project failed: timeout after 420s | current_message: astro zustand gsap을 이용한 scroll event가 들어간 학교 랜딩페이지를 만들어줘. 반응형 디자인을 지원해야하고 shadcn을 사용해야해, 그리고 Nav 메뉴에는 main, ask 메뉴가 있어야하고 ask, main페이지는 각각 별개로 들어가야해. | next_attempt_message: 타임아웃 방지를 위해 최소 범위로 먼저 완성해줘: Astro + shadcn + Zustand + GSAP 기반 반응형 학교 랜딩페이지를 구현하되 Nav는 main/ask 2개만 두고 `/main`, `/ask`를 별도 라우트로 분리, GSAP 스크롤 이벤트는 main에 핵심 섹션 1개만 적용, 불필요한 에셋/애니메이션/설정 확장은 제외하고 실행 가능한 최소 코드부터 만들어줘.
+
+## 2026-03-05 tmux pane behavior failure log
+- cause: tmux worker pane이 상하 분할로 열리고 pane 출력이 보이지 않는 현상이 재현됨.
+- analysis: 실행 바이너리 재빌드 전 구버전 경로가 호출되어 `split-window -P -F ...` 형태(분할 방향/타깃 미고정)로 동작했고, pane 시작 로그가 없어 무출력처럼 보임.
+- retry: `cargo build`로 바이너리 재빌드 후 동일 경로(`orc init_code_project -a ...` in tmux)를 재실행해 `split-window -h -t <pane>` 호출 및 pane 출력 표시를 확인.

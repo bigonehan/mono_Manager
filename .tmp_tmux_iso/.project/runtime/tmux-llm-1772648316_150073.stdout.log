@@ -1,0 +1,16 @@
+scope:
+  - "/home/tree/project/rust-orc/.tmp_tmux_iso 기준으로 tmux 세션/윈도우/패인 분할 검증 자동화 경로를 정의한다."
+  - "workspace_bootstrap 도메인의 순차 상태 전이(not_initialized→session_checked→workspace_ready→split_configured→verification_passed|verification_failed)를 강제한다."
+  - "성공/실패 기준 로그 출력과 종료 코드 반환을 비대화형 bash 스크립트(set -euo pipefail)로 구현한다."
+tasks:
+  - "프로젝트 루트에 bash 검증 스크립트를 작성하고 작업 디렉터리 유효성, tmux 설치/실행 가능 여부, 대상 세션 존재 여부를 선검증한다."
+  - "tmux list-sessions 결과로 세션을 확인하고 없으면 1회 생성 시도, 실패 시 1회 재시도 후 verification_failed로 종료한다."
+  - "대상 윈도우/패인을 조회(tmui list-windows, list-panes)하여 분할을 적용하고, 기존 구성은 재사용하며 중복 생성하지 않는다."
+  - "분할 후 tmux list-panes로 패인 개수와 레이아웃을 함께 검증하고 기준 불일치 시 후속 작업 없이 실패 종료한다."
+  - "각 단계에서 성공/실패 로그와 원인 최소 로그를 출력하고 성공 시 0, 실패 시 비0 종료 코드를 반환한다."
+check:
+  - "동일 입력으로 스크립트를 2회 이상 실행해도 세션 재사용과 동일 검증 결과가 재현되는지 확인한다."
+  - "성공 케이스: 목표 세션/윈도우에서 패인 개수와 레이아웃이 기대값과 일치하고 종료 코드가 0인지 확인한다."
+  - "실패 케이스: tmux 명령 실패 또는 검증 불일치 시 즉시 중단되고 verification_failed 로그와 비0 종료 코드가 기록되는지 확인한다."
+  - "상태 판별이 tmux list-sessions/list-windows/list-panes 출력만으로 수행되는지 점검한다."
+  - "프로젝트 외부 디렉터리 파일 변경이 없고 외부 네트워크/서비스 의존 검증이 추가되지 않았는지 확인한다."

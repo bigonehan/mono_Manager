@@ -1,0 +1,13 @@
+트리거: check_code_draft
+대상:
+- workspace 경로가 /home/tree/project/rust-orc/.tmp_tmux_verify 인지 확인하고 tmux/bash 가용성을 점검한다: .project/drafts.yaml
+- 검증용 tmux 세션을 생성 또는 재사용하고 pane 분할 전후 개수, 레이아웃, active pane, target pane 지정 상태를 검증한다: .project/drafts.yaml
+- 동일 입력으로 재실행 가능한 명령 순서를 고정하고 타임아웃/재시도 기준을 적용한다: .project/drafts.yaml
+- 명령을 target pane으로 전송해 출력이 해당 pane에 표시되는지 캡처하고 기대 패턴으로 성공/실패를 판정한다: .project/drafts.yaml
+- 실패 시 분할 실패, target pane 지정 실패, 출력 미전달로 원인을 분류해 기록한다: .project/drafts.yaml
+
+지시:
+- `$check-code` 스킬을 사용해 점검/수정을 수행해.
+- YAML/Markdown 참조 파일이 있으면 먼저 읽고 값을 채워야 할 헤더/속성을 정리한 뒤 형식에 맞게 반영해.
+- `.project/feature` 경로를 새로 생성하거나 사용하지 말고, `.project/drafts.yaml`만 기준으로 점검해.
+- 문제가 없으면 `NO_CHANGE`를 출력.

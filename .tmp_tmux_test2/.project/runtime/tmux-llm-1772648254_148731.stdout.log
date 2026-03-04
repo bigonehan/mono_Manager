@@ -1,0 +1,22 @@
+type: task
+domain:
+  - workspace_bootstrap
+depends_on:
+  - 작업 경로(`/home/tree/project/rust-orc/.tmp_tmux_test2`) 존재 확인 및 기본 파일 구조 점검
+  - 고유 식별자를 포함한 tmux 세션 생성 및 split 패널 비대화형 구성
+  - school landing page 정적 자산(html/css/javascript) 생성 또는 갱신
+rule:
+  - 모든 실행 검증은 tmux split 환경에서 재현 가능해야 한다.
+  - 스크립트는 bash 기준으로 동작해야 하며 실행 순서가 명확해야 한다.
+  - 상태 전이는 `초기 -> 준비 -> 실행 -> 완료` 순서를 기본으로 한다.
+  - 실패 조건이 발생하면 즉시 `실패 상태`로 전이하고 원인 로그를 남긴다.
+step:
+  - tmux 각 패널에 실행할 bash 검증 명령을 패널 역할별로 고정 매핑한다.
+  - 패널 간 선후행 의존을 반영해 동일한 순서로 비대화형 실행한다.
+  - 각 단계 종료 코드를 확인하고 실패 시 즉시 중단 후 실패 로그를 기록한다.
+  - 성공 시 패널별 실행 로그를 수집해 다음 점검 단계로 전달한다.
+constraints:
+  - tmux 세션/패널 이름은 고유 식별자를 사용해 충돌을 방지한다.
+  - 검증 명령은 bash 한정 문법으로 작성한다.
+  - 작업 경로는 `/home/tree/project/rust-orc/.tmp_tmux_test2`로 고정한다.
+  - 경로 참조 방식은 일관되게 유지하고 재실행 시 동일 결과를 보장한다.

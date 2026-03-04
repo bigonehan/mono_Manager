@@ -1,0 +1,17 @@
+scope:
+  - "프로젝트 루트 `/home/tree/project/rust-orc/.tmp_tmux_test`에서 정적 단일 페이지 학교 랜딩 자산(`index.html`, `styles.css`, `script.js`)을 최소 구성으로 구현한다."
+  - "랜딩 페이지는 헤더/소개/핵심 정보/CTA 시맨틱 섹션, 반응형 CSS, 핵심 상호작용 JavaScript를 포함하고 외부 라이브러리 없이 브라우저 기본 환경에서 동작하게 한다."
+  - "tmux 2-pane split 기반으로 서빙 pane/검증 pane 역할을 분리한 재현 가능한 검증 절차를 문서화하고 실행 명령과 파일/순서를 일치시킨다."
+tasks:
+  - "루트 경로 유효성을 확인하고 `./project/project.md`는 건드리지 않으며 프로젝트 문서 경로는 `./.project/project.md` 규칙만 따른다."
+  - "`index.html`에 학교 랜딩 구조(헤더, 소개, 핵심 정보, CTA)와 `styles.css`, `script.js` 연결을 작성한다."
+  - "`styles.css`에 접근성/가독성 우선의 기본 스타일과 모바일 대응 반응형 규칙을 작성한다."
+  - "`script.js`에 CTA 등 핵심 상호작용만 구현하고 즉시실행 범위 또는 모듈 패턴으로 전역 오염을 최소화한다."
+  - "tmux 검증 절차를 단계형으로 정리해 세션 생성, pane 분할, pane별 명령(서빙/검증), 성공/실패 판정 텍스트를 명시한다."
+  - "검증 명령을 프로젝트 루트에서 그대로 실행 가능하게 고정하고 반복 실행 가능한 동일 커맨드 시퀀스로 유지한다."
+check:
+  - "`pwd` 출력이 `/home/tree/project/rust-orc/.tmp_tmux_test`인지 확인한다."
+  - "`tmux new-session -d -s school_lp` 후 `tmux split-window -h -t school_lp`로 최소 2-pane 구성을 만든다."
+  - "서빙 pane에서 `python3 -m http.server 4173`를 실행하고 검증 pane에서 `curl -fsS http://127.0.0.1:4173/index.html`로 응답을 확인한다."
+  - "검증 pane에서 `rg \"<header|소개|핵심 정보|CTA\" index.html` 및 `rg \"addEventListener\" script.js`로 구조/인터랙션 연결을 확인한다."
+  - "브라우저에서 페이지 로드 시 콘솔 에러가 없고 CTA 상호작용이 동작하면 성공, HTTP 응답 실패/콘솔 에러/섹션 누락 시 실패로 판정한다."

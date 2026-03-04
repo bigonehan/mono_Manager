@@ -1,0 +1,179 @@
+[1772648258] LLM_PROMPT
+infer_code_spec prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 출력 형식은 반드시 한 줄 `spec: <comma-separated tech list>` 이다.
+- 설명, 코드블록, JSON, YAML, 마크다운 리스트를 출력하지 않는다.
+- message와 workspace_hint를 함께 읽고 가장 적절한 spec을 추론한다.
+- spec에는 실제 기술명을 소문자 기준으로 포함한다. 예: `next js, react, zustand`.
+- 불확실하면 가장 보수적인 실행 가능 스택을 선택한다.
+
+
+message:
+tmux flow verification
+
+workspace_hint:
+
+
+반드시 `spec: ...` 한 줄만 출력.
+
+[1772648260] LLM_RESPONSE
+spec: tmux, bash, shell script
+
+
+[1772648260] LLM_PROMPT
+infer_code_spec prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 출력 형식은 반드시 한 줄 `spec: <comma-separated tech list>` 이다.
+- 설명, 코드블록, JSON, YAML, 마크다운 리스트를 출력하지 않는다.
+- message와 workspace_hint를 함께 읽고 가장 적절한 spec을 추론한다.
+- spec에는 실제 기술명을 소문자 기준으로 포함한다. 예: `next js, react, zustand`.
+- 불확실하면 가장 보수적인 실행 가능 스택을 선택한다.
+
+
+message:
+current workspace spec inference
+
+workspace_hint:
+
+
+반드시 `spec: ...` 한 줄만 출력.
+
+[1772648264] LLM_RESPONSE
+spec: rust, cargo
+
+
+[1772648264] LLM_PROMPT
+add_detail_project_code prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/마크다운 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- #info를 근거로 rules/constraints를 보강한다.
+- `# domains` 아래는 `## <domain_name>` 블록 리스트로 유지하고, 각 도메인 블록의 `### states`, `### action`, `### rules`를 보존한다.
+- `### states`, `### action`, `### rules`의 내용은 모두 `-` 불릿 리스트 형식으로 유지한다.
+- 파일 경로는 반드시 `./.project/project.md`만 사용한다.
+- `./project/project.md`를 생성/수정/참조하지 않는다.
+
+
+project.md:
+# info
+name : tmux_flow_verification
+description : tmux flow verification
+spec : tmux, bash, shell script
+path : /home/tree/project/rust-orc/.tmp_tmux_flow2
+
+# features
+- workspace_bootstrap
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+출력은 project.md 전체 markdown만 반환한다.
+
+[1772648283] LLM_RESPONSE
+# info
+name : tmux_flow_verification
+description : tmux flow verification
+spec : tmux, bash, shell script
+path : /home/tree/project/rust-orc/.tmp_tmux_flow2
+
+# features
+- workspace_bootstrap
+
+# rules
+- 모든 실행 스크립트는 `bash` 기준으로 동작해야 한다.
+- tmux 세션/윈도우/패인 이름은 충돌 없이 재실행 가능한 규칙으로 관리한다.
+- 스크립트는 동일 입력에 대해 멱등하게 동작해야 한다.
+- 실패 시 즉시 비정상 종료 코드와 원인 메시지를 출력한다.
+- 경로 기준은 프로젝트 루트(`/home/tree/project/rust-orc/.tmp_tmux_flow2`)로 고정한다.
+
+# constraints
+- `tmux`와 `bash`가 설치된 환경에서만 동작한다.
+- 비대화형 실행을 기본으로 하며 사용자 입력 대기를 요구하지 않는다.
+- 프로젝트 루트 외부 파일/세션 상태를 임의로 변경하지 않는다.
+- 검증 가능한 명령 로그를 남겨야 한다.
+
+# domains
+## workspace_bootstrap
+### states
+- requested
+- session_prepared
+- panes_configured
+- bootstrap_verified
+- failed
+### action
+- tmux 세션 생성 또는 기존 세션 재사용 여부 판별
+- 윈도우/패인 레이아웃 구성
+- 각 패인에 초기 명령 주입
+- 실행 결과 및 상태 검증
+### rules
+- 상태 전이는 `requested -> session_prepared -> panes_configured -> bootstrap_verified` 순서를 따른다.
+- 중간 단계 실패 시 상태는 즉시 `failed`로 전환한다.
+- 이미 준비된 세션이 있으면 중복 생성하지 않고 검증 단계로 진행한다.
+- 모든 동작은 재실행 시 동일 결과를 보장해야 한다.
+### constraints
+- 세션 이름은 고정 규칙을 사용해 중복 충돌을 방지해야 한다.
+- 패인 구성은 최소 1개 이상이며 검증 가능한 명령이 포함되어야 한다.
+- 실패 상태에서는 추가 동작을 진행하지 않는다.
+
+
+[1772648283] LLM_PROMPT
+너는 프로젝트 bootstrap 구현기다.
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+입력:
+- project_name: tmux_flow_verification
+- project_root: .
+- spec: tmux, bash, shell script
+- preset: {{preset}}
+
+작업 지시:
+1) 반드시 `project_root` 내부 파일만 수정/생성한다.
+2) `spec`만 기준으로 최소 초기 실행 골격을 만든다.
+3) hello world 확인 기준:
+- rust 계열: `cargo run` 시 `hello world` 출력
+- react/next/vite 계열: 실행 시 화면에 `hello world` 렌더
+4) 필요한 경우 `package.json`, 엔트리 파일, 빌드 설정 파일을 생성/수정한다.
+5) `spec`에 라이브러리명이 있으면 `package.json` 의 dependency/devDependency에 반드시 반영한다.
+6) `spec`에 `zustand`가 포함되면 `zustand` 의존성을 반드시 추가한다.
+7) `spec`에 계산기 구현을 암시하는 정보가 있을 때만 최소 계산기 구조(`app/page.tsx`, `store/calc.ts` 또는 동등 파일)를 생성한다.
+8) 기존 파일이 있으면 덮어쓰기 전에 현재 구조와 충돌하지 않게 최소 변경으로 반영한다.
+9) 출력은 첫 줄에 `BOOTSTRAP_DONE:`로 시작하는 한 줄 요약을 반드시 포함한다.
+10) 설명은 짧게, 코드블록 없이 텍스트로만 출력한다.
+11) auto 모드에서는 질문/확인 요청 없이 spec만 기준으로 스스로 판단해 진행한다.
+
+
+[1772648360] LLM_RESPONSE
+BOOTSTRAP_DONE: `tmux, bash, shell script` 기준 최소 실행 골격을 `.`에 생성했고 `./run.sh`로 `hello world` 출력 검증까지 완료했습니다.
+
+변경 파일:
+- [run.sh](/home/tree/project/rust-orc/.tmp_tmux_flow2/run.sh)
+- [scripts/bootstrap.sh](/home/tree/project/rust-orc/.tmp_tmux_flow2/scripts/bootstrap.sh)
+- [.agents/log.md](/home/tree/project/rust-orc/.tmp_tmux_flow2/.agents/log.md)
+
+적용 내용:
+- `run.sh` 진입점 추가
+- `scripts/bootstrap.sh`에 tmux 세션/윈도우 준비, 패인 구성, 명령 주입, 상태 검증 로직 추가
+- 실행 시 `hello world` 출력
+- feature 완료 로그 추가
+
+검증 결과:
+- `./run.sh` 실행 성공 (2회 재실행 포함)
+- 출력: `hello world`
+- 상태: `session=tmux_flow_verification window=bootstrap state=bootstrap_verified`
+
+
