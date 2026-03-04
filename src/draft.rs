@@ -73,8 +73,7 @@ pub(crate) struct DraftsListDoc {
     #[serde(default)]
     pub(crate) flows: Vec<String>,
     #[serde(default)]
-    #[serde(alias = "feature")]
-    pub(crate) features: Vec<String>,
+        pub(crate) features: Vec<String>,
     #[serde(default)]
     pub(crate) planned: Vec<String>,
     #[serde(default)]
@@ -355,7 +354,7 @@ pub(crate) fn draft_create() -> Result<String, String> {
     let preflight_msg = crate::action_preflight_draft_create(&path)?;
     let mut doc = crate::action_load_drafts_list(&path)?;
     crate::action_sync_draft_state_doc(project_root, &mut doc);
-    crate::action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc)?;
+    crate::action_save_drafts_list_primary(project_root, &doc)?;
     let project_md_path = crate::action_resolve_project_md_path_for_flow();
     let project_md = fs::read_to_string(&project_md_path)
         .map_err(|e| format!("failed to read {}: {}", project_md_path.display(), e))?;
@@ -411,8 +410,8 @@ pub(crate) fn draft_create() -> Result<String, String> {
                 if !retry_on_fail {
                     crate::action_sync_draft_state_doc(project_root, &mut doc);
                     let _ =
-                        crate::action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc);
-                    return Err(format!("create-draft failed at `{}`: {}", next_failures[0].0, e));
+                        crate::action_save_drafts_list_primary(project_root, &doc);
+                    return Err(format!("create_code_draft failed at `{}`: {}", next_failures[0].0, e));
                 }
             } else {
                 generated.push((feature, result.unwrap_or_default()));
@@ -440,7 +439,7 @@ pub(crate) fn draft_create() -> Result<String, String> {
                 }
             }
             crate::action_sync_draft_state_doc(project_root, &mut doc);
-            let _ = crate::action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc);
+            let _ = crate::action_save_drafts_list_primary(project_root, &doc);
         }
         if next_failures.is_empty() {
             failures.clear();
@@ -449,24 +448,24 @@ pub(crate) fn draft_create() -> Result<String, String> {
         failures = next_failures;
         if attempt < max_attempt {
             crate::action_sync_draft_state_doc(project_root, &mut doc);
-            let _ = crate::action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc);
+            let _ = crate::action_save_drafts_list_primary(project_root, &doc);
             attempt_targets = doc.draft_state.pending.clone();
         }
     }
     crate::action_sync_draft_state_doc(project_root, &mut doc);
-    crate::action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc)?;
+    crate::action_save_drafts_list_primary(project_root, &doc)?;
     if !failures.is_empty() {
         let pending_names: Vec<String> = failures.into_iter().map(|(name, _)| name).collect();
         return Err(format!(
-            "create-draft retry exhausted; pending: {}",
+            "create_code_draft retry exhausted; pending: {}",
             pending_names.join(", ")
         ));
     }
     created.sort();
     created.dedup();
-    let check_msg = crate::action_run_check_code_after_draft_changes(&created, "create-draft")?;
+    let check_msg = crate::action_run_check_code_after_draft_changes(&created, "create_code_draft")?;
     Ok(format!(
-        "{}; draft-create completed with llm: {} item(s) from drafts_list.yaml.planned | {}",
+        "{}; create_code_draft completed with llm: {} item(s) from drafts_list.yaml.planned | {}",
         preflight_msg,
         created.len(),
         check_msg,
@@ -508,9 +507,9 @@ pub(crate) fn draft_add(feature_name: &str, request: Option<String>) -> Result<S
     fs::write(&draft_path, &draft_yaml)
         .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
     let check_msg =
-        crate::action_run_check_code_after_draft_changes(&[generated_name.clone()], "add-draft")?;
+        crate::action_run_check_code_after_draft_changes(&[generated_name.clone()], "add_code_draft")?;
     Ok(format!(
-        "draft-add completed with llm: planned+file updated for {} ({}) | {}",
+        "add_code_draft completed with llm: planned+file updated for {} ({}) | {}",
         generated_name,
         draft_path.display(),
         check_msg

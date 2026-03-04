@@ -1,17 +1,10 @@
+name: ""
+type: "action"
+domain: []
+depends_on: []
+scope: []
 rule: []
-features:
-  domain: []
-  flow: []
-task:
-  - name: ""
-    type: ""
-    domain: []
-    depends_on: []
-    scope:
-      - ""
-    rule:
-      - ""
-    step:
-      - ""
-    touches: []
-    contracts: []
+step: []
+tasks: []
+constraints: []
+check: []

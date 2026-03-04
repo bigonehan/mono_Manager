@@ -1,6 +1,6 @@
 # 문제
 - `~/temp` 1차 시도에서 출력 파일(`project.md`, `src/*`, `package.json`)은 생성됐지만 `.project/feature/*` draft는 생성되지 않았다.
-- 즉, 정지 지점은 UI 갱신 문제가 아니라 `create-draft` 이전 단계다.
+- 즉, 정지 지점은 UI 갱신 문제가 아니라 `create_code_draft` 이전 단계다.
 - 추가로 `project.md`에서 `func_xxxxxxxx`/`TODO`가 추출되며 `drafts_list.yaml` 키가 비정상(`func_*`, `t_o_d_o`)으로 오염된다.
 
 # 해결책

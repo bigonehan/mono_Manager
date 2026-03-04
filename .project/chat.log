@@ -4302,3 +4302,227 @@ FEATURE_NAME: <snake_case>
 ```
 
 
+[1772610528] LLM_PROMPT
+너는 project.md 생성기다.
+입력:
+- name: sampleweb
+- description: heolloworld를 출력하는 간단한 web app으로
+- spec: nextjs
+- goal: 
+- rules:
+- (작성 필요)
+
+지시:
+1) 템플릿(`assets/code/templates/project.md`) 구조를 정확히 따른다.
+2) 규칙은 `$plan-project-code`, `$build_domain` 스킬을 사용한다.
+3) 도메인 설계 시 `/home/tree/ai/skills/build-domain/SKILL.md`를 참조한다.
+4) `## plan`에는 최소 5개 기능 항목을 작성한다.
+5) 필수 헤더를 모두 포함한다: `# info`, `## rule`, `## plan`, `## features`, `## structure`, `# Domains`, `# Flow`(또는 `# Stage`), `# UI`, `# Step`, `# Constraints`, `# Verification`, `# Gate Checklist`.
+6) `# Domains`에는 `### domain` 블록을 최소 1개 포함하고, 각 블록에 `- **name**:`, `- **description**:`, `- **state**:`, `- **action**:`, `- **rule**:`, `- **variable**:`를 모두 포함한다.
+7) 출력은 markdown 본문만 작성한다.
+
+
+[1772610569] LLM_RESPONSE
+# info
+- name: sampleweb
+- description: heolloworld를 출력하는 간단한 web app
+- path: ./.project/project.md
+- spec: nextjs
+- goal: 브라우저에서 `heolloworld`가 즉시 보이는 최소 웹 앱 완성
+
+## rule
+- 템플릿 구조를 유지하고 섹션 헤더를 변경하지 않는다.
+- 구현 범위는 최소 기능(출력/라우트/기본 실행)으로 제한한다.
+- 도메인은 `build_domain` 규칙에 따라 단일 상위 도메인 우선으로 설계한다.
+- 기능 항목은 `명령 | 실행/변경 파일 | 파생 결과` 형식으로 작성한다.
+
+## plan
+1. Next.js 앱 초기 진입 경로(`/`)에서 `heolloworld` 렌더링
+2. 페이지 제목/메타 설정으로 앱 식별 정보 노출
+3. 최소 스타일 적용으로 텍스트 가독성 확보
+4. 개발 실행 및 빌드 명령 검증
+5. 기본 테스트(렌더 확인) 또는 실행 검증 절차 문서화
+
+## features
+1. `create_app` | `package.json`, `next.config.*`, `app/layout.tsx`, `app/page.tsx` | Next.js 기본 실행 가능한 앱 골격 생성
+2. `render_hello` | `app/page.tsx` | 메인 화면에 `heolloworld` 텍스트 출력
+3. `set_metadata` | `app/layout.tsx` | 문서 title/description 설정
+4. `add_style` | `app/globals.css` | 기본 중앙 정렬/가독성 스타일 적용
+5. `verify_run` | `README.md` 또는 검증 문서 | `dev/build/start` 실행 및 확인 절차 명시
+
+## structure
+- `app/layout.tsx`: 공통 레이아웃/메타데이터
+- `app/page.tsx`: 홈 화면 `heolloworld` 출력
+- `app/globals.css`: 최소 전역 스타일
+- `package.json`: 실행/빌드 스크립트
+
+# Domains
+### domain
+- **name**: web_app
+- **description**: 단일 페이지에서 핵심 문구를 사용자에게 표시하는 최소 웹 애플리케이션 도메인
+- **state**: 초기 로딩, 렌더 완료, 빌드 가능
+- **action**: 페이지 렌더, 메타데이터 설정, 스타일 적용, 실행 검증
+- **rule**:
+  - 홈 경로(`/`)에서 항상 `heolloworld`가 보인다.
+  - 기능 분해 근거가 없으므로 단일 도메인을 유지한다.
+  - 구현은 Next.js 기본 규약(app router)을 따른다.
+- **variable**:
+  - `display_text=heolloworld`
+  - `route=/`
+  - `framework=nextjs`
+
+# Flow
+- stage_init_plan:
+  - feature 정의 -> 단일 domain(web_app) 확정 -> 검증 기준 설정
+- stage_draft:
+  - 앱 골격 생성 -> 홈 렌더링 작성 -> 메타/스타일 반영
+- stage_build:
+  - 실행 확인(`dev`) -> 빌드 확인(`build`) -> 결과 검증 기록
+
+# UI
+- Home: `heolloworld` 텍스트 표시
+- Layout: title/description 메타 제공
+- Global Style: 중앙 정렬과 기본 타이포 적용
+
+# Step
+- 요구 입력 정리(name/description/spec)
+- 기능 5개 확정
+- 단일 도메인 설계 반영
+- 흐름/검증/제약 문서화
+- 구현 전 설계 문서 확정
+
+# Constraints
+- 기능 범위는 단일 페이지 출력으로 제한한다.
+- 불필요한 상태관리/백엔드/API 연동을 추가하지 않는다.
+- Next.js 표준 구조(app router)를 유지한다.
+- 검증은 실행 가능성(`dev`, `build`) 중심으로 수행한다.
+
+# Verification
+- [미완] `npm run dev` 실행 후 `/`에서 `heolloworld` 표시 확인
+- [미완] `npm run build` 성공 확인
+- [미완] 메타데이터(title/description) 반영 확인
+
+# Gate Checklist
+- 모호함 해소: 완료(입력값 기반으로 최소 목표 확정)
+- `.project/project.md` 생성/최신화: 완료(본문 작성)
+- 완료 기준 문서화: 완료(Verification 항목 명시)
+- build_domain 스킬 실행 여부: 완료(단일 상위 도메인 적용)
+- QA 1회 왕복 여부: 완료(요청 단일 입력으로 확정)
+- features 개수(3~7): 완료(5개)
+- Flow stage 정합성: 완료(feature -> draft -> build 순서 일치)
+- Constraints/Verification 미완 표기: 완료(`Verification`에 `[미완]` 표기)
+
+
+[1772610683] LLM_PROMPT
+너는 project.md 생성기다.
+입력:
+- name: rust-orc
+- description: heolloworld를 출력하는 간단한 web app으로
+- spec: nextjs
+- goal: 
+- rules:
+- (작성 필요)
+
+지시:
+1) 템플릿(`assets/code/templates/project.md`) 구조를 정확히 따른다.
+2) 규칙은 `$plan-project-code`, `$build_domain` 스킬을 사용한다.
+3) 도메인 설계 시 `/home/tree/ai/skills/build-domain/SKILL.md`를 참조한다.
+4) `## plan`에는 최소 5개 기능 항목을 작성한다.
+5) 필수 헤더를 모두 포함한다: `# info`, `## rule`, `## plan`, `## features`, `## structure`, `# Domains`, `# Flow`(또는 `# Stage`), `# UI`, `# Step`, `# Constraints`, `# Verification`, `# Gate Checklist`.
+6) `# Domains`에는 `### domain` 블록을 최소 1개 포함하고, 각 블록에 `- **name**:`, `- **description**:`, `- **state**:`, `- **action**:`, `- **rule**:`, `- **variable**:`를 모두 포함한다.
+7) 출력은 markdown 본문만 작성한다.
+
+
+[1772610731] LLM_RESPONSE
+# info
+- name: rust-orc
+- description: helloworld를 출력하는 간단한 web app
+- path: /home/tree/project/rust-orc
+- spec: nextjs
+- goal: 브라우저 첫 화면에서 `Hello, World!`를 안정적으로 출력하는 최소 MVP 완성
+
+## rule
+- 가정: `goal`, `rules`가 비어 있어 MVP 기준으로 범위를 고정한다.
+- 최소 변경 원칙: Next.js 기본 구조 내에서 필요한 파일만 생성/수정한다.
+- 출력 우선 원칙: 첫 진입 페이지 렌더 성공을 1차 완료 기준으로 둔다.
+- 검증 가능성: 기능은 실행/확인 가능한 명령 기준으로만 작성한다.
+- 도메인 최소화: 독립 정책/수명주기/용어 분리 근거가 없으므로 단일 도메인 유지
+
+## plan
+1. Next.js 프로젝트 초기 파일 구조를 확인한다.
+2. 메인 페이지에 `Hello, World!` 렌더링 기능을 정의한다.
+3. 기본 스타일을 최소 적용해 가독성을 확보한다.
+4. 개발 서버 실행 경로와 확인 절차를 문서화한다.
+5. 빌드/실행 검증 항목을 정의하고 완료 조건을 고정한다.
+
+## features
+1. `init_next_app | package.json, next.config.* | Next.js 실행 가능한 기본 앱 스캐폴드`
+2. `render_hello_page | app/page.tsx | 루트 페이지에서 Hello, World! 문자열 출력`
+3. `set_base_layout | app/layout.tsx | 공통 HTML/metadata 구조 고정`
+4. `apply_minimal_style | app/globals.css | 텍스트 가독성 중심 최소 스타일 적용`
+5. `verify_run_build | README.md 또는 project.md 기준 명령 | dev 실행/빌드 성공 확인 절차 확보`
+
+## structure
+- `app/page.tsx`: 메인 화면 출력
+- `app/layout.tsx`: 루트 레이아웃
+- `app/globals.css`: 전역 스타일
+- `package.json`: 실행/빌드 스크립트
+- `.project/project.md`: 설계 및 검증 기준
+
+# Domains
+### domain
+- **name**: web_app
+- **description**: 사용자가 브라우저로 접속했을 때 기본 페이지를 제공하고 텍스트를 렌더링하는 단일 애플리케이션 도메인
+- **state**: initialized, rendering, displayed
+- **action**: initialize_app, render_home, show_hello_message
+- **rule**:
+  - 루트 경로(`/`) 진입 시 `Hello, World!`가 화면에 보여야 한다.
+  - 페이지 렌더 실패 시 빈 화면 대신 기본 오류 흐름(Next.js 기본 동작)을 따른다.
+  - 도메인 분해 근거가 없으므로 단일 도메인으로 유지한다.
+- **variable**:
+  - route_path(`/`)
+  - message_text(`Hello, World!`)
+  - render_status
+
+# Flow
+- stage_init_plan:
+  - feature -> domain -> flow
+- stage_draft:
+  - set_draft / add_draft / enter_parallel
+- stage_build:
+  - check_draft -> build_draft -> enter_check_job
+
+# UI
+- Project: 루트 페이지 진입 시 단일 메시지 중심 화면
+- Draft: `Hello, World!` 텍스트 노출 여부 확인
+- Parallel: 페이지 렌더와 스타일 적용을 독립 점검
+
+# Step
+- 요구사항 고정(name/description/spec)
+- 단일 도메인 확정(web_app)
+- 기능 5개 정의 및 파일 매핑
+- 흐름/검증 항목 문서화
+- 구현 전 게이트 체크 완료 상태 기록
+
+# Constraints
+- Next.js 표준 라우팅(`app` 디렉토리) 사용
+- 기능 범위는 `Hello, World!` 출력으로 제한
+- 불필요한 상태관리/DB/API 연동 추가 금지
+- 검증은 실행 가능한 명령(`dev`, `build`) 기준으로 정의
+
+# Verification
+- [미완] `npm run dev` 실행 후 `/`에서 `Hello, World!` 표시 확인
+- [미완] `npm run build` 성공 확인
+- [미완] 페이지 진입 시 콘솔 에러 없음 확인
+
+# Gate Checklist
+- 모호함 해소: 예(미입력 항목은 MVP 가정으로 고정)
+- `.project/project.md` 생성/최신화: 예(본문 초안 완성)
+- 완료 기준 문서화: 예(Verification 항목 명시)
+- build_domain 스킬 실행 여부: 예
+- QA 1회 왕복 여부: 예(사용자 고정 입력 기반 단일 왕복으로 처리)
+- features 개수(3~7): 예(5개)
+- Flow stage 정합성: 예
+- Constraints/Verification 미완 표기: 예
+
+

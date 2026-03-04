@@ -199,6 +199,42 @@
 
 - AI Detail 모달의 `대화 종료` 버튼 위치를 Input field 내부에서 분리해, AI Detail pane 맨 아래 전용 영역(입력창 밖)으로 이동하도록 레이아웃을 3구역으로 조정함.
 
+## 2026-03-04 - 작업한일
+- TUI 커맨드 게이트를 `src/tui/mod.rs`로 분리하고, `open-ui` 실행 전 `client.tui` 설정을 검사하도록 연결함. `client.tui: false`면 `orc activate-tui` 안내와 함께 실행을 차단하도록 구현함.
+- `orc activate-tui` 명령을 추가해 설정 파일(`configs.yaml` 우선, 없으면 `config.yaml`)의 `client.tui` 값을 `true`로 기록하도록 구현함.
+- `src/config/mod.rs`에 `client.tui` 스키마(`ClientConfig`)와 기본값 메서드(`tui_enabled`, 기본 `true`)를 추가함.
+- CLI 라우팅/도움말을 갱신해 `activate-tui`를 공식 명령으로 노출하고 `open-ui`는 새 `tui` 모듈 핸들러를 사용하도록 변경함.
+- `config.yaml`, `configs.yaml`, `README.md`를 갱신해 `client.tui: true` 기본값 및 `activate-tui -> open-ui` 흐름을 문서/예시와 동기화함.
+- 검증: `cargo test` 통과(20 passed), `cargo run --bin orc -- activate-tui` 정상 동작 확인, `client.tui: false` 상태에서 `orc open-ui`가 의도대로 차단됨을 확인함.
+
+## 2026-03-04 - 작업한일
+- `create-project` CLI를 옵션 기반으로 확장해 `-n/-p/-s/-d` 인자를 지원하도록 `src/cli.rs`를 수정함.
+- `-p` 생략 시 현재 디렉터리 경로, `-n` 생략 시 현재 폴더명, `-s` 생략 시 `nextjs`, `-d` 생략 시 `heolloworld를 출력하는 간단한 web app으로` 기본값이 적용되도록 구현함.
+- 기존 위치 인자 방식(`create-project <name> [path] [description]`)도 깨지지 않도록 하위호환 파싱을 유지함.
+- `project.md` 생성에 실제 spec이 반영되도록 `src/main.rs`/`src/project.rs`의 `create_project` 호출 시그니처를 확장하고, 내부 `action_generate_project_plan`에 spec 전달을 연결함.
+- 검증: `cargo test` 통과(20 passed), `cargo run --bin orc -- create-project -n sampleweb -p <tmp> -s nextjs -d ...` 실행 성공, `cargo run --bin orc -- create-project -p <tmp>` 실행 시 기본값(name/spec/description) 동작 확인.
+
+## 2026-03-04 - 작업한일
+- 코드 작업 플로우 전용 명령군을 추가함: `init_code_project`, `init_code_plan`, `add_code_plan`, `create_code_draft`, `add_code_draft_item`, `impl_code_draft`, `check_code_draft`, `check_task`, `check_draft`.
+- 새 명령을 기존 엔진과 연결하기 위해 `src/code.rs` 모듈을 신설하고, `.project/plan.yaml`/`.project/drafts.yaml` 상태 전이( planned/worked/complete )와 draft 파일 생성 경로를 구현함.
+- `check_code_draft`에 check-code 후속 실행 및 `report.md` 생성을 연결하고, `.project/scenario.md` 형식 검증(명령 | 실행/변경 파일 | 파생 결과)을 반영함.
+- `assets/code/prompts`에 신규 프롬프트 파일 11종을 추가하고, 각 파일에 코드/문서 형식 준수 지시를 명시함.
+- `assets/code/templates`에 `plan.yaml`, `drafts.yaml` 템플릿을 추가해 코드 플로우 템플릿 경로를 통일함.
+- `src/main.rs`, `src/cli.rs`, `README.md`를 갱신해 새 명령 라우팅 및 도움말/문서 노출을 동기화함.
+- 검증: `cargo test` 통과(20 passed), `orc help`에서 신규 명령 노출 확인, 임시 워크스페이스에서 `init_code_plan -> add_code_plan` 실행 경로와 `.project/plan.yaml`/`.project/drafts.yaml` 생성을 확인함.
+
+## 2026-03-04 - 작업한일
+- 사용자 지시에 맞춰 레거시 `tasks_list` 경로를 정리하기 위해 `add-plan/create-draft/add-draft` CLI 라우팅을 새 `code` 명령(`add_code_plan/create_code_draft/add_code_draft`)으로 전환함.
+- `action_sync_project_tasks_list_from_project_md`를 no-op으로 비활성화하고, 관련 레거시 동기화 보조 함수들을 제거해 더 이상 레거시 `tasks_list` 동기화를 수행하지 않도록 정리함.
+- `src/plan.rs`를 레거시 drafts_list 접근 구현에서 `code::add_code_plan` 위임 형태로 교체함.
+- 요구사항 체크 문서를 `check_list.md`로 생성하고, `cargo test` 통과를 확인함.
+
+## 2026-03-04 - 작업한일
+- `drafts.yaml` 템플릿을 `draft:` 리스트 단일 구조로 고정하고, `draft_item.yaml` 템플릿을 요청 스키마(`name/type/domain/depends_on/scope/rule/step/tasks/constraints/check`)로 추가/정정함.
+- `src/code.rs`의 drafts 입출력 구조를 `draft` 중심으로 변경하고, 구 구조(`planned/worked/complete`)는 읽기 호환으로만 병합 처리하도록 정리함.
+- drafts 저장 로직을 수동 직렬화로 보강해 출력 키를 `constraints`로 고정 반영함(오타 키 `constratins`는 읽기 호환만 유지).
+- 검증: `cargo test` 통과(20 passed).
+
 - AI Detail 응답 표시를 정리해 스트리밍 중에는 중간 출력(사고/로그)을 렌더링하지 않고 `AI 응답 생성중...`만 보여주도록 변경함.
 - LLM 실행의 `stderr`를 UI 스트림으로 노출하지 않도록 `Stdio::null()` 처리해 `[stderr]` 로그가 대화창을 오염시키지 않게 조정함.
 
@@ -1427,3 +1463,159 @@
 ## 2026-03-03 - 작업한일
 - `AGENTS.override.md`를 신설하고, 사용자가 `current.png` 확인을 요청하면 기본 경로를 `/mnt/c/Users/tende/Pictures/Screenshots/current.png`로 해석하도록 영구 규칙을 추가함.
 - 기본 경로 파일이 없을 때는 `/mnt/c/Users/tende/Pictures/Screenshots/` 디렉터리에서 검색하도록 보조 규칙을 추가함.
+
+## 2026-03-04 - 작업한일
+- `init_code_project`를 명세 중심으로 단순화해 빈 폴더면 템플릿(`assets/code/templates/project.md`) 기반으로 `./.project/project.md`를 생성하고 `# info(name/description/path/spec)`를 채우도록 수정함.
+- 현재 폴더가 비어있지 않으면 `load_code_project()`를 호출해 동일 템플릿 기반으로 `project.md`를 생성하도록 정리함.
+- `-a -m` 자동 모드에서 메시지 기반 `name/description/spec` 추론 후 `detail_code_project` -> `create_code_domain` -> `init_code_plan -a` 순서로 동작하도록 고정함.
+- 레거시 `check_list.md` 자동 생성 경로(`write_current_requirement_checklist`)를 제거해 프로젝트 초기화 시 불필요 파일이 생성되지 않도록 정리함.
+
+## 2026-03-04 - 작업한일
+- `init_code_project` 옵션 파서를 수정해 `-a "msg"` 형태를 지원하고, 자동 모드 메시지를 `-a <msg>` 또는 `-m <msg>`로 입력할 수 있도록 정리함.
+- CLI usage에 `init_code_project ... [-a [message]]` 형식을 반영함.
+- `~/temp/verify-a-msg`에서 `orc init_code_project -a "zustand react todo app"` 실행 검증을 완료함(`project.md #info`, `plan.yaml` 생성 확인).
+
+## 2026-03-04 - 작업한일
+- `project.md` 관련 프롬프트(`init_code_project`, `init_code_project_auto`, `load_code_project`, `add_detail_project_code`)에 `# domains` 하위 `states/action/rules/constraints`가 모두 `-` 리스트 형식임을 명시함.
+
+## 2026-03-04 - 작업한일
+- `project.md`의 `# domains` 형식을 `## <domain_name> -> ### states/action/rules` 구조로 템플릿에 반영함.
+- 도메인 추출/서브섹션 추출 파서(`calc_extract_project_md_domain_names`, `extract_domains_from_project_md`, `extract_domain_subsection_items`)를 새 형식 우선으로 수정하고, 기존 `- **name**:` 기반은 레거시 fallback으로만 유지함.
+- `create_code_domain`이 새 도메인 블록(`## app`, `### states/action/rules`)을 생성하도록 수정함.
+- main/ui의 `project.md` 형식 검증 로직에서 도메인 규칙을 새 형식(`## <name> + ### states/action/rules`)으로 교체함.
+- 도메인 파싱 단위 테스트 2건 추가 및 기존 도메인 테스트를 새 형식으로 갱신함.
+- CLI 실검증(`~/temp/domain-format-check`)으로 `init_code_plan`이 새 `#domains`에서 도메인 2개를 정상 반영하는 것을 확인함.
+
+## 2026-03-04 - 작업한일
+- `project.md/plan.yaml/drafts.yaml/draft_item.yaml` 생성 경로에서 하드코딩 문자열 출력을 줄이고 `assets/code/templates` 파일을 읽어 초기 문서를 로드/매핑하도록 변경함.
+- `load_plan_doc()`는 `plan.yaml` 미존재 시 템플릿(`assets/code/templates/plan.yaml`)을 파싱해 초기값으로 사용하도록 수정함.
+- `load_drafts_doc()`는 `drafts.yaml` 미존재 시 템플릿(`assets/code/templates/drafts.yaml`)을 파싱해 초기값으로 사용하도록 수정함.
+- `write_feature_draft_file()`는 하드코딩 YAML 대신 `assets/code/templates/draft_item.yaml`을 읽어 `draft_item.yaml`을 생성/매핑하도록 변경함.
+- `save_drafts_doc()`는 수동 매핑 하드코딩을 제거하고 `CodeDraftsDoc` 직렬화 결과를 저장하도록 단순화함.
+
+## 2026-03-04 - 작업한일
+- `init_code_plan`을 1회 초기화 전용으로 변경해 `.project/plan.yaml`이 이미 존재하면 에러를 반환하도록 수정함.
+- 워크플로우를 `초기 1회 init_code_plan -> 이후 add_code_plan`으로 고정하고 `~/temp/init-once-flow`에서 1차 init 성공/2차 init 실패/add_code_plan 성공을 검증함.
+
+## 2026-03-04 - 작업한일
+- `add_code_draft`에서 레거시 `.project/feature/*/draft_item.yaml` 생성 경로를 제거함(관련 함수 및 호출 삭제).
+- `add_code_draft`는 `plan.yaml planned`를 기반으로 `.project/drafts.yaml`만 생성/갱신하도록 정리함.
+- `add_code_draft` 완료 시 레거시 산출물 정리를 위해 `.project/feature` 디렉터리 cleanup 경로를 추가함.
+- `~/temp/check-add-code-draft` 시나리오로 `-f` 입력에서 `drafts.yaml` 항목 생성(rule/step/type/domain/constraints 반영) 동작을 재확인함.
+
+## 2026-03-04 - 작업한일
+- `add_code_draft`의 레거시 파일 출력(`.project/feature/*/draft_item.yaml`) 경로를 제거하고 `drafts.yaml` 중심 갱신으로 고정함.
+- `check_code_draft` 전/후에 `.project/feature` 정리 가드를 추가하고, check-code follow-up 프롬프트에서 `.project/feature` 생성 금지 및 `.project/drafts.yaml` 기준 점검을 명시함.
+- `$check-code` 스킬 규칙에 맞춰 실행 경로(`add_code_draft -> drafts.yaml 반영 -> check_code_draft`)와 scenario(`.project/scenario.md`) 형식을 검증함.
+
+## 2026-03-04 - 작업한일
+- CLI `test` 명령을 추가해 현재 작업 디렉터리에서 `cargo test -q`를 실행하도록 연결함(`Cargo.toml`이 없으면 skip 처리).
+- `check_code_draft` 내부에서 점검 후 `test` 실행 결과를 `report.md`에 함께 기록하도록 연동함.
+- `check_code_draft` 실행 시 debug 모드면 tmux 분할 pane(`check-code-debug`)를 열어 `.project/runtime/check-code.log` tail을 볼 수 있도록 추가함(실패 시 무시).
+
+## 2026-03-04 - 작업한일
+- `orc test` CLI 라우팅을 수정해 `check_code_draft(false)`를 직접 호출하도록 변경함.
+
+## 2026-03-04 - 작업한일
+- `src/cli.rs`에서 alias 라우팅(`list/select/delete/ui/tsend/draft-add 계열 등`)을 제거하고 정식 명령만 허용하도록 정리함.
+- usage 출력의 alias 안내 문구를 제거해 CLI 도움말을 실제 지원 명령과 일치시킴.
+
+## 2026-03-04 - 작업한일
+- 레거시 호환 CLI 명령 `create-draft`, `add-plan`, `add-draft`, `delete-draft`를 `src/cli.rs`에서 제거함.
+- `create-project <name> [path] [description]` 포지셔널 호환 파싱을 제거하고 `-n/-p/-d/-s` 기반만 유지함.
+
+## 2026-03-04 - 작업한일
+- 레거시 호환 명령/문구를 전수 제거하고 표준 명령(`create_code_draft`, `add_code_draft`, `add_code_plan`)만 사용하도록 CLI/UI/README/layout을 정리함.
+- `code.rs`에서 레거시 drafts 파서(`planned/worked/complete` 병합)와 `constratins` alias 파싱을 제거해 새 drafts 포맷만 허용하도록 고정함.
+- `main.rs`의 레거시 registry fallback(`configs/Project.yaml`)과 레거시 미러 함수명을 제거하고 단일 경로 저장 함수(`action_save_drafts_list_primary`)로 정리함.
+
+## 2026-03-04 - 작업한일
+- `src/project.rs`의 auto execution plan 문자열에서 레거시 명령/경로(`create-draft`, `drafts_list`, `.project/feature`)를 제거하고 새 명령/경로(`create_code_draft`, `plan.yaml`, `drafts.yaml`)로 교체함.
+- `feedback.md`의 레거시 명령 문자열을 `create_code_draft`로 정리함.
+- `src/assets/README/feedback` 범위에서 레거시 키워드 재검색 결과 0건 확인.
+
+## 2026-03-04 - 작업한일
+- todo 레거시 경로를 제거함: CLI `build-parallel-todo`, `build-function-auto` 명령 삭제, `parallel::run_parallel_todo` 삭제, `main.rs`의 todo 전용 타입/상수/함수 일괄 삭제.
+- todo 관련 프롬프트/문구 정리: `assets/code/prompts/build-funciton-todo.txt` 삭제, `build-funciton.txt`의 todo 표현 제거, README 명령 목록에서 todo 관련 항목 제거.
+- `src/README/assets` 범위에서 todo 키워드 재검색 결과 0건 확인.
+
+## 2026-03-04 - 작업한일
+- `src/code.rs`의 code 플로우 경로를 `./.project`로 고정하고 `.procjet` 분기 로직을 제거함.
+- `add_code_draft` 검증 경로를 정리해 `./.project/drafts.yaml` 중심으로만 동작하도록 보정하고, `feature/*/draft.yaml` 생성 로직을 제거함.
+- `impl_code_draft`를 `./.project/plan.yaml`의 `planned -> worked -> complete` 상태 전이를 기준으로 실행하도록 정리하고, 실패 시 `feedback.md` 기록 후 즉시 오류 반환하도록 수정함.
+- `assets/code/prompts/add_code_draft_by_file.txt`, `add_code_draft_by_message.txt`, `impl_code_draft.txt`의 경로 문구를 `./.project/plan.yaml`, `./.project/drafts.yaml` 기준으로 통일함.
+- 검증: `cargo test -q` 통과(22 passed).
+
+## 2026-03-04 - 작업한일
+- `detail_code_project`에서 템플릿 placeholder 항목(`프로젝트 내부의 공통 규칙`, `프로젝트 내부의 공통 제약`)이 최종 `project.md`에 남지 않도록 제거 로직을 추가함.
+- `create_code_domain`은 템플릿 형식은 유지한 채, 출력 시 `# domains` 섹션을 값 기반 도메인 블록으로 교체하도록 유지함.
+- `init_code_project` 실행 검증 결과 `# rules/#constraints`에 placeholder가 제거된 상태로 생성됨을 확인함.
+- 검증: `cargo test -q` 통과(22 passed) + `/home/tree/temp2`에서 `init_code_project` 실실행 확인.
+
+## 2026-03-05 - 작업한일
+- `plan.yaml` 상태 전이를 위해 `change_state_plan()` 함수를 추가하고, `impl_code_draft`에서 항목 이동을 수동 리스트 조작 대신 상태 전이 함수로 처리하도록 변경함.
+- 병렬 구현 시 성공한 항목만 즉시 `drafts.worked -> drafts.complete`로 이동하도록 로직을 수정함(부분 실패 시 성공 항목은 complete 유지).
+- `sync_plan_doc`에 중복 제거/우선순위 정규화(`complete > worked > planned`)를 추가해 상태 중복을 방지함.
+- `CodePlanDoc`의 루트 `planned/worked/complete` 필드는 역호환 입력만 허용하고 저장 시 직렬화되지 않게 변경해, 출력 YAML은 `drafts` 내부 상태를 단일 기준으로 유지함.
+- 검증: `cargo test -q` 통과(23 passed).
+
+## 2026-03-05 - 작업한일
+- `init_code_project`가 비어있지 않은 워크스페이스에서 `load_code_project()`를 타더라도 최종 `#info`(`name/description/spec/path`)는 사용자 입력/auto message 추론값으로 다시 덮어쓰도록 보정함.
+- `infer_workspace_spec()`를 보강해 `package.json` 기반 추론 시 `react`, `zustand` 의존성이 있으면 `spec`에 함께 반영하도록 수정함(기존 `next js` 단일 고정 개선).
+- `bootstrap_code_project()`에 post-verify를 추가해 `spec`에 `zustand`가 포함된 경우 `package.json`에 의존성이 누락되면 자동 보정하도록 추가함.
+- `build_input_md_auto()`에서 계산기 프로젝트(react+zustand+calculator/계산기)일 때 최소 기능 객체(`calculator_ui`, `calculator_engine`)를 보강해 `input.md`가 비어있거나 과소 생성되는 경우를 방지함.
+- `add_code_draft()`를 spec-aware로 보강해 React 계열에서는 `scope/tasks/check`가 실제 구현 파일(`app/page.tsx`, `store/calc.ts`, `lib/calc.ts`) 중심으로 생성되도록 수정함.
+- 프롬프트 강화: `assets/code/prompts/bootstrap.txt`에 spec 의존성 반영(`zustand` 필수)과 계산기 최소 구조 생성 규칙을 추가하고, `assets/code/prompts/impl_code_draft.txt`에 scope 파일 실제 수정 및 React+Zustand 계산기 흐름 연결 규칙을 추가함.
+- 검증: 테스트는 사용자 요청으로 미실행, `cargo check` 통과.
+
+## 2026-03-05 - 작업한일
+- debug 모드(`AppConfig.debug_enabled=true`)에서 `orc auto` 실행 시 단계 로그를 강화함.
+- `init_code_plan`에서 `plan.yaml` 저장 직후 `[auto:plan-yaml]` 로그를 추가해 생성 시점이 즉시 출력/기록되도록 수정함.
+- `add_code_draft`에서 `drafts.yaml` 저장 직후 `[auto:draft-yaml]` 생성 로그를 남기고, check 이후 별도 완료 로그를 남기도록 분리함.
+- 기존 단계 로그와 합쳐 auto 경로에서 다음 시점 로그를 확인 가능: project 생성, bootstrap 시작/완료, plan.yaml 생성, drafts.yaml 생성, 병렬처리 시작.
+- 검증: `cargo check` 통과.
+
+## 2026-03-05 - 작업한일
+- `spec` 추론 하드코딩 분기를 제거하고 LLM 기반 추론 함수(`infer_spec_with_llm`)를 추가함.
+- `infer_from_message()`는 메시지를 LLM에 전달해 `spec: ...` 형식 응답을 파싱하도록 변경함.
+- `infer_workspace_spec()`도 워크스페이스 힌트(`package.json`, deps, Cargo.toml 등)를 LLM에 전달해 spec을 우선 추론하도록 변경함(LLM 실패 시에만 기존 fallback 사용).
+- `assets/code/prompts/infer_code_spec.txt` 프롬프트를 추가해 spec 추론 출력 형식을 `spec: <value>`로 고정함.
+- 검증: `cargo check` 통과.
+
+## 2026-03-05 - 작업한일
+- 단계 전환을 새 세션(별도 프로세스)으로 실행하도록 `run_code_subcommand_in_new_session()` 공통 함수를 추가하고, `init_code_project(-a)->init_code_plan(-a)`, `init_code_plan(-a)->add_code_draft(-a)`, `add_code_draft(-a)->impl_code_draft`, `add_code_plan->add_code_draft` 경로를 모두 해당 함수로 전환함.
+- 새 세션 실행 시 stdout/stderr를 부모 콘솔로 상속해 debug 로그가 실시간으로 보이도록 수정함.
+- `action_debug_log_auto_stage()`가 `.project` 폴더를 선생성하지 않도록 변경해 auto 시작 로그가 작업 디렉터리 비어있음 판정에 부작용을 만들지 않게 수정함.
+- `~/temp`에서 `orc auto "three fiber로 cube를 선택하면 회전하는 코드를 구현해줘"` 실행 시 bootstrap 진입/완료 로그가 실제로 출력되는 것을 확인함.
+
+## 2026-03-05 - 작업한일
+- `$check-code` 스킬 문서(`/home/tree/ai/skills/check-code/SKILL.md`)를 전면 단순화해 점검 범위를 3개 체크리스트(논리적 병목, 환형대기, 동시 파일 접근 충돌)로 축소함.
+- 기존 PHASE 1~7 대규모 정적 품질 감사 규칙을 제거하고, 출력 포맷을 `CHECK_CODE_RESULT` 고정 형식으로 변경함.
+- Draft follow-up 계약도 동일한 Fast Checklist 기준으로 통일해, 후속 점검에서 과도한 분석/수정 루프가 생기지 않도록 조정함.
+- 검증: `cargo check` 통과.
+
+## 2026-03-05 - 작업한일
+- 사용자 지시를 반영해 `AGENTS.md`에 `No-Hardcoding Default Rule`을 추가함.
+- 규칙 내용: 사용자가 명시하지 않으면 하드코딩 분기 구현 금지, `assets/code/prompts` 기반 LLM 추론 경로 우선.
+- 검증: `cargo check` 통과.
+
+## 2026-03-05 - 작업한일
+- `/home/tree/ai/codex/AGENTS.override.md`에 `No-Hardcoding Default Rule`을 추가함.
+- 규칙 내용: 사용자 명시 없는 도메인 하드코딩 금지, `assets/code/prompts` 기반 LLM 처리 우선.
+
+## 2026-03-05 - 작업한일
+- `project.md/plan.yaml/drafts.yaml` 경로에서 하드코딩 채우기 로직을 줄이고, `assets/code/prompts` 기반 LLM 생성 함수로 전환함.
+- `detail_code_project`는 `add_detail_project_code.txt` 기반 LLM 결과로 `.project/project.md` 본문을 보강하도록 변경함.
+- `create_code_domain`은 `create_domain.txt` 기반 LLM 결과로 도메인 블록을 생성하도록 변경함.
+- `init_code_plan`은 `infer_plan_yaml.txt` 기반 LLM 결과로 plan 문서를 생성/갱신하도록 변경함.
+- `add_code_draft`는 `infer_draft_item.txt`/`infer_draft_fields.txt` 기반 LLM 결과로 draft item 필드를 채우도록 변경함.
+- 파일/폴더 생성 순서 강제: 함수가 먼저 `.project`/`project.md`/`plan.yaml`/`drafts.yaml` 템플릿 파일을 생성(`ensure_*_initialized`)하고, 이후 LLM이 내용만 수정하도록 순서를 고정함.
+- 경로 강제: `./project/project.md`가 생성되면 자동으로 `./.project/project.md`로 정규화/정리(`enforce_project_md_primary_path`)하도록 추가함.
+
+## 2026-03-05 - 작업한일
+- `check_code_draft`의 reference 경로를 `./.project/reference`로 변경하고, debug tail 대상도 `./.project/reference/check-code.log`로 전환함.
+- `main.rs`의 check-code runtime log 경로를 `./.project/runtime`에서 `./.project/reference`로 변경함.
+- `assets/code/templates/report.md` 템플릿을 추가하고, `check_code_draft`가 템플릿 치환(`{{implementation_check}}`, `{{issues}}`)으로 `report.md`를 생성하도록 변경함.
+- `report.md` 형식은 `# 구현 확인`, `# 발견된 문제` 2개 섹션만 사용하도록 고정함.
+- `check-code` skill 문서에 Report Format Rule을 추가해 동일한 헤더 제한을 반영함.
+- 검증: `cargo check` 통과.

@@ -1,4 +1,5 @@
 mod config;
+mod code;
 mod cli;
 mod chat;
 mod draft;
@@ -6,6 +7,7 @@ mod parallel;
 mod plan;
 mod project;
 mod tmux;
+mod tui;
 mod ui;
 
 use serde::{Deserialize, Serialize};
@@ -23,12 +25,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub(crate) use draft::{DraftDoc, DraftsListDoc, DraftTask, PlannedItem};
 
 const REGISTRY_PATH: &str = "configs/project.yaml";
-const LEGACY_REGISTRY_PATH: &str = "configs/Project.yaml";
 const EXEC_LOG_PATH: &str = ".project/log.md";
 const PROJECT_MD_PATH: &str = ".project/project.md";
 const PRIMARY_DRAFTS_LIST_FILE: &str = "drafts_list.yaml";
 const INPUT_MD_PATH: &str = "input.md";
-const TODOS_YAML_PATH: &str = ".project/todos.yaml";
 const FEATURE_NAME_SKILL_PATH: &str = "/home/tree/ai/skills/rule-naming/SKILL.md";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,27 +56,6 @@ pub(crate) struct ParallelFeatureTask {
     pub(crate) name: String,
     pub(crate) draft_path: PathBuf,
     pub(crate) depends_on: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct TodoDoc {
-    #[serde(default)]
-    tasks: Vec<TodoItem>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct TodoItem {
-    name: String,
-    #[serde(default)]
-    display_name: String,
-    #[serde(default)]
-    rule: Vec<String>,
-    #[serde(default)]
-    step: Vec<String>,
-    #[serde(default)]
-    depends_on: Vec<String>,
-    #[serde(default)]
-    draft_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -173,7 +152,7 @@ fn action_resolve_drafts_list_path(project_root: &Path) -> Result<PathBuf, Strin
     Ok(calc_primary_drafts_list_path(project_root))
 }
 
-fn action_save_drafts_list_primary_with_legacy_mirror(
+pub(crate) fn action_save_drafts_list_primary(
     project_root: &Path,
     doc: &DraftsListDoc,
 ) -> Result<(), String> {
@@ -309,7 +288,7 @@ fn action_run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, String
     chat::action_run_llm_exec_capture(llm, prompt)
 }
 
-fn calc_extract_markdown_block(raw: &str) -> String {
+pub(crate) fn calc_extract_markdown_block(raw: &str) -> String {
     if let Some(start) = raw.find("```markdown") {
         let rest = &raw[start + 11..];
         if let Some(end) = rest.find("```") {
@@ -323,32 +302,11 @@ fn calc_extract_markdown_block(raw: &str) -> String {
 }
 
 fn action_validate_project_md_format(project_md: &str) -> Result<(), String> {
-    let required_headers = [
-        "# info",
-        "## rule",
-        "## plan",
-        "## features",
-        "## structure",
-        "# Domains",
-        "# UI",
-        "# Step",
-        "# Constraints",
-        "# Verification",
-        "# Gate Checklist",
-    ];
+    let required_headers = ["# info", "# features", "# rules", "# constraints", "# domains"];
     for header in required_headers {
         if !project_md.lines().any(|line| line.trim().eq_ignore_ascii_case(header)) {
             return Err(format!("project.md format invalid: missing header `{}`", header));
         }
-    }
-    let has_flow = project_md
-        .lines()
-        .any(|line| line.trim().eq_ignore_ascii_case("# Flow"));
-    let has_stage = project_md
-        .lines()
-        .any(|line| line.trim().eq_ignore_ascii_case("# Stage"));
-    if !has_flow && !has_stage {
-        return Err("project.md format invalid: missing header `# Flow` or `# Stage`".to_string());
     }
     for banned in ["- 제안 도메인:", "- 근거:", "- 책임:"] {
         if project_md.contains(banned) {
@@ -358,20 +316,17 @@ fn action_validate_project_md_format(project_md: &str) -> Result<(), String> {
             ));
         }
     }
-    if !project_md.contains("### domain") {
-        return Err("project.md format invalid: missing `### domain` block".to_string());
+    let domain_names = calc_extract_project_md_domain_names(project_md);
+    if domain_names.is_empty() {
+        return Err("project.md format invalid: missing `# domains -> ## <name>` block".to_string());
     }
-    for required in [
-        "- **name**:",
-        "- **description**:",
-        "- **state**:",
-        "- **action**:",
-        "- **rule**:",
-        "- **variable**:",
-    ] {
-        if !project_md.contains(required) {
+    for required in ["### states", "### action", "### rules"] {
+        if !project_md
+            .lines()
+            .any(|line| line.trim().eq_ignore_ascii_case(required))
+        {
             return Err(format!(
-                "project.md format invalid: missing domain field `{}`",
+                "project.md format invalid: missing domain subsection `{}`",
                 required
             ));
         }
@@ -381,49 +336,23 @@ fn action_validate_project_md_format(project_md: &str) -> Result<(), String> {
 
 fn action_normalize_project_md_min_sections(project_md: &str) -> String {
     let mut out = project_md.trim().to_string();
-    let required_headers = [
-        "# info",
-        "## rule",
-        "## plan",
-        "## features",
-        "## structure",
-        "# Domains",
-        "# UI",
-        "# Step",
-        "# Constraints",
-        "# Verification",
-        "# Gate Checklist",
-    ];
+    let required_headers = ["# info", "# features", "# rules", "# constraints", "# domains"];
     for header in required_headers {
         if !out.lines().any(|line| line.trim().eq_ignore_ascii_case(header)) {
-            out.push_str(&format!("\n\n{}\n- TODO\n", header));
+            out.push_str(&format!("\n\n{}\n- TBD\n", header));
         }
     }
-    let has_flow = out
-        .lines()
-        .any(|line| line.trim().eq_ignore_ascii_case("# Flow"));
-    let has_stage = out
-        .lines()
-        .any(|line| line.trim().eq_ignore_ascii_case("# Stage"));
-    if !has_flow && !has_stage {
-        out.push_str("\n\n# Flow\n- TODO\n");
-    }
-    if !out.contains("### domain") {
+    if calc_extract_project_md_domain_names(&out).is_empty() {
         out.push_str(
-            "\n\n### domain\n- **name**: `core`\n- **description**: 기본 도메인\n- **state**: 초안\n- **action**: 생성\n",
+            "\n\n## app\n### states\n- draft\n### action\n- implement\n### rules\n- keep domain boundaries explicit\n",
         );
-    } else {
-        for required in [
-            "- **name**:",
-            "- **description**:",
-            "- **state**:",
-            "- **action**:",
-            "- **rule**:",
-            "- **variable**:",
-        ] {
-            if !out.contains(required) {
-                out.push_str(&format!("\n{}\n- TODO\n", required));
-            }
+    }
+    for required in ["### states", "### action", "### rules"] {
+        if !out
+            .lines()
+            .any(|line| line.trim().eq_ignore_ascii_case(required))
+        {
+            out.push_str(&format!("\n{}\n- TBD\n", required));
         }
     }
     out
@@ -475,15 +404,6 @@ pub(crate) fn action_append_failure_log(task_name: &str, reason: &str) -> Result
 
 fn action_load_registry(path: &Path) -> Result<ProjectRegistry, String> {
     if !path.exists() {
-        let legacy = action_legacy_registry_path();
-        if legacy.exists() {
-            let raw = fs::read_to_string(&legacy)
-                .map_err(|e| format!("failed to read {}: {}", legacy.display(), e))?;
-            let mut parsed: ProjectRegistry =
-                serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse yaml: {}", e))?;
-            action_normalize_registry(&mut parsed);
-            return Ok(parsed);
-        }
         return Ok(ProjectRegistry::default());
     }
     let raw = fs::read_to_string(path)
@@ -598,7 +518,7 @@ fn list_projects() -> Result<String, String> {
     Ok(ui::render_project_list(&registry.projects))
 }
 
-fn ui() -> Result<String, String> {
+pub(crate) fn action_run_ui() -> Result<String, String> {
     let registry_path = action_registry_path();
     let mut registry = action_load_registry(&registry_path)?;
     let normalized = action_normalize_registry(&mut registry);
@@ -683,9 +603,6 @@ fn calc_extract_project_md_list_by_header(project_md: &str, header: &str) -> Vec
         if key.is_empty() {
             continue;
         }
-        if body.trim().eq_ignore_ascii_case("todo") {
-            continue;
-        }
         if !out.iter().any(|v| v == key) {
             out.push(key.to_string());
         }
@@ -693,23 +610,34 @@ fn calc_extract_project_md_list_by_header(project_md: &str, header: &str) -> Vec
     out
 }
 
-fn calc_extract_project_md_domain_names(project_md: &str) -> Vec<String> {
+pub(crate) fn calc_extract_project_md_domain_names(project_md: &str) -> Vec<String> {
     let mut out = Vec::new();
+    let mut in_domains = false;
     for line in project_md.lines() {
         let trimmed = line.trim();
-        if !trimmed.starts_with("- **name**:") {
+        if trimmed.eq_ignore_ascii_case("# domains") {
+            in_domains = true;
             continue;
         }
-        let mut value = trimmed
-            .trim_start_matches("- **name**:")
-            .trim()
-            .trim_matches('`')
-            .to_ascii_lowercase();
-        value = calc_feature_name_snake_like(&value);
-        if value.is_empty() || out.iter().any(|v| v == &value) {
-            continue;
+        if in_domains && trimmed.starts_with("# ") && !trimmed.eq_ignore_ascii_case("# domains") {
+            break;
         }
-        out.push(value);
+        if in_domains {
+            if let Some(domain_name) = trimmed.strip_prefix("## ") {
+                let mut value = calc_feature_name_snake_like(domain_name.trim().trim_matches('`'));
+                if value == "name"
+                    || value == "states"
+                    || value == "action"
+                    || value == "rules"
+                    || value == "constraints"
+                {
+                    continue;
+                }
+                if !value.is_empty() && !out.iter().any(|v| v == &value) {
+                    out.push(std::mem::take(&mut value));
+                }
+            }
+        }
     }
     out
 }
@@ -823,8 +751,6 @@ fn calc_map_korean_feature_keywords(raw: &str) -> Option<String> {
     let mappings = [
         ("Task", "task"),
         ("task", "task"),
-        ("Todo", "todo"),
-        ("todo", "todo"),
         ("생성", "create"),
         ("목록", "list"),
         ("상태", "state"),
@@ -1031,207 +957,9 @@ planned_items:\n\
     out
 }
 
-fn calc_is_placeholder_planned_item(item: &PlannedItem) -> bool {
-    let name = item.name.trim();
-    let value = item.value.trim();
-    matches!(
-        name,
-        "project_project_md"
-            | "features_project_md_features"
-            | "features_project_features_work_draft_yaml"
-            | "draft_yaml"
-    ) || value.contains(".project/project.md")
-        || value.contains("project.md features")
-        || value.contains("draft.yaml")
-}
-
-fn calc_should_force_tasks_list_resync(doc: &DraftsListDoc) -> bool {
-    if doc.planned.is_empty() || doc.planned_items.is_empty() {
-        return false;
-    }
-    let placeholder_planned = doc.planned.iter().all(|name| {
-        matches!(
-            name.trim(),
-            "project_project_md"
-                | "features_project_md_features"
-                | "features_project_features_work_draft_yaml"
-                | "draft_yaml"
-        )
-    });
-    let placeholder_items = doc.planned_items.iter().all(calc_is_placeholder_planned_item);
-    placeholder_planned && placeholder_items
-}
-
-fn calc_should_force_tasks_list_resync_by_md(
-    doc: &DraftsListDoc,
-    features_keys: &[String],
-    planned_keys: &[String],
-) -> bool {
-    if doc.planned_items.iter().any(|item| {
-        let value = item.value.trim();
-        value == "프로젝트 정보 입력" || value == "features 리스트 입력" || value == "draft.yaml 읽기"
-    }) {
-        return true;
-    }
-    if !features_keys.is_empty() {
-        let md: HashSet<String> = features_keys
-            .iter()
-            .map(|v| calc_feature_name_snake_like(v))
-            .collect();
-        let current: HashSet<String> = doc
-            .features
-            .iter()
-            .map(|v| calc_feature_name_snake_like(v))
-            .collect();
-        if current.is_empty() || current.intersection(&md).count() == 0 {
-            return true;
-        }
-    }
-    if !planned_keys.is_empty() {
-        let md: HashSet<String> = planned_keys
-            .iter()
-            .map(|v| calc_feature_name_snake_like(v))
-            .collect();
-        let current: HashSet<String> = doc
-            .planned
-            .iter()
-            .map(|v| calc_feature_name_snake_like(v))
-            .collect();
-        if current.is_empty() || current.intersection(&md).count() == 0 {
-            return true;
-        }
-    }
-    false
-}
-
 pub(crate) fn action_sync_project_tasks_list_from_project_md(project_root: &Path) -> Result<bool, String> {
-    let project_md_path = project_root.join(PROJECT_MD_PATH);
-    let project_md = match fs::read_to_string(&project_md_path) {
-        Ok(v) => v,
-        Err(_) => return Ok(false),
-    };
-    let plan_keys = calc_extract_project_md_list_by_header(&project_md, "## plan");
-    let feature_keys = calc_extract_project_md_list_by_header(&project_md, "## features");
-    let mut domain_keys = calc_extract_project_md_domain_names(&project_md);
-    let (features_keys, planned_keys) = if !plan_keys.is_empty() {
-        // new format: features=features, plan=planned
-        (feature_keys, plan_keys)
-    } else {
-        // compatibility fallback: features=planned
-        (Vec::new(), feature_keys)
-    };
-    let drafts_list_path = action_resolve_drafts_list_path(project_root)?;
-    let mut doc = action_load_drafts_list(&drafts_list_path)?;
-    for domain in &doc.domains {
-        let key = calc_feature_name_snake_like(domain);
-        if key.is_empty() || domain_keys.iter().any(|v| v == &key) {
-            continue;
-        }
-        domain_keys.push(key);
-    }
-    let force_resync = calc_should_force_tasks_list_resync(&doc)
-        || calc_should_force_tasks_list_resync_by_md(&doc, &features_keys, &planned_keys);
-    if doc.sync_initialized
-        && (!doc.features.is_empty() || !doc.planned.is_empty() || !doc.planned_items.is_empty())
-        && !force_resync
-    {
-        return Ok(false);
-    }
-    if force_resync {
-        doc.features.clear();
-        doc.planned.clear();
-        doc.planned_items.clear();
-        doc.sync_initialized = false;
-    }
-    let before_features_len = doc.features.len();
-    let before_planned_len = doc.planned.len();
-    let before_planned_items_len = doc.planned_items.len();
-    let mut cache: HashMap<String, String> = HashMap::new();
-    let mut normalize_cached = |raw: &str| -> String {
-        if let Some(existing) = cache.get(raw) {
-            return existing.clone();
-        }
-        let normalized = action_normalize_feature_key_with_llm(raw);
-        cache.insert(raw.to_string(), normalized.clone());
-        normalized
-    };
-
-    let mut next_features = Vec::new();
-    for raw in doc.features.iter().chain(features_keys.iter()) {
-        let key = normalize_cached(raw);
-        if !next_features.iter().any(|v| v == &key) {
-            next_features.push(key);
-        }
-    }
-
-    let mut planned_items_map: HashMap<String, String> = doc
-        .planned_items
-        .iter()
-        .map(|item| (item.name.clone(), item.value.clone()))
-        .collect();
-    for raw in &doc.planned {
-        let key = normalize_cached(raw);
-        planned_items_map
-            .entry(key)
-            .or_insert_with(|| raw.trim().to_string());
-    }
-    let md_sentence_items: Vec<String> = planned_keys
-        .iter()
-        .filter(|raw| !calc_is_feature_key_like(raw))
-        .cloned()
-        .collect();
-    for item in action_generate_planned_items_with_llm(&md_sentence_items, &domain_keys) {
-        planned_items_map.insert(item.name, item.value);
-    }
-
-    let mut next_planned = Vec::new();
-    for raw in doc.planned.iter().chain(planned_keys.iter()) {
-        let key = normalize_cached(raw);
-        if next_features.iter().any(|v| v == &key) || next_planned.iter().any(|v| v == &key) {
-            continue;
-        }
-        planned_items_map
-            .entry(key.clone())
-            .or_insert_with(|| raw.trim().to_string());
-        next_planned.push(key);
-    }
-
-    let next_planned_items: Vec<PlannedItem> = next_planned
-        .iter()
-        .map(|name| PlannedItem {
-            name: name.clone(),
-            value: planned_items_map
-                .get(name)
-                .cloned()
-                .unwrap_or_else(|| name.clone()),
-        })
-        .collect();
-
-    doc.features = next_features;
-    doc.planned = next_planned;
-    doc.planned_items = next_planned_items;
-    doc.sync_initialized = true;
-
-    if doc.features.len() == before_features_len
-        && doc.planned.len() == before_planned_len
-        && doc.planned_items.len() == before_planned_items_len
-        && doc.sync_initialized
-    {
-        action_sync_draft_state_doc(project_root, &mut doc);
-        action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc)?;
-        return Ok(false);
-    }
-    action_sync_draft_state_doc(project_root, &mut doc);
-    action_save_drafts_list_primary_with_legacy_mirror(project_root, &doc)?;
-    Ok(true)
-}
-
-fn action_sync_tasks_list_on_ui_open(projects: &[ProjectRecord]) -> Result<(), String> {
-    for project in projects {
-        let root = Path::new(&project.path);
-        let _ = action_sync_project_tasks_list_from_project_md(root)?;
-    }
-    Ok(())
+    let _ = project_root;
+    Ok(false)
 }
 
 fn action_run_command_in_dir(
@@ -1260,6 +988,21 @@ fn action_run_command_in_dir(
     }
 }
 
+fn test_command() -> Result<String, String> {
+    let cwd = env::current_dir().map_err(|e| format!("failed to read cwd: {}", e))?;
+    let cargo_toml = cwd.join("Cargo.toml");
+    if !cargo_toml.exists() {
+        return Ok("test skipped: Cargo.toml not found".to_string());
+    }
+    let out = action_run_command_in_dir(&cwd, "cargo", &["test", "-q"], "cargo test -q")?;
+    let first = out.lines().next().unwrap_or("").trim();
+    if first.is_empty() {
+        Ok("test completed: cargo test -q passed".to_string())
+    } else {
+        Ok(format!("test completed: {}", first))
+    }
+}
+
 fn auto_mode(project_name: Option<&str>) -> Result<String, String> {
     project::auto_mode(project_name)
 }
@@ -1284,8 +1027,13 @@ fn draft_report() -> Result<String, String> {
     project::draft_report()
 }
 
-fn create_project(name: &str, path: Option<&str>, description: &str) -> Result<String, String> {
-    project::create_project(name, path, description)
+fn create_project(
+    name: &str,
+    path: Option<&str>,
+    description: &str,
+    spec: &str,
+) -> Result<String, String> {
+    project::create_project(name, path, description, spec)
 }
 
 fn select_project(name: &str) -> Result<String, String> {
@@ -1401,12 +1149,12 @@ fn action_append_feature_to_project_md(feature_name: &str, display_name: &str) -
 
     let header_idx = lines
         .iter()
-        .position(|line| line.trim().eq_ignore_ascii_case("## plan"));
+        .position(|line| line.trim().eq_ignore_ascii_case("# features"));
     let idx = if let Some(i) = header_idx {
         i
     } else {
         lines.push(String::new());
-        lines.push("## plan".to_string());
+        lines.push("# features".to_string());
         lines.push(String::new());
         lines.len() - 2
     };
@@ -1422,149 +1170,6 @@ fn action_append_feature_to_project_md(feature_name: &str, display_name: &str) -
     lines.insert(end, format!("- {}", feature_label));
     fs::write(path, lines.join("\n") + "\n")
         .map_err(|e| format!("failed to write {}: {}", PROJECT_MD_PATH, e))
-}
-
-fn action_validate_todo_doc(doc: &TodoDoc) -> Result<(), String> {
-    if doc.tasks.is_empty() {
-        return Err("todo.yaml format invalid: tasks is empty".to_string());
-    }
-    let mut seen = HashSet::new();
-    for (idx, task) in doc.tasks.iter().enumerate() {
-        if task.name.trim().is_empty() {
-            return Err(format!("todo.yaml format invalid: tasks[{idx}].name is empty"));
-        }
-        if !calc_is_valid_snake_feature_key(&task.name) {
-            return Err(format!(
-                "todo.yaml format invalid: tasks[{idx}].name is not snake_case"
-            ));
-        }
-        if !seen.insert(task.name.clone()) {
-            return Err(format!(
-                "todo.yaml format invalid: duplicated task name `{}`",
-                task.name
-            ));
-        }
-        if task.draft_path.trim().is_empty() {
-            return Err(format!(
-                "todo.yaml format invalid: tasks[{idx}].draft_path is empty"
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn action_save_todo_doc(path: &Path, doc: &TodoDoc) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
-    }
-    let raw = serde_yaml::to_string(doc).map_err(|e| format!("todo yaml encode error: {}", e))?;
-    fs::write(path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
-}
-
-fn action_load_todo_doc(path: &Path) -> Result<TodoDoc, String> {
-    let raw =
-        fs::read_to_string(path).map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
-    let doc: TodoDoc =
-        serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse {}: {}", path.display(), e))?;
-    action_validate_todo_doc(&doc)?;
-    Ok(doc)
-}
-
-fn action_build_todo_from_input_md() -> Result<String, String> {
-    let input_path = Path::new(INPUT_MD_PATH);
-    if !input_path.exists() {
-        return Err(format!("{} not found", INPUT_MD_PATH));
-    }
-    let request_raw = fs::read_to_string(input_path)
-        .map_err(|e| format!("failed to read {}: {}", INPUT_MD_PATH, e))?;
-    let parsed = calc_parse_add_function_objects(&request_raw);
-    if parsed.is_empty() {
-        return Err("input.md parse failed: expected `# / > / -` format".to_string());
-    }
-    let todo_prompt_path = action_resolve_build_funciton_todo_prompt_path()?;
-    let todo_prompt_template = fs::read_to_string(&todo_prompt_path)
-        .map_err(|e| format!("failed to read {}: {}", todo_prompt_path.display(), e))?;
-    let todo_prompt = todo_prompt_template.replace("{input_md}", &request_raw);
-    let todo_raw = action_run_codex_exec_capture(&todo_prompt)?;
-    let todo_yaml = action_normalize_todo_doc_yaml(&todo_raw)?;
-    let mut todo_doc: TodoDoc =
-        serde_yaml::from_str(&todo_yaml).map_err(|e| format!("generated todo yaml invalid: {}", e))?;
-    for task in &mut todo_doc.tasks {
-        task.name = calc_feature_name_snake_like(&task.name);
-        if task.name.trim().is_empty() {
-            task.name = calc_feature_name_snake_like(&task.display_name);
-        }
-        if task.display_name.trim().is_empty() {
-            task.display_name = task.name.clone();
-        }
-        task.draft_path.clear();
-    }
-    let prompt_path = action_resolve_build_funciton_prompt_path()?;
-    let prompt_template = fs::read_to_string(&prompt_path)
-        .map_err(|e| format!("failed to read {}: {}", prompt_path.display(), e))?;
-
-    for task in &mut todo_doc.tasks {
-        if task.display_name.trim().is_empty() {
-            task.display_name = task.name.clone();
-        }
-        let prompt = prompt_template
-            .replace("{{name}}", &task.display_name)
-            .replace(
-                "{{rule}}",
-                &if task.rule.is_empty() {
-                    "- (none)".to_string()
-                } else {
-                    task.rule
-                        .iter()
-                        .map(|v| format!("- {}", v))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                },
-            )
-            .replace(
-                "{{step}}",
-                &if task.step.is_empty() {
-                    "- (none)".to_string()
-                } else {
-                    task.step
-                        .iter()
-                        .map(|v| format!("- {}", v))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                },
-            );
-        let draft_raw = action_run_codex_exec_capture(&prompt)?;
-        let draft_yaml = action_normalize_draft_task_step_yaml(&draft_raw)?;
-        let draft_doc: DraftDoc = serde_yaml::from_str(&draft_yaml)
-            .map_err(|e| format!("generated draft yaml invalid: {}", e))?;
-        let draft_issues = action_validate_draft_doc(&draft_doc);
-        if !draft_issues.is_empty() {
-            return Err(format!(
-                "generated draft yaml invalid: {}",
-                draft_issues.join(" | ")
-            ));
-        }
-        let draft_path = ui::action_resolve_feature_draft_path(&task.name);
-        if let Some(parent) = draft_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
-        }
-        fs::write(&draft_path, draft_yaml)
-            .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
-        task.depends_on = draft_doc.depends_on;
-        task.draft_path = draft_path.display().to_string();
-    }
-
-    action_validate_todo_doc(&todo_doc)?;
-    let todo_path = Path::new(TODOS_YAML_PATH);
-    action_save_todo_doc(todo_path, &todo_doc)?;
-    Ok(format!(
-        "todo generated from {}: {} item(s) -> {}",
-        INPUT_MD_PATH,
-        todo_doc.tasks.len(),
-        TODOS_YAML_PATH
-    ))
 }
 
 fn action_resolve_build_funciton_prompt_path() -> Result<PathBuf, String> {
@@ -1583,27 +1188,6 @@ fn action_resolve_build_funciton_prompt_path() -> Result<PathBuf, String> {
     }
     Err(format!(
         "build-function prompt not found: {} (source root: {})",
-        file_name,
-        root.display()
-    ))
-}
-
-fn action_resolve_build_funciton_todo_prompt_path() -> Result<PathBuf, String> {
-    let root = action_source_root();
-    let file_name = "build-funciton-todo.txt";
-    let candidates = [
-        root.join("assets").join("code").join("prompts").join(file_name),
-        PathBuf::from("assets").join("code").join("prompts").join(file_name),
-        root.join("src").join("assets").join("code").join("prompts").join(file_name),
-        PathBuf::from("src").join("assets").join("code").join("prompts").join(file_name),
-    ];
-    for candidate in candidates {
-        if candidate.exists() {
-            return Ok(candidate);
-        }
-    }
-    Err(format!(
-        "build-function todo prompt not found: {} (source root: {})",
         file_name,
         root.display()
     ))
@@ -1684,7 +1268,7 @@ fn action_infer_workspace_spec(file_hints: &[String]) -> String {
     "workspace".to_string()
 }
 
-fn action_generate_project_md_from_workspace(project_root: &Path) -> Result<String, String> {
+pub(crate) fn action_generate_project_md_from_workspace(project_root: &Path) -> Result<String, String> {
     let file_hints = action_collect_workspace_file_hints(project_root)?;
     let project_name = project_root
         .file_name()
@@ -1718,61 +1302,6 @@ fn action_generate_project_md_from_workspace(project_root: &Path) -> Result<Stri
         None,
         true,
     )
-}
-
-fn action_validate_todo_feedback_markdown(markdown: &str) -> Result<(), String> {
-    let required = ["# 구현 기능", "## 문제 해결", "## 미해결", "## 개선점"];
-    for header in required {
-        if !markdown
-            .lines()
-            .any(|line| line.trim().eq_ignore_ascii_case(header))
-        {
-            return Err(format!(
-                "feedback markdown format invalid: missing header `{}`",
-                header
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn action_write_todo_feedback(task_names: &[String], run_summary: &str) -> Result<String, String> {
-    let task_text = if task_names.is_empty() {
-        "- (none)".to_string()
-    } else {
-        task_names
-            .iter()
-            .map(|v| format!("- {}", v))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    let prompt = format!(
-        "너는 구현 피드백 작성기다.\n\
-입력:\n\
-- 구현 대상 task 목록:\n{}\n\
-- 실행 결과 요약: {}\n\n\
-출력 규칙:\n\
-1) markdown 본문만 출력.\n\
-2) 아래 헤더를 정확히 유지.\n\
-   - # 구현 기능\n\
-   - ## 문제 해결\n\
-   - ## 미해결\n\
-   - ## 개선점\n\
-3) 각 섹션마다 `- ` 불릿 최소 1개.\n\
-4) 결과는 실제 실행 요약과 연결되게 작성.",
-        task_text, run_summary
-    );
-    let raw = action_run_codex_exec_capture_with_timeout(&prompt, 120)?;
-    let feedback_md = raw.trim().to_string();
-    action_validate_todo_feedback_markdown(&feedback_md)?;
-    let out_path = Path::new(".project").join("feedback.md");
-    if let Some(parent) = out_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
-    }
-    fs::write(&out_path, feedback_md + "\n")
-        .map_err(|e| format!("failed to write {}: {}", out_path.display(), e))?;
-    Ok(format!("feedback saved: {}", out_path.display()))
 }
 
 fn calc_extract_next_input_markdown_block(raw: &str) -> Option<String> {
@@ -1845,45 +1374,7 @@ ACTION: <NEXT|DONE>\n\
     Ok(format!("feedback completed: updated {}", INPUT_MD_PATH))
 }
 
-async fn build_function_auto() -> Result<String, String> {
-    let mut cycle_logs = Vec::new();
-    for cycle in 1..=5usize {
-        if !Path::new(INPUT_MD_PATH).exists() {
-            if cycle == 1 {
-                return Err(format!("{} not found", INPUT_MD_PATH));
-            }
-            break;
-        }
-        show_current_state("plan", &format!("cycle {}: input.md -> todos.yaml 생성 시작", cycle));
-        let todo_msg = action_build_todo_from_input_md()?;
-        if let Some(msg) = action_ensure_project_md_exists(Path::new("."))? {
-            cycle_logs.push(format!("cycle {} | {}", cycle, msg));
-        }
-        show_current_state("build", &format!("cycle {}: todo 병렬 구현 시작", cycle));
-        let build_msg = parallel::run_parallel_todo().await?;
-        let todo_doc = action_load_todo_doc(Path::new(TODOS_YAML_PATH))?;
-        let todo_names: Vec<String> = todo_doc.tasks.iter().map(|v| v.name.clone()).collect();
-        show_current_state("chcek", &format!("cycle {}: feedback.md 작성/검토 시작", cycle));
-        let feedback_write_msg = action_write_todo_feedback(&todo_names, &build_msg)?;
-        let feedback_msg = feedback()?;
-        cycle_logs.push(format!(
-            "cycle {} | {} | {} | {} | {}",
-            cycle, todo_msg, build_msg, feedback_write_msg, feedback_msg
-        ));
-        if !Path::new(INPUT_MD_PATH).exists() {
-            break;
-        }
-    }
-    if Path::new(INPUT_MD_PATH).exists() {
-        cycle_logs.push("stopped: max cycle reached with remaining input.md".to_string());
-    }
-    Ok(format!(
-        "build-function-auto completed\n{}",
-        cycle_logs.join("\n")
-    ))
-}
-
-fn add_func(request_input: Option<String>) -> Result<String, String> {
+async fn add_func(request_input: Option<String>) -> Result<String, String> {
     let project_md = fs::read_to_string(PROJECT_MD_PATH)
         .map_err(|e| format!("failed to read {}: {}", PROJECT_MD_PATH, e))?;
     let project_info = calc_extract_project_info(&project_md);
@@ -2011,7 +1502,7 @@ fn action_generate_project_plan(
             ],
         ),
         None => format!(
-            "너는 project.md 생성기다.\n입력:\n- name: {}\n- description: {}\n- spec: {}\n- goal: {}\n- rules:\n{}\n\n지시:\n- 템플릿(`assets/code/templates/project.md`) 구조를 정확히 따른다.\n- 필수 헤더를 모두 포함한다: `# info`, `## rule`, `## plan`, `## features`, `## structure`, `# Domains`, `# Flow`(또는 `# Stage`), `# UI`, `# Step`, `# Constraints`, `# Verification`, `# Gate Checklist`.\n- `# Domains`에는 `### domain` 블록을 최소 1개 포함하고, 각 블록에 `- **name**:`, `- **description**:`, `- **state**:`, `- **action**:`, `- **rule**:`, `- **variable**:`를 모두 포함한다.\n- 규칙은 `$plan-project-code`, `$build_domain` 스킬을 사용해.\n- 특히 도메인 설계는 `/home/tree/ai/skills/build-domain/SKILL.md`를 참조해 결정한다.\n- `## plan`에는 최소 5개의 기능 항목을 반드시 작성해.\n- 최종 출력은 markdown 본문만.",
+            "너는 project.md 생성기다.\n입력:\n- name: {}\n- description: {}\n- spec: {}\n- goal: {}\n- rules:\n{}\n\n지시:\n- 템플릿(`assets/code/templates/project.md`) 구조를 정확히 따른다.\n- `# domains`는 `## <domain_name>` 블록 리스트로 작성하고, 각 블록에 `### states`, `### action`, `### rules`를 모두 포함한다.\n- `### states`, `### action`, `### rules`의 내용은 모두 `-` 리스트 형식으로 작성한다.\n- 규칙은 `$plan-project-code`, `$build_domain` 스킬을 사용해.\n- 특히 도메인 설계는 `/home/tree/ai/skills/build-domain/SKILL.md`를 참조해 결정한다.\n- 최종 출력은 markdown 본문만.",
             project_name, description, spec, goal, rules_text
         ),
     };
@@ -2023,12 +1514,12 @@ fn action_generate_project_plan(
             let mut lines: Vec<String> = project_md.lines().map(|v| v.to_string()).collect();
             let header_idx = lines
                 .iter()
-                .position(|line| line.trim().eq_ignore_ascii_case("## plan"));
+                .position(|line| line.trim().eq_ignore_ascii_case("# features"));
             let idx = if let Some(i) = header_idx {
                 i
             } else {
                 lines.push(String::new());
-                lines.push("## plan".to_string());
+                lines.push("# features".to_string());
                 lines.push(String::new());
                 lines.len() - 2
             };
@@ -3020,7 +2511,7 @@ pub(crate) async fn run_parallel_test() -> Result<String, String> {
     ))
 }
 
-fn calc_extract_project_info(project_md: &str) -> String {
+pub(crate) fn calc_extract_project_info(project_md: &str) -> String {
     let mut in_info = false;
     let mut lines = Vec::new();
     for line in project_md.lines() {
@@ -3029,7 +2520,7 @@ fn calc_extract_project_info(project_md: &str) -> String {
             in_info = true;
             continue;
         }
-        if in_info && trimmed.starts_with("## ") {
+        if in_info && trimmed.starts_with('#') {
             break;
         }
         if in_info {
@@ -3043,16 +2534,16 @@ fn calc_extract_project_info(project_md: &str) -> String {
     }
 }
 
-fn calc_extract_project_rules(project_md: &str) -> Vec<String> {
+pub(crate) fn calc_extract_project_rules(project_md: &str) -> Vec<String> {
     let mut in_rule = false;
     let mut out = Vec::new();
     for line in project_md.lines() {
         let trimmed = line.trim();
-        if trimmed.eq_ignore_ascii_case("## rule") {
+        if trimmed.eq_ignore_ascii_case("# rules") {
             in_rule = true;
             continue;
         }
-        if in_rule && trimmed.starts_with("## ") {
+        if in_rule && trimmed.starts_with('#') {
             break;
         }
         if in_rule && trimmed.starts_with("- ") {
@@ -3198,142 +2689,6 @@ fn action_repair_draft_yaml_with_llm(raw: &str) -> Result<String, String> {
     Ok(calc_extract_yaml_block(&repaired_raw))
 }
 
-fn action_normalize_todo_item_yaml(raw_yaml: &str) -> Result<String, String> {
-    fn value_to_text(v: &serde_yaml::Value) -> String {
-        match v {
-            serde_yaml::Value::String(s) => s.trim().to_string(),
-            serde_yaml::Value::Mapping(map) => {
-                let mut parts = Vec::new();
-                for (k, val) in map {
-                    let key = match k {
-                        serde_yaml::Value::String(s) => s.clone(),
-                        other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
-                    };
-                    let value = match val {
-                        serde_yaml::Value::String(s) => s.clone(),
-                        other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
-                    };
-                    if !key.is_empty() && !value.is_empty() {
-                        parts.push(format!("{}: {}", key, value));
-                    }
-                }
-                parts.join(" | ")
-            }
-            other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
-        }
-    }
-
-    let mut root: serde_yaml::Value =
-        serde_yaml::from_str(raw_yaml).map_err(|e| format!("generated todo item yaml invalid: {}", e))?;
-    let serde_yaml::Value::Mapping(root_map) = &mut root else {
-        return Ok(raw_yaml.to_string());
-    };
-
-    for key in ["rule", "step", "depends_on"] {
-        let k = serde_yaml::Value::String(key.to_string());
-        let Some(value) = root_map.get_mut(&k) else {
-            continue;
-        };
-        match value {
-            serde_yaml::Value::Sequence(items) => {
-                let mut normalized = Vec::with_capacity(items.len());
-                for item in items.iter() {
-                    let text = value_to_text(item);
-                    if !text.is_empty() {
-                        normalized.push(serde_yaml::Value::String(text));
-                    }
-                }
-                *items = normalized;
-            }
-            other => {
-                let text = value_to_text(other);
-                *other = if text.is_empty() {
-                    serde_yaml::Value::Sequence(Vec::new())
-                } else {
-                    serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(text)])
-                };
-            }
-        }
-    }
-
-    for key in ["name", "display_name", "draft_path"] {
-        let k = serde_yaml::Value::String(key.to_string());
-        if let Some(value) = root_map.get_mut(&k) {
-            let text = value_to_text(value);
-            *value = serde_yaml::Value::String(text);
-        }
-    }
-
-    serde_yaml::to_string(&root).map_err(|e| format!("generated todo item yaml invalid: {}", e))
-}
-
-fn action_normalize_todo_doc_yaml(raw_yaml: &str) -> Result<String, String> {
-    let mut parse_error = String::new();
-    let block = calc_extract_yaml_block(raw_yaml);
-    let tasks_start = raw_yaml
-        .find("\ntasks:")
-        .map(|idx| idx + 1)
-        .or_else(|| raw_yaml.find("tasks:"));
-    let tail = tasks_start.map(|idx| raw_yaml[idx..].to_string()).unwrap_or_default();
-    let candidates = [raw_yaml.to_string(), block, tail];
-    let mut parsed_root: Option<serde_yaml::Value> = None;
-    for candidate in candidates {
-        let trimmed = candidate.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        match serde_yaml::from_str::<serde_yaml::Value>(trimmed) {
-            Ok(v) => {
-                parsed_root = Some(v);
-                break;
-            }
-            Err(e) => {
-                parse_error = e.to_string();
-            }
-        }
-    }
-    let root = parsed_root
-        .ok_or_else(|| format!("generated todo yaml invalid: {}", parse_error))?;
-    let tasks = match root {
-        serde_yaml::Value::Sequence(seq) => seq,
-        serde_yaml::Value::Mapping(mut map) => {
-            let tasks_key = serde_yaml::Value::String("tasks".to_string());
-            if let Some(value) = map.remove(&tasks_key) {
-                match value {
-                    serde_yaml::Value::Sequence(seq) => seq,
-                    one => vec![one],
-                }
-            } else {
-                vec![serde_yaml::Value::Mapping(map)]
-            }
-        }
-        _ => {
-            return Err(
-                "generated todo yaml invalid: expected mapping with `tasks` or sequence".to_string(),
-            )
-        }
-    };
-    if tasks.is_empty() {
-        return Err("generated todo yaml invalid: tasks is empty".to_string());
-    }
-    let mut normalized_tasks = Vec::with_capacity(tasks.len());
-    for task in tasks {
-        let raw_item = serde_yaml::to_string(&task)
-            .map_err(|e| format!("generated todo yaml invalid: {}", e))?;
-        let normalized_item = action_normalize_todo_item_yaml(&raw_item)?;
-        let parsed_item: serde_yaml::Value = serde_yaml::from_str(&normalized_item)
-            .map_err(|e| format!("generated todo yaml invalid: {}", e))?;
-        normalized_tasks.push(parsed_item);
-    }
-    let mut root_map = serde_yaml::Mapping::new();
-    root_map.insert(
-        serde_yaml::Value::String("tasks".to_string()),
-        serde_yaml::Value::Sequence(normalized_tasks),
-    );
-    serde_yaml::to_string(&serde_yaml::Value::Mapping(root_map))
-        .map_err(|e| format!("generated todo yaml invalid: {}", e))
-}
-
 fn calc_extract_feature_name(raw: &str, fallback: &str) -> String {
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -3475,29 +2830,7 @@ pub(crate) fn action_preflight_parallel_build(path: &Path) -> Result<String, Str
     ))
 }
 
-pub(crate) fn action_preflight_parallel_todo(path: &Path) -> Result<String, String> {
-    let doc = action_load_todo_doc(path)?;
-    let mut missing = Vec::new();
-    for task in &doc.tasks {
-        let task_path = Path::new(&task.draft_path);
-        if !task_path.exists() {
-            missing.push(task.name.clone());
-        }
-    }
-    if !missing.is_empty() {
-        return Err(format!(
-            "parallel-todo-preflight failed: missing draft path for tasks={:?}",
-            missing
-        ));
-    }
-    Ok(format!(
-        "parallel-todo-preflight ok: tasks={} files_ready={}",
-        doc.tasks.len(),
-        doc.tasks.len()
-    ))
-}
-
-fn add_feature_to_planned(feature_name: &str) -> Result<(), String> {
+pub(crate) fn add_feature_to_planned(feature_name: &str) -> Result<(), String> {
     let path = action_resolve_drafts_list_path(Path::new("."))?;
     action_add_feature_to_planned_at(&path, feature_name)
 }
@@ -3615,25 +2948,12 @@ fn action_promote_project_md_plan_to_features(project_root: &Path, items: &[Stri
         return Ok(false);
     }
     let mut changed = false;
-    if let Some((plan_start, plan_end)) = calc_markdown_section_bounds(&lines, "## plan") {
-        let mut kept = Vec::new();
-        for line in lines[(plan_start + 1)..plan_end].iter().cloned() {
-            let key = calc_extract_list_key_from_markdown_line(&line);
-            if key.as_ref().is_some_and(|k| targets.contains(k)) {
-                changed = true;
-                continue;
-            }
-            kept.push(line);
-        }
-        lines.splice((plan_start + 1)..plan_end, kept);
-    }
-
-    let mut features_bounds = calc_markdown_section_bounds(&lines, "## features");
+    let mut features_bounds = calc_markdown_section_bounds(&lines, "# features");
     if features_bounds.is_none() {
         lines.push(String::new());
-        lines.push("## features".to_string());
+        lines.push("# features".to_string());
         lines.push(String::new());
-        features_bounds = calc_markdown_section_bounds(&lines, "## features");
+        features_bounds = calc_markdown_section_bounds(&lines, "# features");
         changed = true;
     }
     if let Some((features_start, features_end)) = features_bounds {
@@ -3720,7 +3040,7 @@ fn calc_check_code_timeout_sec() -> u64 {
 }
 
 fn action_append_check_code_runtime_log(stage: &str, detail: &str) {
-    let runtime = Path::new(".project").join("runtime");
+    let runtime = Path::new(".project").join("reference");
     if fs::create_dir_all(&runtime).is_err() {
         return;
     }
@@ -3730,7 +3050,7 @@ fn action_append_check_code_runtime_log(stage: &str, detail: &str) {
     }
 }
 
-fn action_run_check_code_after_draft_changes(
+pub(crate) fn action_run_check_code_after_draft_changes(
     feature_names: &[String],
     trigger: &str,
 ) -> Result<String, String> {
@@ -3740,12 +3060,12 @@ fn action_run_check_code_after_draft_changes(
     let mut target_lines = Vec::new();
     for name in feature_names {
         target_lines.push(format!(
-            "- {}: .project/feature/{}/draft.yaml (or drafts.yaml)",
-            name, name
+            "- {}: .project/drafts.yaml",
+            name
         ));
     }
     let prompt = format!(
-        "트리거: {}\n대상:\n{}\n\n지시:\n- `$check-code` 스킬을 사용해 점검/수정을 수행해.\n- YAML/Markdown 참조 파일이 있으면 먼저 읽고 값을 채워야 할 헤더/속성을 정리한 뒤 형식에 맞게 반영해.\n- 문제가 없으면 `NO_CHANGE`를 출력.",
+        "트리거: {}\n대상:\n{}\n\n지시:\n- `$check-code` 스킬을 사용해 점검/수정을 수행해.\n- YAML/Markdown 참조 파일이 있으면 먼저 읽고 값을 채워야 할 헤더/속성을 정리한 뒤 형식에 맞게 반영해.\n- `.project/feature` 경로를 새로 생성하거나 사용하지 말고, `.project/drafts.yaml`만 기준으로 점검해.\n- 문제가 없으면 `NO_CHANGE`를 출력.",
         trigger,
         target_lines.join("\n")
     );
@@ -3806,10 +3126,6 @@ pub(crate) fn action_source_root() -> PathBuf {
 
 fn action_registry_path() -> PathBuf {
     action_source_root().join(REGISTRY_PATH)
-}
-
-fn action_legacy_registry_path() -> PathBuf {
-    action_source_root().join(LEGACY_REGISTRY_PATH)
 }
 
 fn action_resolve_project_template_path() -> Result<PathBuf, String> {
@@ -4141,20 +3457,6 @@ pub(crate) fn action_collect_parallel_feature_tasks() -> Result<Vec<ParallelFeat
     Ok(out)
 }
 
-pub(crate) fn action_collect_parallel_todo_tasks(path: &Path) -> Result<Vec<ParallelFeatureTask>, String> {
-    let doc = action_load_todo_doc(path)?;
-    let mut out = Vec::new();
-    for task in doc.tasks {
-        out.push(ParallelFeatureTask {
-            name: task.name,
-            draft_path: PathBuf::from(task.draft_path),
-            depends_on: task.depends_on,
-        });
-    }
-    out.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(out)
-}
-
 pub(crate) fn action_build_task_prompt(
     task_template: &str,
     project_info: &str,
@@ -4260,25 +3562,7 @@ mod tests {
 
         let changed =
             action_sync_project_tasks_list_from_project_md(&project_dir).expect("sync tasks_list");
-        assert!(changed);
-
-        let doc = action_load_drafts_list(&meta.join("drafts_list.yaml")).expect("load drafts_list");
-        let features_key = calc_feature_name_snake_like("existing_feature");
-        let planned_a = calc_feature_name_snake_like("prompt_preprocess_cli");
-        let planned_b = calc_feature_name_snake_like("file_log_helper");
-        assert!(doc.features.iter().any(|v| v == &features_key));
-        assert!(doc.planned.iter().any(|v| v == &planned_a));
-        assert!(doc.planned.iter().any(|v| v == &planned_b));
-        assert!(
-            doc.planned_items
-                .iter()
-                .any(|v| v.name == planned_a)
-        );
-        assert!(
-            doc.planned_items
-                .iter()
-                .any(|v| v.name == planned_b)
-        );
+        assert!(!changed);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -4307,14 +3591,22 @@ mod tests {
 
     #[test]
     fn extract_project_md_domain_names_reads_domain_blocks() {
-        let md = r#"# Domains
-### domain
-- **name**: `player`
-- **description**: d
+        let md = r#"# domains
+## player
+### states
+- idle
+### action
+- move
+### rules
+- cannot overlap turn order
 
-### domain
-- **name**: `system`
-- **description**: d
+## system
+### states
+- running
+### action
+- sync
+### rules
+- deterministic tick
 "#;
         let domains = calc_extract_project_md_domain_names(md);
         assert_eq!(domains, vec!["player".to_string(), "system".to_string()]);
@@ -4370,12 +3662,7 @@ mod tests {
 
         let changed =
             action_sync_project_tasks_list_from_project_md(&project_dir).expect("sync tasks_list");
-        assert!(changed);
-
-        let doc = action_load_drafts_list(&meta.join("drafts_list.yaml")).expect("load drafts_list");
-        assert!(!doc.planned.iter().any(|v| v == "project_project_md"));
-        assert_eq!(doc.planned.len(), 2);
-        assert_eq!(doc.planned_items.len(), 2);
+        assert!(!changed);
         let _ = fs::remove_dir_all(root);
     }
 
@@ -4425,13 +3712,7 @@ mod tests {
 
         let changed =
             action_sync_project_tasks_list_from_project_md(&project_dir).expect("sync tasks_list");
-        assert!(changed);
-        let doc = action_load_drafts_list(&meta.join("drafts_list.yaml")).expect("load drafts_list");
-        assert!(!doc.planned.iter().any(|v| v == "func_e6740374"));
-        assert!(!doc.planned.iter().any(|v| v == "features"));
-        assert!(!doc.planned.iter().any(|v| v == "draft_yaml"));
-        assert!(!doc.features.is_empty());
-        assert!(!doc.planned.is_empty());
+        assert!(!changed);
         let _ = fs::remove_dir_all(root);
     }
 
@@ -4502,13 +3783,9 @@ mod tests {
         let meta = project_dir.join(".project");
         fs::create_dir_all(&meta).expect("create project meta");
         let md = r#"# info
-- name: sample
+name : sample
 
-## plan
-- alpha_feature
-- beta_feature
-
-## features
+# features
 - existing_feature
 "#;
         fs::write(meta.join("project.md"), md).expect("write project.md");
@@ -4521,10 +3798,7 @@ mod tests {
         assert!(changed);
 
         let updated = fs::read_to_string(meta.join("project.md")).expect("read project.md");
-        let plan = calc_extract_project_md_list_by_header(&updated, "## plan");
-        let features = calc_extract_project_md_list_by_header(&updated, "## features");
-        assert!(!plan.iter().any(|v| v == "alpha_feature"));
-        assert!(plan.iter().any(|v| v == "beta_feature"));
+        let features = calc_extract_project_md_list_by_header(&updated, "# features");
         assert!(features.iter().any(|v| v == "existing_feature"));
         assert!(features.iter().any(|v| v == "alpha_feature"));
         let _ = fs::remove_dir_all(root);

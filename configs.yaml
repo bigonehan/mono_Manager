@@ -10,3 +10,5 @@ keymap:
   run_parallel: p
 ai:
   model: codex
+client:
+  tui: true

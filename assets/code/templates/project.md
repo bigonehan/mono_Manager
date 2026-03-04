@@ -1,61 +1,26 @@
 # info
-- name: 
-- description: 
-- path: 
-- spec: 
-- goal: 
+name : 프로젝트 이름
+description : 프로젝트 설명
+spec : 프로젝트에서 사용하는 libray, 기술들
+path : 현재 프로젝트 폴더 위치
 
-## rule
-- 
+# features
+- 프로젝트에서 제공하는 기능들
 
-## plan
-1. 
+# rules
+- 프로젝트 내부의 공통 규칙
 
-## features
-1. 
+# constraints
+- 프로젝트 내부의 공통 제약
 
-## structure
-- 
-
-# Domains
-### domain
-- **name**: 
-- **description**: 
-- **state**: 
-- **action**: 
-- **rule**:
-  - 
-- **variable**:
-  - 
-
-# Flow
-- stage_init_plan:
-  - feature -> domain -> flow
-- stage_draft:
-  - set_draft / add_draft / enter_parallel
-- stage_build:
-  - check_draft -> build_draft -> enter_check_job
-
-# UI
-- Project
-- Draft
-- Parallel
-
-# Step
-- 
-
-# Constraints
-- 
-
-# Verification
-- [미완] 
-
-# Gate Checklist
-- 모호함 해소: 
-- `.project/project.md` 생성/최신화: 
-- 완료 기준 문서화: 
-- build_domain 스킬 실행 여부: 
-- QA 1회 왕복 여부: 
-- features 개수(3~7): 
-- Flow stage 정합성: 
-- Constraints/Verification 미완 표기: 
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약

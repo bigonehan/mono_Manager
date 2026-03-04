@@ -1,0 +1,12 @@
+# check_list
+- [x] init_code_plan: `.project/project.md`의 domains를 `.project/plan.yaml`에 반영
+- [x] add_code_plan: `-f`(input.md 파싱), `-m`(메시지 추가), `-a`(LLM 추론) 지원
+- [x] add_code_plan: planned 추가 후 y/n로 `add_code_draft()` 호출 여부 확인
+- [x] add_code_draft: plan planned 순회해 `.project/drafts.yaml` 생성/추가
+- [x] add_code_draft: type(calc/fix/action) 분류
+- [x] add_code_draft: project rules + domain rules/constraints 반영
+- [x] add_code_draft: `-f`에서 input.md의 `-` 규칙, `>` step 반영
+- [x] add_code_draft: 완료 후 `check_code_draft` 자동 호출
+- [x] impl_code_draft: planned -> worked 이동 후 병렬 실행, 완료 후 plan complete 이동
+- [x] check_code_draft: `check_code_draft.txt` 참조 + `$check-code` 스킬 후속 점검 + `report.md` 생성
+- [x] scenario 검증: `.project/scenario.md` 존재/형식 검사(`명령 | 실행/변경 파일 | 파생 결과`)

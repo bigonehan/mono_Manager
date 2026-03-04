@@ -103,3 +103,8 @@
 - In this case, do not edit code/docs unless the user explicitly asks to implement/change.
 - Output must prioritize executed command + result summary.
 - If command execution hangs, first report hang reason and ask whether to stop/retry with timeout; do not switch to implementation.
+
+## No-Hardcoding Default Rule
+- Unless the user explicitly requests hardcoding, do not implement behavior with hardcoded domain/output-specific branches.
+- Prefer prompt-driven LLM inference using files under `assets/code/prompts` for generation/decision paths.
+- If temporary fallback is unavoidable, keep it minimal and generic (non-domain-specific), and treat it as a last resort.
