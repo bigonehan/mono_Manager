@@ -92,11 +92,16 @@
 
 ## Response Phrase Rule
 - Do not use agreement-preface phrases in responses.
-- Forbidden examples: `맞습니다`, `맞아요`, `인식했습니다`.
+- Forbidden examples: `맞습니다`, `맞아요`, `인식했습니다`, `확인했습니다`.
 - Start directly with result/action without those prefaces.
 - Hard ban: never output `맞습니다` in any response, including short acknowledgements, summaries, or status updates.
-- Additional banned starters: `네, 맞습니다`, `맞습니다.`, `네 맞습니다`, `그렇습니다`.
+- Additional banned starters: `네, 맞습니다`, `맞습니다.`, `네 맞습니다`, `그렇습니다`, `확인했습니다`.
 - Pre-send guard: before every response, scan the final text and if any banned phrase appears, rewrite the sentence and re-check before sending.
+- Enforcement order:
+  1. Draft response
+  2. Run banned phrase scan
+  3. Rewrite with neutral action/result wording (no acknowledgement phrasing)
+  4. Re-scan and send only if zero banned matches
 
 ## CLI Execute-First Interpretation Rule
 - If the user says phrases like `호출해서 실행`, `실행해봐`, `돌려봐`, interpret the request as **run existing CLI command first**, not implementation.
@@ -108,3 +113,7 @@
 - Unless the user explicitly requests hardcoding, do not implement behavior with hardcoded domain/output-specific branches.
 - Prefer prompt-driven LLM inference using files under `assets/code/prompts` for generation/decision paths.
 - If temporary fallback is unavoidable, keep it minimal and generic (non-domain-specific), and treat it as a last resort.
+
+## Legacy Compatibility Removal Rule
+- Remove legacy compatibility paths/modes instead of keeping dual-path support.
+- When standard path/name changes, keep only the current canonical path and update callers in the same change.

@@ -218,6 +218,15 @@
 - 코드 작업 플로우 전용 명령군을 추가함: `init_code_project`, `init_code_plan`, `add_code_plan`, `create_code_draft`, `add_code_draft_item`, `impl_code_draft`, `check_code_draft`, `check_task`, `check_draft`.
 - 새 명령을 기존 엔진과 연결하기 위해 `src/code.rs` 모듈을 신설하고, `.project/plan.yaml`/`.project/drafts.yaml` 상태 전이( planned/worked/complete )와 draft 파일 생성 경로를 구현함.
 - `check_code_draft`에 check-code 후속 실행 및 `report.md` 생성을 연결하고, `.project/scenario.md` 형식 검증(명령 | 실행/변경 파일 | 파생 결과)을 반영함.
+
+## 2026-03-05 - 작업한일
+- `AGENTS.md`에 레거시 호환 모드/경로를 유지하지 않고 제거하는 `Legacy Compatibility Removal Rule`을 추가함.
+- `src/main.rs`의 spec checkpoint 경로 해석에서 레거시 fallback(`assets/checkpoints`) 읽기 로직을 제거하고, canonical 경로(`assets/checkPoints/<spec>.md`)만 사용하도록 정리함.
+- `src/code.rs`의 `enforce_project_md_primary_path`에서 `project/project.md` 마이그레이션/삭제 루틴을 제거하고 `.project` 경로만 보장하도록 단순화함.
+
+## 2026-03-05 - 작업한일
+- `./.project/project.md`를 상세화해 `# info` 요구사항(astro/react/typescript/tailwind/shadcn/zustand/gsap, main/ask 분리, 반응형)을 반영한 공통 `rules`/`constraints`를 구체 항목으로 보강함.
+- `# domains`를 `landing_main_page`, `ask_page`, `navigation`, `scroll_event_animation`, `ui_component_system`, `state_management` 블록으로 확장하고, 각 도메인의 `### states`, `### action`, `### rules`, `### constraints`를 모두 `-` 불릿 형식으로 정리함.
 - `assets/code/prompts`에 신규 프롬프트 파일 11종을 추가하고, 각 파일에 코드/문서 형식 준수 지시를 명시함.
 - `assets/code/templates`에 `plan.yaml`, `drafts.yaml` 템플릿을 추가해 코드 플로우 템플릿 경로를 통일함.
 - `src/main.rs`, `src/cli.rs`, `README.md`를 갱신해 새 명령 라우팅 및 도움말/문서 노출을 동기화함.
@@ -1619,3 +1628,107 @@
 - `report.md` 형식은 `# 구현 확인`, `# 발견된 문제` 2개 섹션만 사용하도록 고정함.
 - `check-code` skill 문서에 Report Format Rule을 추가해 동일한 헤더 제한을 반영함.
 - 검증: `cargo check` 통과.
+
+## 2026-03-05 - 작업한일
+- 구형 CLI 워크플로우 잔여 경로를 제거하기 위해 `src/main.rs`에서 `mod project;` 연결 및 레거시 래퍼(`project::*` 위임), `feedback/add_func/plan_project/detail_project/validate_tasks/run_parallel_test` 관련 함수를 삭제함.
+- `src/project.rs` 파일을 삭제해 더 이상 구형 auto/check/improve/report/create/select/delete 프로젝트 경로가 코드베이스에 남지 않도록 정리함.
+- UI 내부 레거시 명령 호출을 교체함: `create-project` -> `init_code_project`, `build-parallel-code` -> `impl_code_draft`.
+- `UiRunResult.auto_mode_project` 필드를 제거하고, UI 도움말 문자열의 구형 커맨드명 노출을 정리함.
+- 미사용 구형 프롬프트 파일을 삭제함: `assets/code/prompts/detail-project.txt`, `assets/code/prompts/parallel_order.txt`, `assets/code/prompts/parallel_oredr_unit.txt`.
+- 검증: `cargo check` 통과(경고만 존재).
+
+## 2026-03-05 - 작업한일
+- bootstrap 경로를 `project.md`의 `spec` 단일 정보 기반으로만 동작하도록 변경함.
+- `src/code.rs`에 `extract_project_spec_from_md(project_md)` 함수를 추가하고, `bootstrap_code_project()`가 이 함수로 spec을 추출하도록 교체함.
+- `src/ui/mod.rs`의 bootstrap 프롬프트 생성에서 `project_md`, `info_block` 전달을 제거하고 `project_name/project_root/spec/preset`만 전달하도록 수정함.
+- `assets/code/prompts/bootstrap.txt`를 수정해 입력/지시에서 `project.md` 및 `info_block` 의존 문구를 제거하고 spec 기준 실행 규칙으로 정렬함.
+- 검증: `cargo check` 통과.
+
+## 2026-03-05 - 작업한일
+- bootstrap spec 입력 경로를 인자 기반에서 `.project/project.md` 하드코딩 파싱 기반으로 변경함.
+- `src/ui/mod.rs`에 `calc_extract_spec_from_project_md()`와 `action_extract_bootstrap_spec_from_project_md()`를 추가함.
+- `action_apply_bootstrap_by_spec()`는 외부 `spec` 인자를 받지 않고, 위 추출 함수 결과만 프롬프트 `{{spec}}`에 주입하도록 변경함.
+- `action_run_bootstrap_llm_prepare()`도 동일하게 project.md에서 spec을 추출해 프롬프트에 포함하도록 변경함.
+- 호출부 정리: `src/main.rs`, `src/code.rs`, `src/ui/mod.rs`에서 변경된 시그니처에 맞게 업데이트함.
+- 검증: `cargo check` 통과.
+
+## 2026-03-05 - 작업한일
+- `src` 전역에서 함수명 `calc_*`, `action_*` 접두사 제거를 일괄 적용함(정의/호출 참조 동시 변경).
+- 충돌 검사 후(중복 대상 0건) 자동 치환을 수행해 네이밍을 일반 snake_case로 통일함.
+- 잔여 정의 1건(`calc_modal_cursor`)까지 수동 정리해 `fn (calc_|action_)` 패턴 0건으로 맞춤.
+- 네이밍 스킬 문서(`/home/tree/ai/skills/rule-naming/SKILL.md`)에 `calc_`, `action_` 접두사 금지 규칙을 추가함.
+- 검증: `cargo check` 통과.
+
+## 2026-03-05 - 작업한일
+- `orc auto` 실패 시 즉시 종료되던 흐름을 개선해 `src/code.rs`의 `auto_code_message`에 최대 3회 재시도 루프를 추가함.
+- 각 실패 시 `feedback.md`에 실패 요약/상세를 누적 기록하도록 `write_feedback_md`를 append 방식으로 변경함.
+- 실패 원인 기반 재시도 메시지를 LLM이 생성하도록 `infer_auto_retry_message`를 추가하고, 프롬프트 `assets/code/prompts/auto_retry_from_feedback.txt`를 신설함.
+- 검증: `cargo check`, `cargo test` 모두 통과.
+
+## 2026-03-05 - 작업한일
+- `orc auto`가 `impl_code_draft` 단계에서 멈춰도 실패 처리/복구 루프가 동작하도록 `src/code.rs`에 타임아웃 제어를 추가함.
+- `run_code_subcommand_in_new_session`를 `status()` 블로킹 방식에서 `spawn + try_wait` 루프로 변경하고, 기본 600초(`ORC_CODE_SUBCOMMAND_TIMEOUT_SEC` override 가능) 초과 시 프로세스를 종료하고 에러를 반환하도록 수정함.
+- `impl_code_draft_parallel`의 각 LLM 작업을 `run_codex_exec_capture_with_timeout` 기반으로 변경하고 기본 240초(`ORC_IMPL_DRAFT_LLM_TIMEOUT_SEC` override 가능) 타임아웃을 적용함.
+- 위 변경으로 타임아웃 발생 시 상위 auto 루프가 실패를 감지해 `feedback.md` 기록 및 재시도를 이어갈 수 있게 개선함.
+- 검증: `cargo check`, `cargo test` 통과.
+
+## 2026-03-05 - 작업한일
+- `./.project/project.md`를 최소 범위 Astro 랜딩 요구사항에 맞춰 전체 상세화하고, `#info` 기반 규칙/제약 강화 및 `#domains`를 도메인별 `states/action/rules/constraints` 불릿 구조로 재정의함.
+
+## 2026-03-05 - 작업한일
+- `auto` 모드의 단계 간 자동 연쇄 진입을 비활성화함: `init_code_project -a`, `init_code_plan -a`, `add_code_plan -a`, `add_code_draft -a`가 다음 명령을 자동 호출하지 않고 현재 단계만 처리하도록 수정함.
+- `auto` 실패 재시도 루프를 제거하고 단일 시도 실패 시 `feedback.md`만 기록하도록 `auto_code_message` 흐름을 단순화함.
+- `assets/code/templates/drafts.yaml` 스키마를 확장해 `planned/worked/complete/failed` 상태를 추가함.
+- `src/code.rs`의 drafts 문서 구조/동기화 로직을 확장해 `failed` 상태를 관리하고, `impl_code_draft` 실패 시 `drafts.yaml.failed`로 항목 이동되도록 상태 전이 로직을 구현함.
+- `src/code.rs`의 세션 실행 경로를 tmux 워커 pane 위임 방식으로 확장함( tmux 환경일 때 ): 하위 작업을 split pane에서 실행하고 완료/실패 메시지를 부모 pane에 전달한 뒤 워커 pane을 자동 종료하도록 변경함.
+- `src/tmux/mod.rs`에 pane 대상 완료 알림용 `display_message` 함수를 추가함.
+- orc 단계형 사용법과 tmux 위임 운영 규칙을 담은 새 스킬 `/home/tree/ai/skills/orc-cli-workflow/SKILL.md`를 추가함.
+- 검증: `cargo check`, `cargo test` 통과.
+
+## 2026-03-05 - 작업한일
+- tmux 워커 pane 분할 안정화를 위해 `src/tmux/mod.rs`에서 `split-window` 호출에 현재 pane 타깃(`-t <current pane>`)과 현재 경로(`-c #{pane_current_path}`)를 명시하도록 보강함.
+- 워커 pane 무출력 체감 문제를 줄이기 위해 `src/code.rs`, `src/chat.rs`의 tmux 실행 스크립트 시작부에 실행 시작/작업 경로 로그(`echo`)를 추가함.
+- tmux 래퍼 로깅 기반 재현으로 실제 호출 인자를 검증했고, `cargo build` 후 `split-window -h -t ...`로 좌우 분할 및 pane 출력 노출이 되는 경로를 확인함.
+- 검증: `cargo test` 통과, `cargo build` 통과, tmux 실행 경로 확인 완료.
+
+## 2026-03-05 - 작업한일
+- 응답 금칙어 재발 방지를 위해 `/home/tree/project/rust-orc/AGENTS.md`의 `Response Phrase Rule`에 강제 치환 맵(`맞습니다` 계열 -> `확인했습니다`)과 발송 전 4단계 검증 순서(초안->스캔->치환->재스캔)를 추가함.
+- 스킬/프롬프트 경로 규칙 변경 후에도 동일 실수가 반복되지 않도록 규칙을 설정 파일 수준에서 고정함.
+
+## 2026-03-05 - 작업한일
+- 응답 금칙어 규칙을 재강화함: `/home/tree/project/rust-orc/AGENTS.md`의 `Response Phrase Rule`에 `확인했습니다`를 금칙어/금지 시작 표현으로 추가함.
+- 금칙어 치환 맵(금칙어 -> 확인했습니다)을 제거하고, 발송 전 단계 3을 "중립 결과 문장으로 재작성" 규칙으로 교체해 동일 유형 문구 재발을 차단함.
+
+## 2026-03-05 - 작업한일
+- `AGENTS.override.md`에 `Response Phrase Override Rule`을 추가해 금칙어(`맞습니다`, `확인했습니다` 등)와 발송 전 검증 절차를 override 파일에 직접 고정함.
+- override 우선 적용 문구를 함께 추가해 동일 유형 응답 문구 재발 가능성을 줄임.
+
+## 2026-03-05 - 작업한일
+- `/home/tree/project/rust-orc/AGENTS.override.md`를 일반 파일에서 심볼릭 링크로 교체해 `/home/tree/ai/codex/AGENTS.override.md` 전역 규칙을 직접 참조하도록 수정함.
+- 검증으로 `ls -l`, `readlink -f`에서 링크 대상이 전역 파일로 해석되는 것을 확인함.
+
+## 2026-03-05 - 작업한일
+- tmux pane 자동 생성 억제: `src/code.rs`, `src/chat.rs`에서 tmux pane 실행 조건을 기본 비활성화로 변경하고, `ORC_USE_TMUX_PANES=1`일 때만 worker/llm split pane을 사용하도록 수정함.
+- `check_code_draft`의 `check-code-debug` tail pane은 `ORC_ENABLE_CHECK_DEBUG_PANE=1`일 때만 생성되도록 변경함.
+- 기존에 남아 있던 `check-code.log tail`/`sleep` 잔여 tmux pane을 정리해 기본 세션만 남도록 cleanup함.
+- 검증: `cargo test` 통과(23 passed).
+
+## 2026-03-05 - 작업한일
+- 사용자 요청에 따라 `regret` 스킬을 신설함: `/home/tree/ai/skills/regret/SKILL.md`.
+- 스킬 참조 보고서 템플릿 `/home/tree/ai/skills/regret/references/report.md`를 생성하고 `# 잘못한점`, `# 개선할점` 섹션을 초기화함.
+- 전역 규칙 파일 `/home/tree/ai/codex/AGENTS.override.md`에 `Regret Skill Trigger Rule`을 추가해 `잘못` 표현 감지 시 report.md 양 섹션에 항목을 추가하도록 고정함.
+
+## 2026-03-05 - 작업한일
+- spec별 재발 이슈 관리 기능을 추가함: `src/main.rs`에 프로젝트 `.project/project.md`의 `spec`을 추출해 `assets/checkPoints/<spec>.md` 경로를 계산/관리하는 유틸을 구현함.
+- `check_code_draft` 점검 경로(`run_check_code_after_draft_changes`)에 spec checkpoint history 주입을 추가해, check-code가 과거 발생 이슈 재발 여부를 우선 점검하도록 프롬프트를 강화함.
+- `src/code.rs`의 `check_code_draft` 완료 시 실제 이슈가 있으면 `append_spec_checkpoint_issues("check_code_draft", issues)`로 spec 체크포인트 파일에 누적 기록하도록 연결함.
+- `checkPoints`를 기준 경로로 사용하고, 점검 시에는 `checkpoints`(legacy) 파일이 존재하면 함께 읽도록 호환 처리함.
+- 검증: `cargo test` 통과(23 passed).
+
+## 2026-03-05 - 작업한일
+- `orc auto -f` 경로를 추가해 기존 `input.md`를 사용한 자동 실행을 구현함.
+- `src/code.rs`에 `auto_code_from_input_file()`를 추가하고, `input.md` 존재/파싱 검증 후 `init_code_project -> init_code_plan(없을 때만) -> add_code_plan -f -> add_code_draft -f -> impl_code_draft` 순으로 실행하도록 구성함.
+- `add_code_plan -f` 시 대화형 `add_code_draft()` 확인 프롬프트를 띄우지 않도록 조건을 조정해 자동 흐름이 멈추지 않게 수정함.
+- `src/cli.rs` usage/라우팅을 갱신해 `auto <message> | auto -f`를 지원하고, `auto -f`의 불필요한 추가 인자는 에러 처리함.
+- `README.md` 명령 목록에 `orc auto -f` 동작(기존 input.md 사용, input.md 생성 생략, 구현까지 진행)을 반영함.
+- 검증: `cargo run --bin orc -- --help`, `cargo test -q` 통과. `cargo run --bin orc -- auto -f` 실경로는 `init_code_project`, `add_code_plan -f` 완료 로그까지 확인했으며 이후 `add_code_draft -f` 단계는 장시간 실행으로 수동 종료함.
