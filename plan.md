@@ -1,16 +1,15 @@
 # plan
 
 ## 문제
-- `check_code_draft` 관련 산출 경로가 `.project/runtime` 중심으로 되어 있고, 사용자는 check-code 생성 폴더를 `./.project/reference`로 바꾸길 원한다.
-- `report.md`는 현재 코드에서 문자열 하드코딩 형식으로 생성되며, 사용자는 템플릿(`assets/code/templates/report.md`) 기준으로 생성하고 섹션을 `# 구현 확인`, `# 발견된 문제`만 남기길 원한다.
+- `orc auto`는 현재 메시지 기반 초기화만 수행하고, 기존 `input.md`를 활용한 구현 자동 진행 경로가 없다.
+- 사용자 요구는 `orc auto -f`에서 `input.md` 생성을 생략하고 기존 파일을 사용해 최종 구현(`impl_code_draft`)까지 수행하는 것이다.
 
 ## 해결책
-1. `src/code.rs`의 `check_code_draft` 경로 및 debug tail 경로를 `./.project/reference`로 변경한다.
-2. `src/main.rs`의 check-code runtime log 경로를 `./.project/reference/check-code.log`로 변경한다.
-3. `assets/code/templates/report.md` 템플릿을 추가하고, `check_code_draft`가 템플릿을 읽어 치환 후 저장하도록 변경한다.
-4. `check-code` skill 문서를 업데이트해 결과 보고 형식을 `# 구현 확인`, `# 발견된 문제` 중심으로 제한한다.
+1. `src/cli.rs`의 `auto` 파싱을 확장해 `auto -f`를 허용한다.
+2. `src/code.rs`에 `auto_code_from_input_file()`를 추가해 `input.md` 존재 확인 후 `init_code_project -> init_code_plan(없을 때만) -> add_code_plan -f -> add_code_draft -f -> impl_code_draft` 순으로 실행한다.
+3. `add_code_plan -f` 경로에서 불필요한 대화형 프롬프트를 띄우지 않도록 조건을 조정한다.
+4. `README.md`와 CLI usage를 업데이트한다.
 
 ## 검증
-- `check_code_draft` 실행 시 `.project/reference`가 생성되고 로그가 해당 경로에 기록된다.
-- 생성되는 `report.md`는 템플릿 형식을 따르고 `# 구현 확인`, `# 발견된 문제` 두 섹션만 포함한다.
-- `cargo check` 통과.
+- `orc --help`에 `auto [-f] <message>`가 반영된다.
+- `cargo test -q`가 통과한다.

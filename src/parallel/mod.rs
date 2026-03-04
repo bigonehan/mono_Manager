@@ -1,4 +1,4 @@
-use crate::{action_append_failure_log, action_build_task_prompt, action_check_and_improve_drafts_before_parallel, action_collect_parallel_feature_tasks, action_default_model_bin, action_initialize_parallel_workspace_if_empty, action_load_app_config, action_move_finished_features_to_clear, action_preflight_parallel_build, action_print_parallel_modal, action_promote_planned_to_features, action_read_project_info, action_resolve_task_template_path, action_write_parallel_feedback, calc_model_supports_dangerous_flag, config, ui};
+use crate::{append_failure_log, build_task_prompt, check_and_improve_drafts_before_parallel, collect_parallel_feature_tasks, default_model_bin, initialize_parallel_workspace_if_empty, load_app_config, move_finished_features_to_clear, preflight_parallel_build, print_parallel_modal, promote_planned_to_features, read_project_info, resolve_task_template_path, write_parallel_feedback, model_supports_dangerous_flag, config, ui};
 use std::collections::HashSet;
 use std::env;
 use std::fs;
@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
-fn calc_update_task_status(
+fn update_task_status(
     statuses: &[(String, ui::TaskRuntimeState)],
     target: &str,
     state: ui::TaskRuntimeState,
@@ -25,7 +25,7 @@ fn calc_update_task_status(
         .collect()
 }
 
-async fn action_run_one_parallel_task(
+async fn run_one_parallel_task(
     semaphore: Arc<Semaphore>,
     model_bin: String,
     task_name: String,
@@ -39,7 +39,7 @@ async fn action_run_one_parallel_task(
         .acquire_owned()
         .await
         .map_err(|e| format!("failed to acquire semaphore: {}", e))?;
-    action_append_task_runtime_log(
+    append_task_runtime_log(
         debug_enabled,
         &task_name,
         "시작/프롬프트 전송",
@@ -47,7 +47,7 @@ async fn action_run_one_parallel_task(
     );
     let mut cmd = tokio::process::Command::new(&model_bin);
     cmd.arg("exec");
-    if dangerous_bypass && calc_model_supports_dangerous_flag(&model_bin) {
+    if dangerous_bypass && model_supports_dangerous_flag(&model_bin) {
         cmd.arg("--dangerously-bypass-approvals-and-sandbox");
     }
     cmd.arg(prompt);
@@ -55,7 +55,7 @@ async fn action_run_one_parallel_task(
     let status = tokio::time::timeout(Duration::from_secs(timeout_sec), run_fut)
         .await
         .map_err(|_| {
-            action_append_task_runtime_log(
+            append_task_runtime_log(
                 debug_enabled,
                 &task_name,
                 "완료/실패",
@@ -64,7 +64,7 @@ async fn action_run_one_parallel_task(
             format!("timeout ({timeout_sec}s) for {task_name}")
         })?
         .map_err(|e| {
-            action_append_task_runtime_log(
+            append_task_runtime_log(
                 debug_enabled,
                 &task_name,
                 "완료/실패",
@@ -72,26 +72,26 @@ async fn action_run_one_parallel_task(
             );
             format!("failed to run command for {task_name}: {}", e)
         })?;
-    action_append_task_runtime_log(
+    append_task_runtime_log(
         debug_enabled,
         &task_name,
         "LLM 응답 수신",
         &format!("codex exec 종료 code={:?}", status.code()),
     );
-    action_append_task_runtime_log(
+    append_task_runtime_log(
         debug_enabled,
         &task_name,
         "검증 단계",
         "종료 코드 기반 성공/실패 판정을 진행합니다.",
     );
     if status.success() {
-        action_append_task_runtime_log(
+        append_task_runtime_log(
             debug_enabled,
             &task_name,
             "파일 반영 단계",
             "codex 작업 결과를 워크스페이스에 반영 완료로 간주합니다.",
         );
-        action_append_task_runtime_log(
+        append_task_runtime_log(
             debug_enabled,
             &task_name,
             "완료/실패",
@@ -99,7 +99,7 @@ async fn action_run_one_parallel_task(
         );
         Ok(task_name)
     } else {
-        action_append_task_runtime_log(
+        append_task_runtime_log(
             debug_enabled,
             &task_name,
             "완료/실패",
@@ -113,7 +113,7 @@ async fn action_run_one_parallel_task(
     }
 }
 
-fn action_append_task_runtime_log(
+fn append_task_runtime_log(
     debug_enabled: bool,
     task_name: &str,
     stage: &str,
@@ -135,16 +135,16 @@ fn action_append_task_runtime_log(
         Ok(f) => f,
         Err(_) => return,
     };
-    let _ = writeln!(file, "[{}] {} | {}", crate::calc_now_unix(), stage, detail);
+    let _ = writeln!(file, "[{}] {} | {}", crate::now_unix(), stage, detail);
 }
 
 pub async fn run_parallel_build_code() -> Result<String, String> {
     let cwd = env::current_dir().map_err(|e| format!("failed to read cwd: {}", e))?;
-    if let Some(init_msg) = action_initialize_parallel_workspace_if_empty(&cwd)? {
+    if let Some(init_msg) = initialize_parallel_workspace_if_empty(&cwd)? {
         println!("{}", init_msg);
     }
 
-    let app_conf = action_load_app_config();
+    let app_conf = load_app_config();
     let max_parallel = app_conf.as_ref().map_or(10, config::AppConfig::default_max_parallel);
     let timeout_sec = app_conf.as_ref().map_or(300, config::AppConfig::default_timeout_sec);
     let auto_yes = app_conf.as_ref().is_none_or(config::AppConfig::auto_yes_enabled);
@@ -154,19 +154,19 @@ pub async fn run_parallel_build_code() -> Result<String, String> {
     let debug_enabled = app_conf
         .as_ref()
         .is_none_or(config::AppConfig::debug_enabled);
-    let model_bin = action_default_model_bin();
+    let model_bin = default_model_bin();
 
     let tasks_list_path = Path::new(".project").join("drafts_list.yaml");
-    let preflight_msg = action_preflight_parallel_build(&tasks_list_path)?;
+    let preflight_msg = preflight_parallel_build(&tasks_list_path)?;
     println!("{}", preflight_msg);
-    let check_msg = action_check_and_improve_drafts_before_parallel()?;
+    let check_msg = check_and_improve_drafts_before_parallel()?;
     println!("{}", check_msg);
 
-    let project_info = action_read_project_info()?;
-    let task_template_path = action_resolve_task_template_path()?;
+    let project_info = read_project_info()?;
+    let task_template_path = resolve_task_template_path()?;
     let task_template = fs::read_to_string(&task_template_path)
         .map_err(|e| format!("failed to read {}: {}", task_template_path.display(), e))?;
-    let mut pending = action_collect_parallel_feature_tasks()?;
+    let mut pending = collect_parallel_feature_tasks()?;
     if pending.is_empty() {
         return Ok("no feature draft to run".to_string());
     }
@@ -175,7 +175,7 @@ pub async fn run_parallel_build_code() -> Result<String, String> {
         .iter()
         .map(|t| (t.name.clone(), ui::TaskRuntimeState::Inactive))
         .collect();
-    action_print_parallel_modal(&statuses);
+    print_parallel_modal(&statuses);
 
     let semaphore = Arc::new(Semaphore::new(max_parallel));
     let mut finished: HashSet<String> = HashSet::new();
@@ -196,7 +196,7 @@ pub async fn run_parallel_build_code() -> Result<String, String> {
             for task in pending {
                 failed += 1;
                 let reason = format!("blocked by unresolved depends_on: {:?}", task.depends_on);
-                let _ = action_append_failure_log(&task.name, &reason);
+                let _ = append_failure_log(&task.name, &reason);
             }
             break;
         }
@@ -214,10 +214,10 @@ pub async fn run_parallel_build_code() -> Result<String, String> {
 
         let mut handles = Vec::new();
         for task in round {
-            statuses = calc_update_task_status(&statuses, &task.name, ui::TaskRuntimeState::Active);
-            action_print_parallel_modal(&statuses);
-            let prompt = action_build_task_prompt(&task_template, &project_info, &task.draft_path)?;
-            handles.push(tokio::spawn(action_run_one_parallel_task(
+            statuses = update_task_status(&statuses, &task.name, ui::TaskRuntimeState::Active);
+            print_parallel_modal(&statuses);
+            let prompt = build_task_prompt(&task_template, &project_info, &task.draft_path)?;
+            handles.push(tokio::spawn(run_one_parallel_task(
                 semaphore.clone(),
                 model_bin.clone(),
                 task.name.clone(),
@@ -234,25 +234,25 @@ pub async fn run_parallel_build_code() -> Result<String, String> {
                 Ok(Ok(name)) => {
                     success += 1;
                     finished.insert(name.clone());
-                    statuses = calc_update_task_status(&statuses, &name, ui::TaskRuntimeState::Clear);
-                    action_print_parallel_modal(&statuses);
+                    statuses = update_task_status(&statuses, &name, ui::TaskRuntimeState::Clear);
+                    print_parallel_modal(&statuses);
                 }
                 Ok(Err(reason)) => {
                     failed += 1;
                     let task_name = reason.split_whitespace().next().unwrap_or("parallel_task");
-                    let _ = action_append_failure_log(task_name, &reason);
+                    let _ = append_failure_log(task_name, &reason);
                 }
                 Err(join_err) => {
                     failed += 1;
-                    let _ = action_append_failure_log("parallel_task", &join_err.to_string());
+                    let _ = append_failure_log("parallel_task", &join_err.to_string());
                 }
             }
         }
     }
     let finished_list: Vec<String> = finished.into_iter().collect();
-    action_promote_planned_to_features(&finished_list)?;
-    let move_msg = action_move_finished_features_to_clear(&finished_list)?;
-    let feedback_msg = action_write_parallel_feedback(&finished_list, failed, &move_msg)?;
+    promote_planned_to_features(&finished_list)?;
+    let move_msg = move_finished_features_to_clear(&finished_list)?;
+    let feedback_msg = write_parallel_feedback(&finished_list, failed, &move_msg)?;
     Ok(format!(
         "run_parallel_build_code finished: success={}, failed={} | {} | {}",
         success, failed, move_msg, feedback_msg
@@ -260,7 +260,7 @@ pub async fn run_parallel_build_code() -> Result<String, String> {
 }
 
 pub async fn press_key(key: &str) -> Result<String, String> {
-    let config = action_load_app_config();
+    let config = load_app_config();
     let run_parallel_key = config
         .as_ref()
         .map_or("p", config::AppConfig::run_parallel_key);

@@ -1,0 +1,15 @@
+scope:
+  - "프로젝트 루트 `/home/tree/project/rust-orc/.tmp_tmux_test` 기준으로 정적 랜딩 페이지 자산(HTML/CSS/JavaScript)과 tmux split 검증 절차를 최소 구성으로 구현한다."
+  - "학교 랜딩 페이지는 단일 페이지 구조(헤더, 소개, 핵심 정보, CTA)와 브라우저 기본 환경에서 동작하는 반응형 스타일/상호작용만 포함한다."
+  - "tmux 2-pane(서빙/검증 역할 분리) 기반으로 동일 명령 재실행이 가능한 성공/실패 판정 절차를 문서화한다."
+tasks:
+  - "루트 경로 유효성 확인 후 `./index.html`, `./styles.css`, `./script.js`를 생성/수정해 school_landing_page 구조와 동작을 연결한다."
+  - "`./index.html`에 시맨틱 섹션(헤더, 소개, 핵심 정보, CTA)을 배치하고 `./styles.css`, `./script.js`를 상대 경로로 연결한다."
+  - "`./styles.css`에 접근성 우선의 가독성 중심 반응형 규칙을 작성하고 외부 의존성 없이 렌더링되도록 구성한다."
+  - "`./script.js`에 핵심 상호작용(CTA 클릭/상태 토글 등)만 구현하고 즉시실행 스코프 또는 모듈 패턴으로 전역 오염을 최소화한다."
+  - "`./tmux_split_verification.md`에 tmux 세션 생성, pane 분할, pane 역할(서빙/검증), 반복 실행 명령, 성공/실패 기준을 루트 기준 상대 경로/명령으로 단계화해 기록한다."
+check:
+  - "프로젝트 루트에서 `tmux new-session -d -s school_lp` -> `tmux split-window -h -t school_lp` 실행으로 2-pane 상태가 재현되는지 확인한다."
+  - "서빙 pane에서 `python3 -m http.server 8080` 실행 후 검증 pane에서 `curl -fsS http://127.0.0.1:8080/index.html` 및 `curl -fsS http://127.0.0.1:8080/script.js`가 성공(0 exit)하는지 확인한다."
+  - "검증 pane에서 `rg \"<header|<section|cta\" index.html`와 `rg \"addEventListener|querySelector\" script.js`로 구조/동작 연결이 존재하는지 확인한다."
+  - "브라우저에서 `http://127.0.0.1:8080` 로드 시 콘솔 에러가 없고 CTA 상호작용이 동작하면 성공, 명령 실패/HTTP 실패/콘솔 에러 발생 시 실패로 판정한다."

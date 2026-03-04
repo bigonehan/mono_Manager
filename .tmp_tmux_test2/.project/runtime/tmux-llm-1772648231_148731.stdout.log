@@ -1,0 +1,21 @@
+type: implementation
+domain:
+  - workspace_bootstrap
+depends_on:
+  - 작업 경로(`/home/tree/project/rust-orc/.tmp_tmux_test2`) 존재 확인 및 기본 파일 구조 점검
+  - 고유 식별자를 포함한 tmux 세션 생성 및 split 패널 비대화형 구성
+rule:
+  - 결과물은 school landing page의 정적 웹 자산(html, css, javascript) 구조를 유지해야 한다.
+  - 검증 절차는 동일 입력에서 동일 결과를 내도록 결정적이어야 한다.
+  - 각 액션은 재실행 가능해야 하며 중복 실행 시 기존 상태를 안전하게 처리해야 한다.
+step:
+  - 프로젝트 루트 기준으로 landing page용 html/css/javascript 대상 파일을 식별한다.
+  - school landing page 요구에 맞게 정적 자산 파일을 생성하거나 기존 파일을 갱신한다.
+  - 자산 간 참조 관계(html의 css/javascript 연결)를 일관된 경로 기준으로 정리한다.
+  - 재실행 시 동일 산출물이 유지되도록 파일 생성/갱신 로직을 멱등적으로 맞춘다.
+constraints:
+  - 작업 경로는 `/home/tree/project/rust-orc/.tmp_tmux_test2`로 고정한다.
+  - 기술 스택은 `tmux`, `bash`, `html`, `css`, `javascript` 범위를 벗어나지 않는다.
+  - 빌드 도구나 프레임워크를 추가 도입하지 않는다.
+  - 웹 자산은 정적 파일로 유지하고 런타임 서버 의존을 강제하지 않는다.
+  - 경로 참조는 프로젝트 루트 기준으로 일관되게 사용한다.

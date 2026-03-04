@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>샘터고등학교 | 학교 랜딩 페이지</title>
+  <meta name="description" content="샘터고등학교 소개, 핵심 정보, 입학 상담 CTA를 제공하는 단일 페이지입니다.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#intro">본문으로 건너뛰기</a>
+  <header class="site-header" aria-label="헤더">
+    <div class="container">
+      <p class="brand">샘터고등학교</p>
+      <nav aria-label="주요 메뉴">
+        <ul class="menu">
+          <li><a href="#intro">소개</a></li>
+          <li><a href="#highlights">핵심 정보</a></li>
+          <li><a href="#cta">CTA</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section id="intro" class="section intro" aria-labelledby="intro-title">
+      <div class="container">
+        <h1 id="intro-title">학생의 가능성을 키우는 배움터</h1>
+        <p>샘터고등학교는 자기주도 학습과 공동체 프로젝트를 통해 미래 역량을 기릅니다.</p>
+      </div>
+    </section>
+
+    <section id="highlights" class="section highlights" aria-labelledby="highlights-title">
+      <div class="container">
+        <h2 id="highlights-title">핵심 정보</h2>
+        <ul class="cards">
+          <li>
+            <h3>맞춤형 진로 지도</h3>
+            <p>학년별 진로 설계와 포트폴리오 코칭을 제공합니다.</p>
+          </li>
+          <li>
+            <h3>실습 중심 수업</h3>
+            <p>토론, 실험, 프로젝트형 수업으로 문제 해결력을 강화합니다.</p>
+          </li>
+          <li>
+            <h3>안전한 학교 환경</h3>
+            <p>상시 상담 체계와 안전 관리 시스템을 운영합니다.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="cta" class="section cta" aria-labelledby="cta-title">
+      <div class="container">
+        <h2 id="cta-title">지금 상담을 신청하세요</h2>
+        <p>입학 절차와 학교 생활에 대한 안내를 빠르게 받아보실 수 있습니다.</p>
+        <button id="cta-button" type="button" aria-describedby="cta-status">입학 상담 신청</button>
+        <p id="cta-status" class="cta-status" aria-live="polite"></p>
+      </div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

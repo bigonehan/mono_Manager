@@ -5,4 +5,4 @@ create_domain prompt
 - project.md #info를 근거로 domains를 생성한다.
 - 필요 시 create_domain/build_domain skill을 사용한다.
 - 파일 경로는 반드시 `./.project/project.md`만 사용한다.
-- `./project/project.md`를 생성/수정/참조하지 않는다.
+- 위 단일 경로 외 다른 경로를 생성/수정/참조하지 않는다.

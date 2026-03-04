@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+echo "$@" >> /home/tree/project/rust-orc/.tmp_orclive/tmux_args.log
+exec /usr/bin/tmux "$@"

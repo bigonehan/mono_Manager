@@ -1,0 +1,34 @@
+goal: Astro + React + TypeScript + Tailwind CSS + shadcn/ui + Zustand + GSAP 조합으로 반응형 학교 랜딩페이지(main/ask 분리)와 문서 기반 Rust CLI 오케스트레이션 기능을 일관된 규칙으로 구현·운영한다.
+domains:
+- navigation
+- main_page
+- ask_page
+- state_management
+- ui_system
+- animation_scroll
+- cli_orchestration
+drafts:
+  planned:
+  - rust_cli_workspace
+  - project_documentation
+  - cli_rust_orchestra
+  - cli_help
+  - cli_create_code_draft
+  - cli_impl_code_draft
+  - cli_test
+  - cli_check_task
+  - cli_check_draft
+  - cli_open_ui
+  - cli_init_code_project
+  - cli_init_code_plan
+  - cli_add_code_plan
+  - cli_add_code_draft
+  - cli_add_code_draft_item
+  - cli_check_code_draft
+  - cli_auto
+  - cli_send_tmux
+  - cli_enter
+  - cli_chat
+  - cli_chat_wait
+  worked: []
+  complete: []

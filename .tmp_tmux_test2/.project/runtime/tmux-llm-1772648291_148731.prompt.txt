@@ -1,0 +1,13 @@
+트리거: check_code_draft
+대상:
+- school landing page 정적 자산(html/css/javascript) 생성 또는 갱신: .project/drafts.yaml
+- 각 tmux 패널에서 bash 검증 명령을 정해진 순서로 실행: .project/drafts.yaml
+- 고유 식별자를 포함한 tmux 세션 생성 및 split 패널 비대화형 구성: .project/drafts.yaml
+- 실행 로그와 산출물을 점검해 성공/실패를 확정하고 재실행 가능성 확인: .project/drafts.yaml
+- 작업 경로(`/home/tree/project/rust-orc/.tmp_tmux_test2`) 존재 확인 및 기본 파일 구조 점검: .project/drafts.yaml
+
+지시:
+- `$check-code` 스킬을 사용해 점검/수정을 수행해.
+- YAML/Markdown 참조 파일이 있으면 먼저 읽고 값을 채워야 할 헤더/속성을 정리한 뒤 형식에 맞게 반영해.
+- `.project/feature` 경로를 새로 생성하거나 사용하지 말고, `.project/drafts.yaml`만 기준으로 점검해.
+- 문제가 없으면 `NO_CHANGE`를 출력.

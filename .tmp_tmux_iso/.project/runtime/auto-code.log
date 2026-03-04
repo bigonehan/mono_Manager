@@ -1,0 +1,18 @@
+[1772648123] project-create | non-empty workspace: load project.md
+[1772648151] project-detail | detail_code_project completed
+[1772648151] domain-create | create_code_domain completed
+[1772648151] bootstrap | bootstrap_code_project start
+[1772648181] bootstrap | bootstrap_code_project completed
+[1772648181] plan-init | init_code_plan -a start
+[1772648181] session | new session start: init_code_plan -a
+[1772648190] plan-yaml | plan.yaml generated: domains=1 planned=7 worked=0 complete=0
+[1772648190] input-build | build_input_md_auto start
+[1772648206] input-build | build_input_md_auto completed
+[1772648206] draft-create | add_code_draft -a start
+[1772648206] session | new session start: add_code_draft -a
+[1772648345] draft-yaml | drafts.yaml generated: draft=7
+[1772648420] draft-yaml | drafts.yaml checked
+[1772648420] impl | impl_code_draft start
+[1772648420] session | new session start: impl_code_draft 
+[1772648420] session | new session failed: add_code_draft | code=Some(1)
+[1772648421] session | new session failed: init_code_plan | code=Some(1)

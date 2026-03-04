@@ -1,0 +1,6 @@
+[1772648401] 시작/프롬프트 전송 | trigger=check_code_draft timeout=300s
+[1772648416] 무응답 보호 | check-code LLM 응답 대기 중 (15s)
+[1772648431] 무응답 보호 | check-code LLM 응답 대기 중 (30s)
+[1772648446] 무응답 보호 | check-code LLM 응답 대기 중 (45s)
+[1772648461] LLM 응답 수신 | check-code 응답 수신
+[1772648461] 완료/실패 | 완료: CHECK_CODE_RESULT

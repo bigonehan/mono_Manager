@@ -6,7 +6,7 @@ pub enum SendOption {
     Raw,
 }
 
-fn action_run_tmux(args: &[&str]) -> Result<String, String> {
+fn run_tmux(args: &[&str]) -> Result<String, String> {
     let output = Command::new("tmux")
         .args(args)
         .output()
@@ -18,37 +18,74 @@ fn action_run_tmux(args: &[&str]) -> Result<String, String> {
     }
 }
 
-pub fn action_split_window_pane() -> Result<String, String> {
-    action_run_tmux(&["split-window", "-P", "-F", "#{pane_id}"])
+pub fn split_window_pane() -> Result<String, String> {
+    if let Ok(target) = current_pane_id() {
+        return run_tmux(&[
+            "split-window",
+            "-h",
+            "-t",
+            target.as_str(),
+            "-c",
+            "#{pane_current_path}",
+            "-P",
+            "-F",
+            "#{pane_id}",
+        ]);
+    }
+    run_tmux(&["split-window", "-h", "-P", "-F", "#{pane_id}"])
 }
 
-pub fn action_split_window_run(command: &str) -> Result<String, String> {
-    action_run_tmux(&["split-window", "-P", "-F", "#{pane_id}", "bash", "-lc", command])
+pub fn split_window_run(command: &str) -> Result<String, String> {
+    if let Ok(target) = current_pane_id() {
+        return run_tmux(&[
+            "split-window",
+            "-h",
+            "-t",
+            target.as_str(),
+            "-c",
+            "#{pane_current_path}",
+            "-P",
+            "-F",
+            "#{pane_id}",
+            "bash",
+            "-lc",
+            command,
+        ]);
+    }
+    run_tmux(&["split-window", "-h", "-P", "-F", "#{pane_id}", "bash", "-lc", command])
 }
 
-pub fn action_send_keys(pane_id: &str, msg: &str, option: SendOption) -> Result<(), String> {
+pub fn send_keys(pane_id: &str, msg: &str, option: SendOption) -> Result<(), String> {
     match option {
         SendOption::Enter => {
-            action_run_tmux(&["send-keys", "-t", pane_id, msg, "C-m"])?;
+            run_tmux(&["send-keys", "-t", pane_id, msg, "C-m"])?;
         }
         SendOption::Raw => {
-            action_run_tmux(&["send-keys", "-t", pane_id, msg])?;
+            run_tmux(&["send-keys", "-t", pane_id, msg])?;
         }
     }
     Ok(())
 }
 
-pub fn action_current_pane_id() -> Result<String, String> {
-    action_run_tmux(&["display-message", "-p", "#{pane_id}"])
+pub fn current_pane_id() -> Result<String, String> {
+    run_tmux(&["display-message", "-p", "#{pane_id}"])
 }
 
-pub fn action_rename_pane(pane_id: &str, name: &str) -> Result<(), String> {
-    action_run_tmux(&["rename-pane", "-t", pane_id, name])?;
+pub fn rename_pane(pane_id: &str, name: &str) -> Result<(), String> {
+    run_tmux(&["rename-pane", "-t", pane_id, name])?;
     Ok(())
 }
 
-pub fn action_kill_pane(pane_id: &str) -> Result<(), String> {
-    action_run_tmux(&["kill-pane", "-t", pane_id])?;
+pub fn kill_pane(pane_id: &str) -> Result<(), String> {
+    run_tmux(&["kill-pane", "-t", pane_id])?;
+    Ok(())
+}
+
+pub fn display_message(pane_id: &str, msg: &str) -> Result<(), String> {
+    if pane_id.trim().is_empty() {
+        return Ok(());
+    }
+    run_tmux(&["display-message", "-t", pane_id, msg])?;
     Ok(())
 }
 
@@ -58,7 +95,7 @@ pub fn tsend(pane_id: &str, msg: &str, option: &str) -> Result<String, String> {
         "enter" => SendOption::Enter,
         _ => return Err("tsend option must be `enter` or `raw`".to_string()),
     };
-    action_send_keys(pane_id, msg, send_option)?;
+    send_keys(pane_id, msg, send_option)?;
     Ok(format!(
         "tsend done: pane={} option={} msg={}",
         pane_id, option, msg

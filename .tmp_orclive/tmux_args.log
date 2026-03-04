@@ -1,0 +1,17 @@
+display-message -p #{pane_id}
+split-window -h -t %0 -c #{pane_current_path} -P -F #{pane_id} bash -lc bash '/home/tree/project/rust-orc/.tmp_orclive/.project/runtime/tmux-llm-1772648360_163809.sh'
+rename-pane -t %1 llm-debug
+display-message -p #{client_termtype}
+display-message -p #{client_termname}
+kill-pane -t %1
+display-message -p #{pane_id}
+split-window -h -t %0 -c #{pane_current_path} -P -F #{pane_id} bash -lc bash '/home/tree/project/rust-orc/.tmp_orclive/.project/runtime/tmux-llm-1772648362_163809.sh'
+rename-pane -t %2 llm-debug
+display-message -p #{client_termtype}
+display-message -p #{client_termname}
+kill-pane -t %2
+display-message -p #{pane_id}
+split-window -h -t %0 -c #{pane_current_path} -P -F #{pane_id} bash -lc bash '/home/tree/project/rust-orc/.tmp_orclive/.project/runtime/tmux-llm-1772648366_163809.sh'
+rename-pane -t %3 llm-debug
+display-message -p #{client_termtype}
+display-message -p #{client_termname}

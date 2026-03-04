@@ -1,0 +1,15 @@
+scope:
+  - "workspace_bootstrap 액션(대상 윈도우/패인 분할 구성 적용) 구현 경로를 프로젝트 루트(/home/tree/project/rust-orc/.tmp_tmux_iso) 기준 bash 비대화형 스크립트로 한정한다."
+  - "상태 전이를 session_checked -> workspace_ready -> split_configured 순서로만 진행하고, verification_failed 조건에서는 분할을 중단한다."
+  - "세션/윈도우/패인 존재 검증과 분할 검증 기준을 tmux list-sessions, tmux list-windows, tmux list-panes 출력 기반으로 고정한다."
+tasks:
+  - "scripts/workspace_bootstrap.sh에 set -euo pipefail을 적용하고 작업 디렉터리 유효성, tmux 세션 존재 확인/생성, 대상 윈도우 선택, split-window 실행 흐름을 순차 구현한다."
+  - "세션 재사용 규칙을 반영해 동일 세션명이 있으면 생성 없이 재사용하고, 없을 때만 tmux new-session으로 생성한다."
+  - "분할 적용 후 tmux list-panes로 패인 수를 확인하고 tmux list-windows -F '#{window_layout}'로 레이아웃을 수집해 기대값과 동시 검증한다."
+  - "tmux 명령 실패 시 1회 재시도만 허용하도록 공통 실행 래퍼를 두고, 재시도 이후 실패하면 즉시 종료 코드 비0으로 종료한다."
+  - "성공/실패 판정과 종료 코드를 명확히 출력하는 최소 로그 형식을 추가해 재실행 시 동일 입력에 동일 결과가 나오도록 고정한다."
+check:
+  - "bash scripts/workspace_bootstrap.sh <session> <window> 실행 시 세션/윈도우/패인 선검증 로그가 출력되고 종료 코드 0이어야 한다."
+  - "동일 입력으로 2회 연속 실행해도 세션 중복 생성 없이 재사용되며 패인 수/레이아웃 검증 결과가 동일해야 한다."
+  - "의도적으로 잘못된 대상(없는 윈도우 등)을 입력하면 1회 재시도 후 verification_failed 로그와 함께 비0 종료 코드로 종료해야 한다."
+  - "tmux list-panes -t <session>:<window> 결과 패인 개수와 tmux list-windows -t <session> 레이아웃이 스크립트 기대값과 모두 일치할 때만 verification_passed로 기록되어야 한다."
