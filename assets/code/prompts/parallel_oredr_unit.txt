@@ -1,5 +1,7 @@
 parallel unit {index}
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
 
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
 When this unit starts:
 1) wait 3 seconds
 2) send completion message using:

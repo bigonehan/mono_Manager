@@ -1,0 +1,10 @@
+- name: ""
+  type: "action"
+  domain: []
+  depends_on: []
+  scope: []
+  rule: []
+  step: []
+  tasks: []
+  constraints: []
+  check: []

@@ -1,0 +1,8 @@
+infer_draft_item prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 출력은 YAML만 반환한다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- 최상위 키는 `type`, `domain`, `depends_on`, `rule`, `step`, `constraints`만 사용한다.
+- 각 키 값은 문자열 리스트 또는 문자열(type)로 작성한다.
+- `project.md`, `plan_yaml`, `name`, `input_rules`, `input_steps`를 함께 읽고 해당 draft_item의 책임을 추론한다.
+- domain은 project.md의 domains 중 적합한 항목을 선택한다.

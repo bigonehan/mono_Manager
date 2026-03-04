@@ -34,6 +34,6 @@ panels:
     name: Drafts
     type: runtime
     selected_view: parallel_status
-    shortcut: b: create-draft/enter-parallel
+    shortcut: b: create_code_draft/enter-parallel
     cell_start: 8
     cell_end: 100

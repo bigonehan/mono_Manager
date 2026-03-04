@@ -6,8 +6,17 @@
 
 ## Main Commands (orc)
 - `orc help`
+- `orc init_code_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-m <message>] [-a]`
+- `orc init_code_plan [-a]`
+- `orc add_code_plan [-f] [-m <message>] [-a]`
+- `orc create_code_draft`
+- `orc add_code_draft_item [-f] [-m <message>]`
+- `orc impl_code_draft`
+- `orc check_code_draft [-a]`
+- `orc check_task`
+- `orc check_draft`
 - `orc list-projects`
-- `orc create-project <name> [path] [description]`
+- `orc create-project [-n <name>] [-p <path>] [-s <spec>] [-d <description>]`
 - `orc select-project <name>`
 - `orc delete-project <name>`
 - `orc plan-project [llm]`
@@ -16,21 +25,19 @@
 - `orc chat -n <name> --background`
 - `orc chat -n <name> -m <message> [-i <receiver_id>] [--data <data>]`
 - `orc chat-wait -n <name> -a <true|false> [-c <count>]`
-- `orc create-draft`
-- `orc add-plan [hint]`
-- `orc add-draft <feature_name> [request]`
-- `orc delete-draft <feature_name>`
 - `orc validate-tasks <feature_name>`
 - `orc add-function`
+- `orc activate-tui`
+- `orc open-ui`
 - `orc build-parallel-code`
-- `orc build-parallel-todo`
 - `orc run_parallel_test`
 - `orc feedback`
-- `orc build-function-auto` (alias: `build-todo-auto`, `build-functon-auto`)
 - `orc press-key <key>`
 
 ## UI Mode
-- Enter UI mode:
+- Enable UI config:
+- `orc activate-tui`
+- Enter UI mode (`client.tui` must be `true`):
 - `orc open-ui`
 - `orc run-auto [project_name]`
   - or `cargo run --bin orc -- ui`

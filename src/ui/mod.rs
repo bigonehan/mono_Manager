@@ -290,8 +290,7 @@ struct DraftsListDoc {
     #[serde(default)]
     flows: Vec<String>,
     #[serde(default)]
-    #[serde(alias = "feature")]
-    features: Vec<String>,
+        features: Vec<String>,
     #[serde(default)]
     planned: Vec<String>,
     #[serde(default)]
@@ -863,7 +862,7 @@ fn action_default_detail_layout() -> DetailLayoutPreset {
                 name: "Drafts".to_string(),
                 panel_type: "runtime".to_string(),
                 selected_view: "parallel_status".to_string(),
-                shortcut: "b: create-draft/enter-parallel".to_string(),
+                shortcut: "b: create_code_draft/enter-parallel".to_string(),
                 cell_start: 8,
                 cell_end: 100,
             },
@@ -1128,20 +1127,7 @@ fn calc_extract_markdown_block(raw: &str) -> Option<String> {
 }
 
 fn action_validate_project_md_format(project_md: &str) -> Result<(), String> {
-    let required_headers = [
-        "# info",
-        "## rule",
-        "## plan",
-        "## features",
-        "## structure",
-        "# Domains",
-        "# Flow",
-        "# UI",
-        "# Step",
-        "# Constraints",
-        "# Verification",
-        "# Gate Checklist",
-    ];
+    let required_headers = ["# info", "# features", "# rules", "# constraints", "# domains"];
     for header in required_headers {
         if !project_md.lines().any(|line| line.trim().eq_ignore_ascii_case(header)) {
             return Err(format!("missing header `{}`", header));
@@ -1152,19 +1138,16 @@ fn action_validate_project_md_format(project_md: &str) -> Result<(), String> {
             return Err(format!("banned domains summary style `{}`", banned));
         }
     }
-    if !project_md.contains("### domain") {
-        return Err("missing `### domain` block".to_string());
+    let domain_names = crate::calc_extract_project_md_domain_names(project_md);
+    if domain_names.is_empty() {
+        return Err("missing `# domains -> ## <name>` block".to_string());
     }
-    for required in [
-        "- **name**:",
-        "- **description**:",
-        "- **state**:",
-        "- **action**:",
-        "- **rule**:",
-        "- **variable**:",
-    ] {
-        if !project_md.contains(required) {
-            return Err(format!("missing domain field `{}`", required));
+    for required in ["### states", "### action", "### rules"] {
+        if !project_md
+            .lines()
+            .any(|line| line.trim().eq_ignore_ascii_case(required))
+        {
+            return Err(format!("missing domain subsection `{}`", required));
         }
     }
     Ok(())
@@ -1181,15 +1164,15 @@ fn action_apply_draft_create_via_cli(
     let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
     let output = Command::new(exe)
         .current_dir(&project.path)
-        .arg("create-draft")
+        .arg("create_code_draft")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .map_err(|e| format!("failed to run create-draft: {}", e))?;
+        .map_err(|e| format!("failed to run create_code_draft: {}", e))?;
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         app.status_line = if stdout.is_empty() {
-            "draft create requested (create-draft)".to_string()
+            "draft create requested (create_code_draft)".to_string()
         } else {
             stdout
         };
@@ -1197,7 +1180,7 @@ fn action_apply_draft_create_via_cli(
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         Err(format!(
-            "create-draft failed (code={:?}) {}",
+            "create_code_draft failed (code={:?}) {}",
             output.status.code(),
             stderr
         ))
@@ -1401,24 +1384,24 @@ fn action_apply_draft_bulk_add_via_cli(
     for (feature_name, request) in requests {
         let output = Command::new(&exe)
             .current_dir(&project.path)
-            .arg("add-draft")
-            .arg(feature_name.as_str())
-            .arg(request.as_str())
+            .arg("add_code_draft")
+            .arg("-m")
+            .arg(format!("{}: {}", feature_name, request))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
-            .map_err(|e| format!("failed to run add-draft: {}", e))?;
+            .map_err(|e| format!("failed to run add_code_draft: {}", e))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             return Err(format!(
-                "add-draft failed (code={:?}) {}",
+                "add_code_draft failed (code={:?}) {}",
                 output.status.code(),
                 stderr
             ));
         }
         applied += 1;
     }
-    app.status_line = format!("draft add requested via add-draft ({})", applied);
+    app.status_line = format!("draft add requested via add_code_draft ({})", applied);
     Ok(())
 }
 
@@ -1598,11 +1581,11 @@ fn action_open_add_plan_ai_chat_modal(
     let mut modal =
         action_new_ai_chat_modal_template(project, project_index, AiChatMode::AddPlan, model_bin);
     modal.input_active = true;
-    let intro = "add-plan 모드입니다. 원하는 기능 방향을 말하면 질문으로 범위를 좁힌 뒤 적용 가능한 features/planned를 제안합니다.\n적용하려면 `적용`이라고 입력하세요.";
+    let intro = "add_code_plan 모드입니다. 원하는 기능 방향을 말하면 질문으로 범위를 좁힌 뒤 적용 가능한 features/planned를 제안합니다.\n적용하려면 `적용`이라고 입력하세요.";
     modal.history.push(format!("AI:\n{}", intro));
     action_append_project_chat_log(&modal.project_path, "AI_RESPONSE", intro);
     app.ai_chat_modal = Some(modal);
-    app.status_line = "ai add-plan modal opened".to_string();
+    app.status_line = "ai add_code_plan modal opened".to_string();
 }
 
 fn action_open_bootstrap_confirm(app: &mut UiApp, projects: &[ProjectRecord], project_index: usize) {
@@ -2163,7 +2146,7 @@ fn action_build_ai_add_plan_prompt(modal: &AiChatModal, user_message: &str) -> S
     };
     let apply_requested = calc_is_add_plan_apply_request(user_message);
     format!(
-        "너는 add-plan 전용 기획 도우미다.\n\
+        "너는 add_code_plan 전용 기획 도우미다.\n\
 목표: project.md의 `## features`에 추가할 후보를 정리한다.\n\
 항상 한국어로 짧게 답해라.\n\n\
 현재 project.md:\n{}\n\n\
@@ -2296,7 +2279,7 @@ fn action_append_project_md_features_items(project_path: &Path, items: &[String]
     let raw = fs::read_to_string(&path)
         .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
     let mut lines: Vec<String> = raw.lines().map(|v| v.to_string()).collect();
-    let header = "## features";
+    let header = "# features";
     let header_idx = lines
         .iter()
         .position(|line| line.trim().eq_ignore_ascii_case(header));
@@ -2304,7 +2287,7 @@ fn action_append_project_md_features_items(project_path: &Path, items: &[String]
         i
     } else {
         lines.push(String::new());
-        lines.push("## features".to_string());
+        lines.push("# features".to_string());
         lines.push(String::new());
         lines.len() - 2
     };
@@ -2388,24 +2371,24 @@ fn action_append_planned_from_add_plan_items(
 fn action_run_add_plan_via_cli(project_path: &Path, hint: &str) -> Result<String, String> {
     let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
     let mut cmd = Command::new(exe);
-    cmd.current_dir(project_path).arg("add-plan");
+    cmd.current_dir(project_path).arg("add_code_plan");
     if !hint.trim().is_empty() {
-        cmd.arg(hint.trim());
+        cmd.arg("-m").arg(hint.trim());
     }
     let out = cmd
         .output()
-        .map_err(|e| format!("failed to run add-plan: {}", e))?;
+        .map_err(|e| format!("failed to run add_code_plan: {}", e))?;
     if out.status.success() {
         let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
         if stdout.is_empty() {
-            Ok("add-plan executed".to_string())
+            Ok("add_code_plan executed".to_string())
         } else {
             Ok(stdout)
         }
     } else {
         let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
         Err(format!(
-            "add-plan failed (code={:?}) {}",
+            "add_code_plan failed (code={:?}) {}",
             out.status.code(),
             stderr
         ))
@@ -2445,7 +2428,7 @@ fn action_apply_add_plan_update_from_yaml(modal: &AiChatModal, raw_response: &st
     let add_plan_msg = action_run_add_plan_via_cli(project_path, &add_plan_hint)?;
     let planned_added = action_append_planned_from_add_plan_items(project_path, &added_features)?;
     Ok(Some(format!(
-        "add-plan applied: project.md features +{} / tasks_list planned +{} | {}",
+        "add_code_plan applied: project.md features +{} / tasks_list planned +{} | {}",
         added_features.len(), planned_added, add_plan_msg
     )))
 }
@@ -2462,8 +2445,8 @@ fn calc_is_full_project_md_request(user_message: &str) -> bool {
 
 fn calc_is_project_md_dump(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
-    (lower.contains("# info") && lower.contains("## rule"))
-        || (lower.contains("## features") && lower.contains("## structure"))
+    (lower.contains("# info") && lower.contains("# rules"))
+        || lower.contains("# features")
         || (lower.contains("project.md") && text.len() > 700)
 }
 
@@ -3773,21 +3756,19 @@ fn action_parse_project_md(project_md: &str) -> ProjectMdDoc {
     let mut in_constraints = false;
     for line in project_md.lines() {
         let trimmed = line.trim();
-        if trimmed.eq_ignore_ascii_case("## rule") {
+        if trimmed.eq_ignore_ascii_case("# rules") {
             in_rule = true;
             in_constraints = false;
             continue;
         }
-        if trimmed.eq_ignore_ascii_case("# constraints") || trimmed.eq_ignore_ascii_case("## constraints") {
+        if trimmed.eq_ignore_ascii_case("# constraints") {
             in_rule = false;
             in_constraints = true;
             continue;
         }
-        if trimmed.starts_with('#') && !trimmed.eq_ignore_ascii_case("## rule") {
+        if trimmed.starts_with('#') && !trimmed.eq_ignore_ascii_case("# rules") {
             in_rule = false;
-            if !trimmed.eq_ignore_ascii_case("# constraints")
-                && !trimmed.eq_ignore_ascii_case("## constraints")
-            {
+            if !trimmed.eq_ignore_ascii_case("# constraints") {
                 in_constraints = false;
             }
         }
@@ -3799,17 +3780,15 @@ fn action_parse_project_md(project_md: &str) -> ProjectMdDoc {
             doc.constraints
                 .push(trimmed.trim_start_matches("- ").trim().to_string());
         }
-        if let Some(rest) = trimmed.strip_prefix("- ") {
-            if let Some((key, value)) = rest.split_once(':') {
-                let key = key.trim().to_ascii_lowercase();
-                let value = value.trim().to_string();
-                match key.as_str() {
-                    "name" => doc.name = value,
-                    "description" => doc.description = value,
-                    "spec" => doc.spec = value,
-                    "goal" => doc.goal = value,
-                    _ => {}
-                }
+        if let Some((key, value)) = trimmed.split_once(':') {
+            let key = key.trim().to_ascii_lowercase();
+            let value = value.trim().to_string();
+            match key.as_str() {
+                "name" => doc.name = value,
+                "description" => doc.description = value,
+                "spec" => doc.spec = value,
+                "goal" => doc.goal = value,
+                _ => {}
             }
         }
     }
@@ -3899,14 +3878,14 @@ mod tests {
 
     #[test]
     fn parse_project_md_accepts_spec_with_space_before_colon() {
-        let md = "# info\n- name: sample\n- spec : typescript react axios\n";
+        let md = "# info\nname : sample\nspec : typescript react axios\n";
         let parsed = action_parse_project_md(md);
         assert_eq!(parsed.spec, "typescript react axios");
     }
 
     #[test]
     fn parse_project_md_accepts_spec_with_hyphen_and_comma() {
-        let md = "# info\n- name: sample\n- spec: react, @react-three/fiber, three-fiber, zustand\n";
+        let md = "# info\nname : sample\nspec : react, @react-three/fiber, three-fiber, zustand\n";
         let parsed = action_parse_project_md(md);
         assert_eq!(
             parsed.spec,
@@ -3982,16 +3961,16 @@ mod tests {
     fn detail_panes_data_mapping_is_consistent() {
         let input = VirtualPaneInput {
             project_md: r#"# info
-- name: temp
-- description: zustand, react, threefiber를 이용한 점프 게임
-- spec: react, zustand, three-fiber
-- goal: 100번 점프 달성 시 승리
+name : temp
+description : zustand, react, threefiber를 이용한 점프 게임
+spec : react, zustand, three-fiber
+goal : 100번 점프 달성 시 승리
 
-## rule
+# rules
 - 점프 카운트는 1회 입력당 1 증가
 - UI 전환은 easing 애니메이션을 사용
 
-# Constraints
+# constraints
 - 점프 카운트는 음수가 될 수 없다
 - 승리 조건은 100회 이상으로 고정
             "#
@@ -4075,7 +4054,7 @@ mod tests {
                     name: "Drafts".to_string(),
                     panel_type: "runtime".to_string(),
                     selected_view: "parallel_status".to_string(),
-                    shortcut: "b: create-draft/enter-parallel".to_string(),
+                    shortcut: "b: create_code_draft/enter-parallel".to_string(),
                     cell_start: 2,
                     cell_end: 2,
                 },
@@ -4088,7 +4067,7 @@ mod tests {
         );
         assert_eq!(
             calc_selected_pane_shortcut(&layout, 1, 5),
-            "b: create-draft/enter-parallel".to_string()
+            "b: create_code_draft/enter-parallel".to_string()
         );
     }
 }
@@ -4194,9 +4173,9 @@ fn action_save_project_md_list(
         .ok_or_else(|| format!("failed to read project.md at {}", project.path))?;
     let mut lines: Vec<String> = raw.lines().map(|v| v.to_string()).collect();
     let header = match target {
-        ListEditTarget::Rule => "## rule",
-        ListEditTarget::Constraint => "# Constraints",
-        ListEditTarget::Feature => "## features",
+        ListEditTarget::Rule => "# rules",
+        ListEditTarget::Constraint => "# constraints",
+        ListEditTarget::Feature => "# features",
     };
     let header_idx = lines
         .iter()
@@ -4794,7 +4773,7 @@ fn action_render_draft_create_confirm_modal(
 ) {
     let lines = vec![
         Line::from("Drafts pane selected."),
-        Line::from("Run `create-draft` now?"),
+        Line::from("Run `create_code_draft` now?"),
         Line::from("This triggers plan-drafts-code from current project."),
     ];
     component::render_confirm_cancel_wrapper(
@@ -5074,7 +5053,7 @@ pub fn run_ui(
                 )
             } else if app.menu_active && app.tab_index == 1 && app.pane_focus == 4 {
                 format!(
-                    "{} | plan: b create-draft{} | status: {} ({})",
+                    "{} | plan: b create_code_draft{} | status: {} ({})",
                     shared_help, pane_shortcut_text, app.status_line, running
                 )
             } else if app.menu_active && app.tab_index == 1 && app.pane_focus == 5 {
@@ -5085,7 +5064,7 @@ pub fn run_ui(
                 let draft_help = if can_add_draft {
                     "drafts(stage_draft): a add_draft, b enter_parallel"
                 } else {
-                    "drafts(stage_draft): b enter_parallel(빈 draft면 create-draft 선실행)"
+                    "drafts(stage_draft): b enter_parallel(빈 draft면 create_code_draft 선실행)"
                 };
                 format!(
                     "{} | {}{} | status: {} ({})",
@@ -5354,14 +5333,14 @@ pub fn run_ui(
                                             }
                                             Ok(None) => {
                                                 app.status_line =
-                                                    "add-plan 적용 요청이었지만 유효한 update 블록이 없습니다".to_string();
+                                                    "add_code_plan 적용 요청이었지만 유효한 update 블록이 없습니다".to_string();
                                             }
                                             Err(e) => {
                                                 app.status_line = e;
                                             }
                                         }
                                     } else {
-                                        app.status_line = "add-plan 추천안 응답 수신".to_string();
+                                        app.status_line = "add_code_plan 추천안 응답 수신".to_string();
                                     }
                                     modal.add_plan_apply_requested = false;
                                 }
@@ -5658,7 +5637,7 @@ pub fn run_ui(
                             } else {
                                 action_cancel_ai_stream(&mut app);
                                 app.ai_chat_modal = None;
-                                app.status_line = "ai add-plan closed".to_string();
+                                app.status_line = "ai add_code_plan closed".to_string();
                             }
                             continue;
                         }
@@ -5877,7 +5856,7 @@ pub fn run_ui(
                                         project_index: app.project_index,
                                     });
                                     app.busy_message =
-                                        Some("enter_draft 실행: create-draft 요청 중".to_string());
+                                        Some("enter_draft 실행: create_code_draft 요청 중".to_string());
                                 } else if !planned.is_empty()
                                     && !action_all_planned_task_files_exist(project, &planned)
                                 {
@@ -5885,7 +5864,7 @@ pub fn run_ui(
                                         project_index: app.project_index,
                                     });
                                     app.busy_message = Some(
-                                        "planned 항목 파일 누락 감지: create-draft 보정 실행 중".to_string(),
+                                        "planned 항목 파일 누락 감지: create_code_draft 보정 실행 중".to_string(),
                                     );
                                 } else {
                                     let project_index = app.project_index;
@@ -5958,7 +5937,7 @@ pub fn run_ui(
                                     project_index: app.project_index,
                                 });
                                 app.busy_message =
-                                    Some("enter_draft 실행: create-draft 요청 중".to_string());
+                                    Some("enter_draft 실행: create_code_draft 요청 중".to_string());
                             } else if !planned.is_empty()
                                 && !action_all_planned_task_files_exist(project, &planned)
                             {
@@ -5966,7 +5945,7 @@ pub fn run_ui(
                                     project_index: app.project_index,
                                 });
                                 app.busy_message = Some(
-                                    "planned 항목 파일 누락 감지: create-draft 보정 실행 중".to_string(),
+                                    "planned 항목 파일 누락 감지: create_code_draft 보정 실행 중".to_string(),
                                 );
                             } else {
                                 let project_index = app.project_index;

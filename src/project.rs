@@ -176,7 +176,7 @@ fn action_write_auto_plan_md(project_root: &Path, description: &str, spec: &str)
         return Ok(path);
     }
     let body = format!(
-        "# auto execution plan\n\n## 문제\n- 목표: `orc auto`로 앱이 실제 생성되는지 검증\n- 설명: {}\n- 스펙: {}\n\n## 해결책\n- 1) project.md/drafts_list 생성\n- 2) create-draft 실행\n- 3) draft report 생성\n\n## 검증\n- `.project/project.md` 존재\n- `.project/drafts_list.yaml` 존재\n- `.project/feature/*/(draft.yaml|drafts.yaml)` 최소 1개 존재\n\n## 피드백\n- 실행 결과/실패 원인/다음 개선점을 기록\n",
+        "# auto execution plan\n\n## 문제\n- 목표: `orc auto`로 앱이 실제 생성되는지 검증\n- 설명: {}\n- 스펙: {}\n\n## 해결책\n- 1) project.md/plan.yaml/drafts.yaml 생성\n- 2) create_code_draft 실행\n- 3) draft report 생성\n\n## 검증\n- `.project/project.md` 존재\n- `.project/plan.yaml` 존재\n- `.project/drafts.yaml` 존재\n\n## 피드백\n- 실행 결과/실패 원인/다음 개선점을 기록\n",
         description.trim(),
         spec.trim()
     );
@@ -429,7 +429,13 @@ pub(crate) fn auto_bootstrap(description: &str, spec: &str) -> Result<String, St
         .to_string();
     let path_owned = cwd.to_string_lossy().to_string();
     let create_msg =
-        create_project_with_defer_option(&project_name, Some(path_owned.as_str()), description, true)?;
+        create_project_with_defer_option(
+            &project_name,
+            Some(path_owned.as_str()),
+            description,
+            spec,
+            true,
+        )?;
     action_append_auto_bootstrap_log(&cwd, "create-project", &create_msg);
     let mut plan_msg = None;
     let mut plan_errors: Vec<String> = Vec::new();
@@ -902,6 +908,7 @@ fn create_project_with_defer_option(
     name: &str,
     path: Option<&str>,
     description: &str,
+    spec: &str,
     defer_project_plan: bool,
 ) -> Result<String, String> {
     let target = path
@@ -928,7 +935,7 @@ fn create_project_with_defer_option(
             &target,
             name,
             description,
-            "",
+            spec,
             "",
             &[],
             "",
@@ -964,12 +971,13 @@ pub(crate) fn create_project(
     name: &str,
     path: Option<&str>,
     description: &str,
+    spec: &str,
 ) -> Result<String, String> {
     let defer_project_plan = env::var("ORC_DEFER_PROJECT_PLAN")
         .ok()
         .map(|v| v == "1")
         .unwrap_or(false);
-    create_project_with_defer_option(name, path, description, defer_project_plan)
+    create_project_with_defer_option(name, path, description, spec, defer_project_plan)
 }
 
 pub(crate) fn select_project(name: &str) -> Result<String, String> {

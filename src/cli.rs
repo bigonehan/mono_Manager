@@ -1,3 +1,4 @@
+use std::env;
 use std::path::Path;
 
 pub fn calc_program_name(args: &[String]) -> &str {
@@ -20,30 +21,37 @@ pub fn print_usage(program: &str) {
         "plan-project [llm]",
         "detail-project [llm]",
         "detail-project -d <description> -s <spec> [--llm <bin>]",
-        "list-projects (alias: list)",
-        "create-project <name> [path] [description]",
-        "select-project <name> (alias: select)",
-        "delete-project <name> (alias: delete)",
+        "init_code_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-a <message>]",
+        "init_code_plan [-a]",
+        "add_code_plan [-f] [-m <message>] [-a]",
+        "create_code_draft",
+        "add_code_draft [-f] [-m <message>]",
+        "add_code_draft_item [-f] [-m <message>]",
+        "impl_code_draft",
+        "check_code_draft [-a]",
+        "test",
+        "check_task",
+        "check_draft",
+        "list-projects",
+        "create-project [-n <name>] [-p <path>] [-s <spec>] [-d <description>]",
+        "select-project <name>",
+        "delete-project <name>",
         "validate-tasks <feature_name>",
-        "create-draft (alias: draft-create)",
-        "add-plan [hint]",
-        "add-draft <feature_name> [request] (alias: draft-add)",
-        "delete-draft <feature_name> (alias: draft-delete)",
-        "add-function [request] (alias: add-func)",
-        "open-ui (alias: ui)",
+        "add-function [request]",
+        "activate-tui",
+        "open-ui",
         "run-auto [project_name]",
+        "auto <message>",
         "auto -d <description> -s <spec>",
         "auto-check",
         "auto-improve <request>",
         "draft-report",
-        "send-tmux <pane_id> <msg...> [enter|raw] (alias: tsend)",
+        "send-tmux <pane_id> <msg...> [enter|raw]",
         "build-parallel-code",
-        "build-parallel-todo",
         "run_parallel_test",
         "chat -n <name> [--background] [-m <message>] [-i <receiver_id>] [--data <data>]",
         "chat-wait -n <name> -a <true|false> [-c <count>]",
         "feedback",
-        "build-function-auto (alias: build-todo-auto, build-functon-auto)",
         "press-key <key>",
     ];
     commands.sort_unstable();
@@ -63,6 +71,45 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         "plan-project" => {
             let llm = args.get(2).map(String::as_str);
             super::plan_project(llm)
+        }
+        "init_code_project" => super::code::init_code_project(&args[2..]),
+        "init_code_plan" => super::code::init_code_plan(&args[2..]),
+        "add_code_plan" => super::code::add_code_plan(&args[2..]),
+        "create_code_draft" => {
+            if args.len() != 2 {
+                return Err("create_code_draft does not accept arguments".to_string());
+            }
+            super::code::create_code_draft()
+        }
+        "add_code_draft" => super::code::add_code_draft(&args[2..]),
+        "add_code_draft_item" => super::code::add_code_draft_item(&args[2..]),
+        "impl_code_draft" => {
+            if args.len() != 2 {
+                return Err("impl_code_draft does not accept arguments".to_string());
+            }
+            super::code::impl_code_draft().await
+        }
+        "check_code_draft" => {
+            let auto_yes = args.get(2).is_some_and(|v| v == "-a");
+            super::code::check_code_draft(auto_yes)
+        }
+        "check_task" => {
+            if args.len() != 2 {
+                return Err("check_task does not accept arguments".to_string());
+            }
+            super::code::check_task()
+        }
+        "test" => {
+            if args.len() != 2 {
+                return Err("test does not accept arguments".to_string());
+            }
+            super::code::check_code_draft(false)
+        }
+        "check_draft" => {
+            if args.len() != 2 {
+                return Err("check_draft does not accept arguments".to_string());
+            }
+            super::code::check_draft()
         }
         "detail-project" => {
             let mut description: Option<&str> = None;
@@ -96,24 +143,66 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                 super::detail_project(llm)
             }
         }
-        "list-projects" | "list" => super::list_projects(),
+        "list-projects" => super::list_projects(),
         "create-project" => {
-            if args.len() < 3 {
-                return Err("create-project requires <name> [path] [description]".to_string());
+            let mut name: Option<String> = None;
+            let mut path: Option<String> = None;
+            let mut description: Option<String> = None;
+            let mut spec: Option<String> = None;
+            let mut i = 2usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "-n" => {
+                        i += 1;
+                        if let Some(v) = args.get(i) {
+                            name = Some(v.clone());
+                        }
+                    }
+                    "-p" => {
+                        i += 1;
+                        if let Some(v) = args.get(i) {
+                            path = Some(v.clone());
+                        }
+                    }
+                    "-d" => {
+                        i += 1;
+                        if let Some(v) = args.get(i) {
+                            description = Some(v.clone());
+                        }
+                    }
+                    "-s" => {
+                        i += 1;
+                        if let Some(v) = args.get(i) {
+                            spec = Some(v.clone());
+                        }
+                    }
+                    _ => {}
+                }
+                i += 1;
             }
+            let default_name = env::current_dir()
+                .ok()
+                .and_then(|p| p.file_name().map(|v| v.to_string_lossy().to_string()))
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| "project".to_string());
+            let name = name.unwrap_or(default_name);
+            let description = description
+                .unwrap_or_else(|| "heolloworld를 출력하는 간단한 web app으로".to_string());
+            let spec = spec.unwrap_or_else(|| "nextjs".to_string());
             super::create_project(
-                args[2].as_str(),
-                args.get(3).map(String::as_str),
-                args.get(4).map_or("", String::as_str),
+                name.as_str(),
+                path.as_deref(),
+                description.as_str(),
+                spec.as_str(),
             )
         }
-        "select-project" | "select" => {
+        "select-project" => {
             if args.len() < 3 {
                 return Err("select-project requires <name>".to_string());
             }
             super::select_project(&args[2])
         }
-        "delete-project" | "delete" => {
+        "delete-project" => {
             if args.len() < 3 {
                 return Err("delete-project requires <name>".to_string());
             }
@@ -125,51 +214,24 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             }
             super::validate_tasks(&args[2])
         }
-        "create-draft" | "draft-create" => {
-            if args.len() != 2 {
-                return Err("create-draft does not accept arguments".to_string());
-            }
-            super::draft_create()
-        }
-        "add-plan" => {
+        "add-function" => {
             let request = if args.len() >= 3 {
                 Some(args[2..].join(" "))
             } else {
                 None
             };
-            super::add_plan(request)
+            super::add_func(request).await
         }
-        "add-draft" | "draft-add" => {
-            if args.len() < 3 {
-                return Err("add-draft requires <feature_name> [request]".to_string());
-            }
-            let request = if args.len() >= 4 {
-                Some(args[3..].join(" "))
-            } else {
-                None
-            };
-            super::draft_add(&args[2], request)
-        }
-        "delete-draft" | "draft-delete" => {
-            if args.len() < 3 {
-                return Err("delete-draft requires <feature_name>".to_string());
-            }
-            super::draft_delete(&args[2])
-        }
-        "add-function" | "add-func" => {
-            let request = if args.len() >= 3 {
-                Some(args[2..].join(" "))
-            } else {
-                None
-            };
-            super::add_func(request)
-        }
-        "open-ui" | "ui" => super::ui(),
+        "activate-tui" => super::tui::activate_tui(),
+        "open-ui" => super::tui::open_ui(),
         "run-auto" => {
             let project_name = args.get(2).map(String::as_str);
             super::auto_mode(project_name)
         }
         "auto" => {
+            if args.len() >= 3 && !args[2].starts_with('-') {
+                return super::code::auto_code_message(&args[2..].join(" "));
+            }
             let mut description: Option<&str> = None;
             let mut spec: Option<&str> = None;
             let mut i = 2usize;
@@ -212,7 +274,7 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             }
             super::draft_report()
         }
-        "send-tmux" | "tsend" => {
+        "send-tmux" => {
             if args.len() < 4 {
                 return Err("send-tmux requires <pane_id> <msg...> [enter|raw]".to_string());
             }
@@ -229,9 +291,6 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         }
         "build-parallel-code" => {
             super::parallel::run_parallel_build_code().await
-        }
-        "build-parallel-todo" => {
-            super::parallel::run_parallel_todo().await
         }
         "run_parallel_test" => {
             if args.len() != 2 {
@@ -259,12 +318,6 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                 return Err("feedback does not accept arguments".to_string());
             }
             super::run_feedback()
-        }
-        "build-function-auto" | "build-todo-auto" | "build-functon-auto" => {
-            if args.len() != 2 {
-                return Err("build-function-auto does not accept arguments".to_string());
-            }
-            super::build_function_auto().await
         }
         "press-key" => {
             if args.len() < 3 {

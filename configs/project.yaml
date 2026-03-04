@@ -1,4 +1,4 @@
-recentActivepane: Crqr
+recentActivepane: 501S
 projects:
 - id: Crqr
   name: blender-bots
@@ -13,18 +13,32 @@ projects:
   description: todo manager app
   created_at: '1772265581'
   updated_at: '1772265581'
-  selected: true
+  selected: false
 - id: 501S
   name: temp
   path: /home/tree/temp
-  description: threefiber hello object
+  description: zustand 상태관리 예제 앱
   created_at: '1772265929'
-  updated_at: '1772291878'
-  selected: false
+  updated_at: '1772628287'
+  selected: true
 - id: LCts
   name: temp2
   path: /home/tree/temp2
   description: calculator app
   created_at: '1772286223'
   updated_at: '1772288543'
+  selected: false
+- id: lSBU
+  name: sampleweb
+  path: /tmp/orc-create-ZklC0U
+  description: heolloworld를 출력하는 간단한 web app으로
+  created_at: '1772610528'
+  updated_at: '1772610528'
+  selected: false
+- id: yFAJ
+  name: rust-orc
+  path: /tmp/orc-create-default-5LhfM3
+  description: heolloworld를 출력하는 간단한 web app으로
+  created_at: '1772610683'
+  updated_at: '1772610683'
   selected: false
