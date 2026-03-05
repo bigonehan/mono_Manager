@@ -320,6 +320,10 @@ pub(crate) fn create_code_draft() -> Result<String, String> {
     add_code_draft(&[])
 }
 
+pub(crate) fn create_input_md() -> Result<String, String> {
+    build_input_md_auto()
+}
+
 pub(crate) fn add_code_draft(args: &[String]) -> Result<String, String> {
     let mut use_file = false;
     let mut auto = false;
@@ -448,18 +452,6 @@ pub(crate) fn auto_code_message(message: &str) -> Result<String, String> {
 }
 
 pub(crate) fn auto_code_from_input_file() -> Result<String, String> {
-    let input_path = Path::new(crate::INPUT_MD_PATH);
-    if !input_path.exists() {
-        return Err(format!(
-            "auto -f requires {} in current directory",
-            crate::INPUT_MD_PATH
-        ));
-    }
-    let parsed = parse_input_md_objects(input_path)?;
-    if parsed.is_empty() {
-        return Err("auto -f failed: input.md has no valid feature object".to_string());
-    }
-
     debug_log_auto_stage("auto-file", "auto -f flow start");
     let init_msg = run_code_subcommand_in_new_session("init_code_project", &[])?;
     let plan_msg = if plan_yaml_path()?.exists() {
@@ -467,14 +459,15 @@ pub(crate) fn auto_code_from_input_file() -> Result<String, String> {
     } else {
         run_code_subcommand_in_new_session("init_code_plan", &["-a"])?
     };
+    let input_msg = run_code_subcommand_in_new_session("create_input_md", &[])?;
     let add_plan_msg = run_code_subcommand_in_new_session("add_code_plan", &["-f"])?;
     let add_draft_msg = run_code_subcommand_in_new_session("add_code_draft", &["-f"])?;
     let impl_msg = run_code_subcommand_in_new_session("impl_code_draft", &[])?;
     debug_log_auto_stage("auto-file", "auto -f flow completed");
 
     Ok(format!(
-        "auto -f completed: {} | {} | {} | {} | {}",
-        init_msg, plan_msg, add_plan_msg, add_draft_msg, impl_msg
+        "auto -f completed: {} | {} | {} | {} | {} | {}",
+        init_msg, plan_msg, input_msg, add_plan_msg, add_draft_msg, impl_msg
     ))
 }
 
@@ -1040,6 +1033,8 @@ struct DraftFieldsInferOut {
 
 #[derive(Deserialize, Default)]
 struct DraftItemInferOut {
+    #[serde(default)]
+    name: String,
     #[serde(default, rename = "type")]
     item_type: String,
     #[serde(default)]
@@ -1050,8 +1045,14 @@ struct DraftItemInferOut {
     rule: Vec<String>,
     #[serde(default)]
     step: Vec<String>,
+    #[serde(default)]
+    scope: Vec<String>,
+    #[serde(default)]
+    tasks: Vec<String>,
     #[serde(default, rename = "constraints")]
     constraints: Vec<String>,
+    #[serde(default)]
+    check: Vec<String>,
 }
 
 fn infer_draft_fields_with_llm(project_md: &str, name: &str, domain: &str, item_type: &str) -> DraftFieldsInferOut {
@@ -1094,9 +1095,12 @@ fn infer_draft_item_with_llm(
     let prompt_template = fs::read_to_string(&prompt_path)
         .map_err(|e| format!("failed to read {}: {}", prompt_path.display(), e))
         .unwrap_or_else(|_| "infer_draft_item prompt\n- output yaml fields".to_string());
+    let draft_item_template = read_code_template("draft_item.yaml").unwrap_or_else(|_| {
+        "- name: \"\"\n  type: \"action\"\n  domain: []\n  depends_on: []\n  scope: []\n  rule: []\n  step: []\n  tasks: []\n  constraints: []\n  check: []\n".to_string()
+    });
     let prompt = format!(
-        "{}\n\nproject_md:\n{}\n\nplan_yaml:\n{}\n\nname: {}\ninput_rules: {}\ninput_steps: {}",
-        prompt_template, project_md, plan_yaml, name, input_rules, input_steps
+        "{}\n\ndraft_item_template:\n{}\n\nproject_md:\n{}\n\nplan_yaml:\n{}\n\nname: {}\ninput_rules: {}\ninput_steps: {}",
+        prompt_template, draft_item_template, project_md, plan_yaml, name, input_rules, input_steps
     );
     let Ok(raw) = crate::run_codex_exec_capture(&prompt) else {
         return DraftItemDoc {
@@ -1117,7 +1121,7 @@ fn infer_draft_item_with_llm(
         item_out.domain
     };
     let first_domain = inferred_domain.first().cloned().unwrap_or_else(|| "app".to_string());
-    let fields = infer_draft_fields_with_llm(project_md, name, &first_domain, &inferred_type);
+    let fallback_fields = infer_draft_fields_with_llm(project_md, name, &first_domain, &inferred_type);
     let mut step = item_out.step;
     if step.is_empty() {
         step = from_input
@@ -1125,17 +1129,41 @@ fn infer_draft_item_with_llm(
             .filter(|v| !v.is_empty())
             .unwrap_or_default();
     }
+    let scope = if item_out.scope.is_empty() {
+        fallback_fields.scope
+    } else {
+        item_out.scope
+    };
+    let tasks = if item_out.tasks.is_empty() {
+        fallback_fields.tasks
+    } else {
+        item_out.tasks
+    };
+    let check = if item_out.check.is_empty() {
+        fallback_fields.check
+    } else {
+        item_out.check
+    };
+    let inferred_name = if item_out.name.trim().is_empty() {
+        name.to_string()
+    } else {
+        normalize_feature_key(&item_out.name)
+    };
     DraftItemDoc {
-        name: name.to_string(),
+        name: if inferred_name.is_empty() {
+            name.to_string()
+        } else {
+            inferred_name
+        },
         item_type: inferred_type,
         domain: inferred_domain,
         depends_on: item_out.depends_on,
-        scope: fields.scope,
+        scope,
         rule: item_out.rule,
         step,
-        tasks: fields.tasks,
+        tasks,
         constraints: item_out.constraints,
-        check: fields.check,
+        check,
     }
 }
 

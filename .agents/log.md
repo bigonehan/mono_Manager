@@ -199,6 +199,9 @@
 
 - AI Detail 모달의 `대화 종료` 버튼 위치를 Input field 내부에서 분리해, AI Detail pane 맨 아래 전용 영역(입력창 밖)으로 이동하도록 레이아웃을 3구역으로 조정함.
 
+## 2026-03-05 - 작업한일
+- `AGENTS.md`의 중복 규칙(금지어 하드블록/CLI 해석/하드코딩 규칙 반복)을 단일 섹션으로 정리하고, 현재 저장소와 무관한 모노레포 전용 규칙(`Port Ownership Override`)을 제거해 문서를 간소화함.
+
 ## 2026-03-04 - 작업한일
 - TUI 커맨드 게이트를 `src/tui/mod.rs`로 분리하고, `open-ui` 실행 전 `client.tui` 설정을 검사하도록 연결함. `client.tui: false`면 `orc activate-tui` 안내와 함께 실행을 차단하도록 구현함.
 - `orc activate-tui` 명령을 추가해 설정 파일(`configs.yaml` 우선, 없으면 `config.yaml`)의 `client.tui` 값을 `true`로 기록하도록 구현함.
@@ -1732,3 +1735,69 @@
 - `src/cli.rs` usage/라우팅을 갱신해 `auto <message> | auto -f`를 지원하고, `auto -f`의 불필요한 추가 인자는 에러 처리함.
 - `README.md` 명령 목록에 `orc auto -f` 동작(기존 input.md 사용, input.md 생성 생략, 구현까지 진행)을 반영함.
 - 검증: `cargo run --bin orc -- --help`, `cargo test -q` 통과. `cargo run --bin orc -- auto -f` 실경로는 `init_code_project`, `add_code_plan -f` 완료 로그까지 확인했으며 이후 `add_code_draft -f` 단계는 장시간 실행으로 수동 종료함.
+
+## 2026-03-05 - 작업한일
+- `orc` 스킬 문서(`/home/tree/ai/skills/orc-cli-workflow/SKILL.md`)에 `orc auto -f` 사용 규칙을 추가함.
+- 폴더가 사실상 비어 있고 `./input.md`만 존재하는 초기 상태에서는 `orc auto -f`를 우선 사용하고, `input.md` 생성 단계를 생략한 채 구현 단계까지 진행하도록 표준 실행 순서(0번 단계)로 명시함.
+
+## 2026-03-05 - 작업한일
+- 미사용 레거시 유틸 `scripts/run_drafts_parallel.py`와 파이썬 캐시(`scripts/__pycache__/run_drafts_parallel.cpython-313.pyc`)를 삭제함.
+- `scripts` 디렉터리까지 함께 정리해 저장소에서 미참조 스크립트 경로를 제거함.
+- 검증: `rg --files scripts` 결과 없음, `cargo test -q` 실행.
+
+## 2026-03-05 - 작업한일
+- 사용자 요청에 맞춰 소스코드(`src/*`) 한정으로 레거시 feature 경로 문자열 언급을 제거함.
+- `src/draft.rs`의 삭제 확인 문구에서 `.project/feature/.../draft.yaml` 경로 표기를 제거함.
+- `src/main.rs`의 check-code 지시 문자열 및 placeholder 설명 문자열에서 feature 경로 표기를 `.project/drafts.yaml` 기준으로 정리함.
+- 검증: `rg -n "\.project/feature" src` 결과 없음, `cargo test -q` 통과.
+
+## 2026-03-05 - 작업한일
+- `add_code_draft`의 draft item 생성 경로에서 `assets/code/templates/draft_item.yaml` 템플릿을 실제로 로드해 LLM 프롬프트 입력으로 강제함(`src/code.rs`).
+- `infer_draft_item` 응답 파싱을 확장해 템플릿 키(`name/scope/tasks/check`)를 직접 수용하고, 누락 시 보조 추론 결과로만 보완하도록 정리함.
+- 관련 프롬프트(`assets/code/prompts/infer_draft_item.txt`, `add_code_draft_by_file.txt`, `add_code_draft_by_message.txt`)에 draft_item 템플릿 기반 스키마 규칙을 명시함.
+- 검증: `cargo test -q` 통과, `draft_item.yaml` 참조 경로 확인 완료.
+
+## 2026-03-05 - 작업한일
+- 사용자 지시에 따라 `src/*` 내 `draft.yaml` 문자열 참조를 전부 제거하고 `drafts.yaml` 기준으로 일괄 치환함.
+- `src/main.rs`, `src/ui/mod.rs`, `src/draft.rs`의 경로 후보/프롬프트/테스트 문자열을 `drafts.yaml` 기준으로 정리함.
+- 검증: `rg -n "draft\.yaml" src` 결과 없음, `cargo test -q` 통과.
+
+## 2026-03-05 - 작업한일
+- 사용자 요청에 따라 `AGENTS.override.md`에 금지 표현 차단 및 중간 보고 금지 규칙을 강화함.
+- 응답 전 금지 표현 점검/재작성 규칙을 명시해 위반 방지 절차를 고정함.
+- 검증: `cargo test -q` 실행.
+
+## 2026-03-05 - 작업한일
+- `assets/code/templates/draft_item.yaml`에 필드 의미 주석을 추가해 LLM이 주석을 읽고 값 채우기를 수행할 수 있도록 복원함.
+- `assets/code/prompts/infer_draft_item.txt`에 "주석 읽기 -> 값 채우기 -> 주석 제거" 규칙을 명시해 최종 출력에 주석이 남지 않도록 강제함.
+- 검증: `cargo test -q` 통과.
+
+## 2026-03-05 - 작업한일
+- `/home/tree/.codex/AGENTS.override.md`의 완료 알림 강제 문구를 완화해 task 정책 충돌을 줄임.
+- `/home/tree/ai/skills/plan-drafts/SKILL.md`, `/home/tree/ai/skills/build-code-parallel/SKILL.md`의 레거시 `draft.yaml`/`.project/feature` 중심 문구를 `drafts.yaml` 기준으로 정리함.
+- `/home/tree/.config/fish/functions/level_init.fish`의 `vim .agents/AGENTS.md` 안내 문구를 제거함.
+- 검증: 관련 문자열 검색 + `cargo test -q`.
+
+## 2026-03-05 - 작업한일
+- `build_input_md_auto()`를 `orc create_input_md` CLI 명령으로 직접 호출할 수 있도록 `src/code.rs`/`src/cli.rs`에 라우팅을 추가함.
+- `orc auto -f` 실행 경로를 수정해 기존 `input.md` 유무와 무관하게 먼저 `orc create_input_md`를 실행한 뒤 다음 단계로 진행하도록 자동 흐름을 고정함.
+- `README.md`와 `/home/tree/ai/skills/orc-cli-workflow/SKILL.md`에 `create_input_md` 및 갱신된 auto 흐름(선생성 후 진행)을 동기화함.
+- 검증: `cargo run --bin orc -- --help`, `cargo test -q` 통과.
+
+## 2026-03-05 - 작업한일
+- `if)` 가상 시나리오 출력 규칙을 `AGENTS.override.md`에 추가해 줄 단위 `a -> b` 형식을 강제함.
+- `/home/tree/ai/skills/virtual-scenario/SKILL.md`의 Mandatory Output/예시를 `a -> b` 다음줄 포맷으로 수정함.
+- 동일 규칙으로 `.project/scenario.md`를 생성해 `orc auto "react todo"` 호출 흐름을 단계별 화살표 형식으로 기록함.
+- 검증: `rg`로 규칙/예시 반영 확인.
+
+## 2026-03-05 - 작업한일
+- `~~~을 만들어줘` 입력 시 manager pane이 워커 pane을 단계별 생성/위임하도록 `AGENTS.override.md`에 동작 규칙을 추가함.
+- `/home/tree/ai/skills/orc-cli-workflow/SKILL.md`에 `tmux split-window + orc send-tmux` 기반 manager-worker 강제 흐름을 추가함.
+- `auto -> plan.yaml -> drafts.yaml -> impl(병렬) -> check_draft`를 각각 새 pane에서 수행하고 완료/실패를 회수해 재시도 판단하는 루프를 문서화함.
+- 검증: 스킬 문서 키워드 검색 + `cargo test -q` 실행.
+
+## 2026-03-05 - 작업한일
+- `orc-cli-workflow` 트리거를 `~~~을 만들어줘`, `~~~을 추가해줘`, `~을 읽고 처리해줘`로 확장함.
+- `읽고 처리해줘` 분기에서 기존 `input.md` 읽기 기반 명령(`add_code_plan -f`, `add_code_draft -f`)을 사용하고 `create_input_md`를 호출하지 않도록 스킬 규칙을 명시함.
+- manager pane이 트리거별로 워커 pane 위임 명령을 분기해 수행하도록 단계/운영 예시를 갱신함.
+- 검증: 문자열 검색 + `cargo test -q`.

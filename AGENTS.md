@@ -117,3 +117,72 @@
 ## Legacy Compatibility Removal Rule
 - Remove legacy compatibility paths/modes instead of keeping dual-path support.
 - When standard path/name changes, keep only the current canonical path and update callers in the same change.
+
+
+## Request Summary Output Rule
+- For every user request, before starting work, output using this exact 2-line format:
+- Line 1: `요구사항 요약 > [${행동 설명:생성, 추가, 삭제, 변경}] ${대상}은 기능 한줄 요약`
+- Line 2: `[결과] : 일어날 결과`
+- Keep this output concise and always place it immediately before implementation.
+
+## Screenshot Path Memory Rule
+- When the user says `current.png`, resolve it to this fixed directory by default:
+  - `/mnt/c/Users/tende/Pictures/Screenshots/current.png`
+- If only folder context is needed, use:
+- Treat this mapping as persistent unless the user explicitly changes it.
+
+## Plan First Rule (Permanent)
+- Before any source code edit, create or update `plan.md` first.
+- Minimum `plan.md` structure is mandatory: `문제`, `해결책`, `검증`.
+- If `plan.md` is missing, stop editing source and write `plan.md` first.
+
+## Retry Loop Rule (Permanent)
+- Required execution loop:
+  1) 문제 제시 + 해결책 + 검증 기준 설정후 `plan.md` 생성 
+  2) 해결책 시도
+  3) 검증 실행
+  4) 실패 시  `feedback.md` 생성후 이를 바탕으로 `plan.md`문제를 재설계 
+  5) 재 정비된 plan.md 문서를 바탕으로 처음부터 전체 재시작
+- On failure, write/update `feedback.md` and append retry reason to `plan.md` before restarting.
+- Do not stop at intermediate logs only; continue until pass or max retry reached.
+
+## Rule-First Enforcement (Highest Priority)
+- On any new user behavioral instruction, update `AGENTS.override.md` first before running commands or editing source.
+- If execution already started, stop running process first, write rule, then resume work.
+- This rule has higher priority than implementation speed.
+
+## Temp Auto Loop Rule (Permanent)
+- When user requests `orc cli` validation in `/home/tree/temp`, run iterative loop with this order:
+  1) write/update `plan.md`
+  2) remove and recreate `/home/tree/temp`
+  3) run `orc auto` for requested app
+  4) if failed, write `/home/tree/temp/feedback.md` with 문제/미해결점
+  5) reflect feedback into next plan and restart from step 1
+- Keep looping until verification passes or hard technical blocker is confirmed.
+
+## Feedback->Plan Merge Rule (Highest Priority)
+- After any failure, write/update `feedback.md` first with `문제` and `미해결점`.
+- Then update `plan.md` by merging prior plan + new feedback deltas.
+- The updated `plan.md` must include:
+  - new/changed problem statements
+  - concrete solution steps
+  - forced execution item (must-apply action)
+- Do not run the next attempt unless merged `plan.md` has been written.
+
+## Forced Resolution Rule
+- Retry is not a blind rerun.
+- Every retry must apply at least one concrete change from updated `plan.md` before execution.
+- If no new change is applied, stop and mark as process violation.
+
+## Failure-Solution Mandatory Rule (Highest Priority)
+- If any failure cause is detected, `plan.md` must be updated with a concrete fix for that exact cause before next run.
+- `plan.md` update is invalid if it only repeats the problem without actionable solution steps.
+- Retry execution is blocked until the failure->solution mapping is explicitly written in `plan.md`.
+
+## Regret Skill Trigger Rule (Highest Priority)
+- If the assistant output includes the token `잘못` in any channel, run the `regret` skill immediately in the same turn.
+- Required action order:
+  1) Append one item to `/home/tree/ai/skills/regret/references/report.md` under `# 잘못한점`.
+  2) Append one item to `/home/tree/ai/skills/regret/references/report.md` under `# 개선할점`.
+  3) State that the regret skill execution record was written.
+- This rule is mandatory for `commentary`, `final`, and `summary` channels.
