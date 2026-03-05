@@ -9,6 +9,7 @@
 - `orc init_code_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-m <message>] [-a]`
 - `orc init_code_plan [-a]`
 - `orc add_code_plan [-f] [-m <message>] [-a]`
+- `orc create_input_md`
 - `orc create_code_draft`
 - `orc add_code_draft_item [-f] [-m <message>]`
 - `orc impl_code_draft`
@@ -21,7 +22,7 @@
 - `orc chat-wait -n <name> -a <true|false> [-c <count>]`
 - `orc open-ui`
 - `orc auto <message>`
-- `orc auto -f` (use existing `input.md`, skip generating `input.md`, continue to implementation)
+- `orc auto -f` (auto-generate `input.md` from `project.md + plan.yaml`, then continue to implementation)
 
 ## UI Mode
 - Enter UI mode:

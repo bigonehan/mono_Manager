@@ -1458,10 +1458,10 @@ fn validate_draft_doc(doc: &DraftDoc) -> Vec<String> {
 fn resolve_draft_yaml_template_path() -> Option<PathBuf> {
     let root = source_root();
     let candidates = [
-        root.join("assets").join("code").join("templates").join("draft.yaml"),
-        PathBuf::from("assets").join("code").join("templates").join("draft.yaml"),
-        root.join("assets").join("templates").join("draft.yaml"),
-        PathBuf::from("assets").join("templates").join("draft.yaml"),
+        root.join("assets").join("code").join("templates").join("drafts.yaml"),
+        PathBuf::from("assets").join("code").join("templates").join("drafts.yaml"),
+        root.join("assets").join("templates").join("drafts.yaml"),
+        PathBuf::from("assets").join("templates").join("drafts.yaml"),
     ];
     candidates.into_iter().find(|p| p.exists())
 }
@@ -1471,7 +1471,7 @@ fn fix_draft_with_llm(draft_path: &Path, raw: &str, issues: &[String]) -> Result
         .and_then(|p| fs::read_to_string(p).ok())
         .unwrap_or_default();
     let prompt = format!(
-        "다음 draft.yaml을 검사 결과에 맞게 수정해.\n\
+        "다음 drafts.yaml을 검사 결과에 맞게 수정해.\n\
 지시:\n\
 - template YAML을 대상 draft 경로에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n\
 - 규칙은 `$plan-drafts-code`, `$check-code` 스킬을 사용해.\n\
@@ -1517,7 +1517,7 @@ pub(crate) fn check_and_improve_drafts_before_parallel() -> Result<String, Strin
             continue;
         }
         let dir = entry.path();
-        let draft_path = [dir.join("draft.yaml"), dir.join("drafts.yaml")]
+        let draft_path = [dir.join("drafts.yaml"), dir.join("drafts.yaml")]
             .into_iter()
             .find(|p| p.exists());
         let Some(draft_path) = draft_path else { continue };
@@ -2394,7 +2394,7 @@ fn normalize_draft_task_step_yaml(raw_yaml: &str) -> Result<String, String> {
 fn repair_draft_yaml_with_llm(raw: &str) -> Result<String, String> {
     let prompt = format!(
         "너는 YAML 포맷 복구기다.\n\
-다음 깨진 draft 출력을 `assets/code/templates/draft.yaml` 스키마로 복구해라.\n\
+다음 깨진 draft 출력을 `assets/code/templates/drafts.yaml` 스키마로 복구해라.\n\
 규칙:\n\
 - 루트는 `task:` 배열이어야 한다.\n\
 - task item 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n\
@@ -2451,9 +2451,9 @@ fn collect_generated_draft_feature_names(project_root: &Path) -> Vec<String> {
         }
         let dir = entry.path();
         let has_task = [
-            dir.join("draft.yaml"),
+            dir.join("drafts.yaml"),
             dir.join("tasks.yaml"),
-            dir.join("draft.yaml"),
+            dir.join("drafts.yaml"),
             dir.join("drafts.yaml"),
         ]
         .iter()
@@ -2525,9 +2525,9 @@ pub(crate) fn preflight_parallel_build(path: &Path) -> Result<String, String> {
     for name in &doc.planned {
         let dir = Path::new(".project").join("feature").join(name);
         let has_task = [
-            dir.join("draft.yaml"),
+            dir.join("drafts.yaml"),
             dir.join("tasks.yaml"),
-            dir.join("draft.yaml"),
+            dir.join("drafts.yaml"),
             dir.join("drafts.yaml"),
         ]
         .iter()
@@ -2804,7 +2804,7 @@ pub(crate) fn run_check_code_after_draft_changes(
         ),
     };
     let prompt = format!(
-        "트리거: {}\n대상:\n{}\n프로젝트 정보:\n{}\n{}\n\nspec checkpoint history:\n{}\n\n지시:\n- `$check-code` 스킬을 사용해 점검/수정을 수행해.\n- YAML/Markdown 참조 파일이 있으면 먼저 읽고 값을 채워야 할 헤더/속성을 정리한 뒤 형식에 맞게 반영해.\n- `.project/feature` 경로를 새로 생성하거나 사용하지 말고, `.project/drafts.yaml`만 기준으로 점검해.\n- spec checkpoint history에 기록된 과거 문제 패턴이 재발하는지 반드시 확인하고, 재발 시 우선 수정 대상으로 처리해.\n- 문제가 없으면 `NO_CHANGE`를 출력.",
+        "트리거: {}\n대상:\n{}\n프로젝트 정보:\n{}\n{}\n\nspec checkpoint history:\n{}\n\n지시:\n- `$check-code` 스킬을 사용해 점검/수정을 수행해.\n- YAML/Markdown 참조 파일이 있으면 먼저 읽고 값을 채워야 할 헤더/속성을 정리한 뒤 형식에 맞게 반영해.\n- draft 점검은 `.project/drafts.yaml`만 기준으로 수행해.\n- spec checkpoint history에 기록된 과거 문제 패턴이 재발하는지 반드시 확인하고, 재발 시 우선 수정 대상으로 처리해.\n- 문제가 없으면 `NO_CHANGE`를 출력.",
         trigger,
         target_lines.join("\n"),
         spec_line,
@@ -3138,10 +3138,10 @@ pub(crate) fn collect_parallel_feature_tasks() -> Result<Vec<ParallelFeatureTask
         }
         let feature_dir = entry.path();
         let draft_candidates = [
-            feature_dir.join("draft.yaml"),
+            feature_dir.join("drafts.yaml"),
             feature_dir.join("tasks.yaml"),
             feature_dir.join("drafts.yaml"),
-            feature_dir.join("draft.yaml"),
+            feature_dir.join("drafts.yaml"),
         ];
         let draft_path = match draft_candidates.into_iter().find(|p| p.exists()) {
             Some(path) => path,
@@ -3354,12 +3354,12 @@ mod tests {
                 },
                 PlannedItem {
                     name: "features_project_features_work_draft_yaml".to_string(),
-                    value: "features 항목 분석 | .project/features/work/기능이름/draft.yaml 생성 | 기능별 구현 명세 확보"
+                    value: "features 항목 분석 | .project/drafts.yaml draft 항목 생성 | 기능별 구현 명세 확보"
                         .to_string(),
                 },
                 PlannedItem {
                     name: "draft_yaml".to_string(),
-                    value: "draft.yaml 읽기 | 각 기능 폴더 내 코드 파일 생성/수정 | 기능 구현 완료"
+                    value: "drafts.yaml 읽기 | 각 기능 폴더 내 코드 파일 생성/수정 | 기능 구현 완료"
                         .to_string(),
                 },
             ],
@@ -3410,7 +3410,7 @@ mod tests {
                 },
                 PlannedItem {
                     name: "draft_yaml".to_string(),
-                    value: "draft.yaml 읽기".to_string(),
+                    value: "drafts.yaml 읽기".to_string(),
                 },
             ],
             sync_initialized: true,
@@ -3433,7 +3433,7 @@ mod tests {
         fs::create_dir_all(meta.join("feature").join("alpha_feature"))
             .expect("create generated feature dir");
         fs::write(
-            meta.join("feature").join("alpha_feature").join("draft.yaml"),
+            meta.join("feature").join("alpha_feature").join("drafts.yaml"),
             "task:\n- name: alpha\n",
         )
         .expect("write generated task");

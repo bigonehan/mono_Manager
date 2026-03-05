@@ -160,7 +160,7 @@ pub fn resolve_feature_draft_path(feature_name: &str) -> PathBuf {
     PathBuf::from(".project")
         .join("feature")
         .join(feature_name)
-        .join("draft.yaml")
+        .join("drafts.yaml")
 }
 
 pub fn apply_draft_create_update_delete(
@@ -675,17 +675,17 @@ fn resolve_draft_template_path() -> Result<PathBuf, String> {
             .join("assets")
             .join("code")
             .join("templates")
-            .join("draft.yaml"),
-        manifest_root.join("assets").join("templates").join("draft.yaml"),
-        root.join("assets").join("code").join("templates").join("draft.yaml"),
+            .join("drafts.yaml"),
+        manifest_root.join("assets").join("templates").join("drafts.yaml"),
+        root.join("assets").join("code").join("templates").join("drafts.yaml"),
         PathBuf::from("assets")
             .join("code")
             .join("templates")
-            .join("draft.yaml"),
-        root.join("assets").join("templates").join("draft.yaml"),
-        PathBuf::from("assets").join("templates").join("draft.yaml"),
-        root.join("src").join("assets").join("templates").join("draft.yaml"),
-        PathBuf::from("src").join("assets").join("templates").join("draft.yaml"),
+            .join("drafts.yaml"),
+        root.join("assets").join("templates").join("drafts.yaml"),
+        PathBuf::from("assets").join("templates").join("drafts.yaml"),
+        root.join("src").join("assets").join("templates").join("drafts.yaml"),
+        PathBuf::from("src").join("assets").join("templates").join("drafts.yaml"),
     ];
     for candidate in candidates {
         if candidate.exists() {
@@ -1289,9 +1289,9 @@ fn has_planned_task_file(project: &ProjectRecord, feature_name: &str) -> bool {
         .join("feature")
         .join(feature_name);
     [
-        feature_dir.join("draft.yaml"),
+        feature_dir.join("drafts.yaml"),
         feature_dir.join("tasks.yaml"),
-        feature_dir.join("draft.yaml"),
+        feature_dir.join("drafts.yaml"),
         feature_dir.join("drafts.yaml"),
     ]
     .iter()
@@ -3977,8 +3977,8 @@ goal : 100번 점프 달성 시 승리
                 ..Default::default()
             },
             generated_files: vec![
-                ("jump".to_string(), "draft.yaml".to_string()),
-                ("win".to_string(), "draft.yaml".to_string()),
+                ("jump".to_string(), "drafts.yaml".to_string()),
+                ("win".to_string(), "drafts.yaml".to_string()),
             ],
         };
 
@@ -4092,9 +4092,9 @@ fn collect_generated_draft_items_from_project(project: &ProjectRecord) -> Vec<St
         }
         let dir = entry.path();
         let has_task = [
-            dir.join("draft.yaml"),
+            dir.join("drafts.yaml"),
             dir.join("tasks.yaml"),
-            dir.join("draft.yaml"),
+            dir.join("drafts.yaml"),
             dir.join("drafts.yaml"),
         ]
         .iter()

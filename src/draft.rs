@@ -166,7 +166,7 @@ fn repair_draft_yaml_once(
     reason: &str,
 ) -> Result<String, String> {
     let prompt = format!(
-        "다음 draft.yaml을 검증 실패 사유에 맞게 수정해.\n\
+        "다음 drafts.yaml을 검증 실패 사유에 맞게 수정해.\n\
 지시:\n\
 - YAML 스키마는 반드시 유지: 최상위는 `rule`, `features`, `task`만 허용.\n\
 - `task`는 리스트 형식으로 유지.\n\
@@ -180,7 +180,7 @@ fn repair_draft_yaml_once(
 출력 형식:\n\
 FEATURE_NAME: {}\n\
 ```yaml\n\
-<수정된 draft.yaml>\n\
+<수정된 drafts.yaml>\n\
 ```\n\
 설명 문장 금지.\n\n\
 검증 실패 사유:\n{}\n\n\
@@ -281,7 +281,7 @@ fn build_draft_prompt(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| feature.to_string());
     format!(
-        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능 key:\n- {}\n입력 기능 설명:\n- {}\n\n지시:\n- `draft.yaml`은 템플릿(`assets/code/templates/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- FEATURE_NAME은 반드시 입력 기능 key와 동일하게 출력해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `rule`은 자동 검증 가능한 식(`==`, `!=`, `>=`, `<=`, `matches`, `contains`, `exists`)으로만 작성해.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
+        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능 key:\n- {}\n입력 기능 설명:\n- {}\n\n지시:\n- `drafts.yaml`은 템플릿(`assets/code/templates/drafts.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- FEATURE_NAME은 반드시 입력 기능 key와 동일하게 출력해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `rule`은 자동 검증 가능한 식(`==`, `!=`, `>=`, `<=`, `matches`, `contains`, `exists`)으로만 작성해.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<drafts.yaml 본문>\n```\n설명 문장 금지.",
         project_info,
         project_rules.join("\n- "),
         feature,
@@ -306,7 +306,7 @@ fn write_generated_draft(
         debug_enabled,
         feature_name,
         "파일 반영 단계",
-        "draft.yaml 쓰기를 완료했습니다.",
+        "drafts.yaml 쓰기를 완료했습니다.",
     );
     let _ = clear_draft_failure_report(feature_name);
     Ok(())
@@ -486,7 +486,7 @@ pub(crate) fn draft_add(feature_name: &str, request: Option<String>) -> Result<S
     let project_rules = crate::extract_project_rules(&project_md);
     let debug_instruction = debug_prompt_instruction();
     let prompt = format!(
-        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능명:\n- {}\n요구사항:\n- {}\n\n지시:\n- `draft.yaml`은 템플릿(`assets/code/templates/draft.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<draft.yaml 본문>\n```\n설명 문장 금지.",
+        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능명:\n- {}\n요구사항:\n- {}\n\n지시:\n- `drafts.yaml`은 템플릿(`assets/code/templates/drafts.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<drafts.yaml 본문>\n```\n설명 문장 금지.",
         project_info,
         project_rules.join("\n- "),
         feature_name,
@@ -518,7 +518,7 @@ pub(crate) fn draft_add(feature_name: &str, request: Option<String>) -> Result<S
 
 pub(crate) fn draft_delete(feature_name: &str) -> Result<String, String> {
     let answer = crate::read_one_line(&format!(
-        "delete `.project/feature/{}/draft.yaml` ? [y/N]: ",
+        "delete draft config for feature `{}` ? [y/N]: ",
         feature_name
     ))?;
     let accepted = matches!(answer.to_ascii_lowercase().as_str(), "y" | "yes");

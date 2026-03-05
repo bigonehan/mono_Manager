@@ -20,6 +20,7 @@ pub fn print_usage(program: &str) {
         "init_code_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-a <message>]",
         "init_code_plan [-a]",
         "add_code_plan [-f] [-m <message>] [-a]",
+        "create_input_md",
         "create_code_draft",
         "add_code_draft [-f] [-m <message>] [-a]",
         "add_code_draft_item [-f] [-m <message>] [-a]",
@@ -51,6 +52,12 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         "init_code_project" => super::code::init_code_project(&args[2..]),
         "init_code_plan" => super::code::init_code_plan(&args[2..]),
         "add_code_plan" => super::code::add_code_plan(&args[2..]),
+        "create_input_md" => {
+            if args.len() != 2 {
+                return Err("create_input_md does not accept arguments".to_string());
+            }
+            super::code::create_input_md()
+        }
         "create_code_draft" => {
             if args.len() != 2 {
                 return Err("create_code_draft does not accept arguments".to_string());
