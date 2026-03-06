@@ -1089,8 +1089,7 @@ fn sync_project_md_files(project_root: &Path) -> Result<bool, String> {
 fn ui_model_bin() -> String {
     let root = crate::source_root();
     let candidates = [
-        root.join("configs.yaml"),
-        root.join("config.yaml"),
+        root.join("configs").join("configs.yaml"),
         root.join("assets").join("config").join("config.yaml"),
         root.join("src").join("assets").join("config").join("config.yaml"),
     ];

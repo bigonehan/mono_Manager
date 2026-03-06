@@ -1,8 +1,0 @@
-BOOTSTRAP_DONE: `tmux,bash` 스펙 기준 최소 bootstrap 골격을 `.`에 생성했고, 실행 검증까지 통과했습니다.
-
-생성/수정:
-- [run.sh](/home/tree/project/rust-orc/.tmp_tmux_verify/run.sh): tmux 세션 생성, pane split, 각 pane `hello world` 출력, 캡처 기반 검증, 세션 정리
-- [.agents/log.md](/home/tree/project/rust-orc/.tmp_tmux_verify/.agents/log.md): 기능 추가 완료 로그 1건 추가
-
-검증:
-- `./run.sh` 실행 결과: `hello world` / `pane split and output verified` 출력, 종료 코드 0
