@@ -1,5 +1,0 @@
-CHECK_CODE_RESULT
-- bottleneck: [ok] `.project/drafts.yaml`의 단계 정의는 순차 실행을 전제로 하며 단일 단계 블로킹으로 전체가 상호 정지되는 구조는 확인되지 않음.
-- circular_wait: [ok] `.project/drafts.yaml`/`.project/plan.yaml`에 상호 대기(lock/flag) 고리가 없어 환형대기 경로가 없음.
-- file_contention: [risk] `.project/drafts.yaml`의 5개 draft가 모두 `depends_on: []`이고 동일 파일(`index.html`, `styles.css`, `script.js`) 및 실행 로그를 갱신하도록 되어 병렬 실행 시 동시 write 충돌 위험이 있음.
-- recommendation: 1) `.project/drafts.yaml`에서 draft 간 `depends_on`을 연결해 직렬화 2) 산출물/로그 경로를 draft별 고유 ID로 분리 3) 공용 파일 write 구간에 lock 파일(예: `.project/runtime/.asset.lock`) 추가

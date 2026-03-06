@@ -1801,3 +1801,14 @@
 - `읽고 처리해줘` 분기에서 기존 `input.md` 읽기 기반 명령(`add_code_plan -f`, `add_code_draft -f`)을 사용하고 `create_input_md`를 호출하지 않도록 스킬 규칙을 명시함.
 - manager pane이 트리거별로 워커 pane 위임 명령을 분기해 수행하도록 단계/운영 예시를 갱신함.
 - 검증: 문자열 검색 + `cargo test -q`.
+
+## 2026-03-05 - 작업한일
+- 요청 요약 출력 형식을 라벨/설명 분리형으로 바꾸기 위해 `/home/tree/ai/codex/AGENTS.override.md`의 `Request Summary Output Rule`을 5줄 포맷으로 갱신함.
+- 저장소 `AGENTS.md`의 동일 규칙도 같은 포맷으로 동기화해 로컬/전역 규칙 불일치를 제거함.
+- 검증: `rg -n "요구사항 요약 >|\[결과\]" AGENTS.md /home/tree/ai/codex/AGENTS.override.md`.
+
+## 2026-03-05 - 작업한일
+- `assets/code/templates/plan.yaml`에서 루트 `planned/worked/complete` 필드를 제거해 목표 스키마(`goal/domains/drafts`)만 남기도록 수정함.
+- `src/code.rs`의 `CodePlanDoc` 루트 호환 필드와 `sync_plan_doc()`의 루트<->drafts 동기화 경로를 제거해 `drafts.*` 단일 상태만 사용하도록 정리함.
+- `assets/code/prompts/add_code_plan.txt`, `assets/code/prompts/impl_code_draft.txt`의 plan 상태 참조 문구를 `drafts.planned/worked/complete` 기준으로 갱신함.
+- 검증: `cargo test -q`, `cargo install --path /home/tree/project/rust-orc`.

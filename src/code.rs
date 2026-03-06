@@ -31,12 +31,6 @@ struct CodePlanDoc {
     domains: Vec<String>,
     #[serde(default)]
     drafts: CodePlanDrafts,
-    #[serde(default, skip_serializing)]
-    planned: Vec<String>,
-    #[serde(default, skip_serializing)]
-    worked: Vec<String>,
-    #[serde(default, skip_serializing)]
-    complete: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -1829,15 +1823,6 @@ name : sample
 }
 
 fn sync_plan_doc(doc: &mut CodePlanDoc) {
-    if doc.drafts.planned.is_empty() && !doc.planned.is_empty() {
-        doc.drafts.planned = doc.planned.clone();
-    }
-    if doc.drafts.worked.is_empty() && !doc.worked.is_empty() {
-        doc.drafts.worked = doc.worked.clone();
-    }
-    if doc.drafts.complete.is_empty() && !doc.complete.is_empty() {
-        doc.drafts.complete = doc.complete.clone();
-    }
     dedup_vec(&mut doc.drafts.complete);
     dedup_vec(&mut doc.drafts.worked);
     dedup_vec(&mut doc.drafts.planned);
@@ -1845,9 +1830,6 @@ fn sync_plan_doc(doc: &mut CodePlanDoc) {
     doc.drafts.planned.retain(|v| {
         !doc.drafts.complete.iter().any(|c| c == v) && !doc.drafts.worked.iter().any(|w| w == v)
     });
-    doc.planned = doc.drafts.planned.clone();
-    doc.worked = doc.drafts.worked.clone();
-    doc.complete = doc.drafts.complete.clone();
 }
 
 fn dedup_vec(items: &mut Vec<String>) {

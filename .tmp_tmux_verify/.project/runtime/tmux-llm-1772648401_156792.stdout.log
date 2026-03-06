@@ -1,5 +1,0 @@
-CHECK_CODE_RESULT
-- bottleneck: [ok] `.project/drafts.yaml`의 단계 정의는 bootstrap -> pane 검증 -> output 검증 순서로 분리되어 있고 단일 blocking 병목 경로가 추가로 보이지 않습니다.
-- circular_wait: [ok] `.project/drafts.yaml`에 상호 대기 구조(세션/락/상태 플래그 환형 의존)가 정의되어 있지 않습니다.
-- file_contention: [ok] `.project/drafts.yaml`, `.project/plan.yaml`, `.project/project.md` 기준으로 동시 write/rename/delete 경쟁 경로가 명시되어 있지 않습니다.
-- recommendation: NO_CHANGE

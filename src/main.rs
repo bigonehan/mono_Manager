@@ -1551,8 +1551,7 @@ pub(crate) fn check_and_improve_drafts_before_parallel() -> Result<String, Strin
 pub(crate) fn load_app_config() -> Option<config::AppConfig> {
     let root = source_root();
     let candidates = [
-        root.join("configs.yaml"),
-        root.join("config.yaml"),
+        root.join("configs").join("configs.yaml"),
         root.join("assets").join("config").join("config.yaml"),
         root.join("src").join("assets").join("config").join("config.yaml"),
     ];

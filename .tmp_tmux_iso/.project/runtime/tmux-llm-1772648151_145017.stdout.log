@@ -1,4 +1,0 @@
-BOOTSTRAP_DONE: `tmux_split_verify`의 최소 bootstrap을 `spec(tmux, bash, shell scripting)` 기준으로 생성했고 실행 검증까지 완료했습니다.
-생성 파일: `./run.sh`, `./tmux_split_verify.sh`, `./.agents/log.md`
-검증 결과: `./run.sh` 실행 시 `hello world` 출력, `./tmux_split_verify.sh` 실행 시 `tmux split verification passed` 출력
-반영 범위: `project_root(.)` 내부만 수정/생성 완료
