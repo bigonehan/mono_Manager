@@ -10,6 +10,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const CODEX_DANGEROUS_FLAG: &str = "--dangerously-bypass-approvals-and-sandbox";
 
 fn append_chat_log(project_root: &Path, role: &str, message: &str) {
+    let debug_enabled = crate::load_app_config()
+        .as_ref()
+        .is_none_or(crate::config::AppConfig::debug_enabled);
+    if !debug_enabled {
+        return;
+    }
     let path = project_root.join(".project").join("chat.log");
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);

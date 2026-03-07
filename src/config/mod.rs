@@ -20,6 +20,7 @@ pub struct AiConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
+    pub profile: Option<String>,
     pub max_parallel: Option<usize>,
     pub timeout_sec: Option<u64>,
     pub max_read_time: Option<u64>,
@@ -81,6 +82,14 @@ impl AppConfig {
 
     pub fn llm_retry_count(&self) -> u32 {
         self.llm_retry_count.unwrap_or(2)
+    }
+
+    pub fn default_profile_name(&self) -> &str {
+        self.profile
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .unwrap_or("code")
     }
 
 }

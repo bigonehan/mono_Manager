@@ -2526,6 +2526,12 @@ fn cancel_ai_stream(app: &mut UiApp) {
 }
 
 fn append_project_chat_log(project_path: &str, role: &str, message: &str) {
+    let debug_enabled = crate::load_app_config()
+        .as_ref()
+        .is_none_or(crate::config::AppConfig::debug_enabled);
+    if !debug_enabled {
+        return;
+    }
     let log_path = Path::new(project_path).join(".project").join("chat.log");
     if let Some(parent) = log_path.parent() {
         let _ = fs::create_dir_all(parent);
@@ -3061,6 +3067,7 @@ fn apply_project_create(
             created_at: now.clone(),
             updated_at: now,
             selected: false,
+            project_type: "code".to_string(),
         });
         let _ = sync_project_md_files(&path)?;
         app.status_line = if create_project_msg.is_empty() {
@@ -3836,6 +3843,7 @@ mod tests {
             created_at: "0".to_string(),
             updated_at: "0".to_string(),
             selected: true,
+            project_type: "code".to_string(),
         };
 
         let parsed = parse_project_md(&input.project_md);
@@ -3883,6 +3891,7 @@ mod tests {
             created_at: "0".to_string(),
             updated_at: "0".to_string(),
             selected: true,
+            project_type: "code".to_string(),
         };
         let mut modal = new_ai_chat_modal_template(
             &project,

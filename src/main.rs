@@ -5,9 +5,13 @@ mod chat;
 mod draft;
 mod parallel;
 mod plan;
+mod profile;
+mod story;
 mod tmux;
 mod tui;
 mod ui;
+mod web;
+mod web_api;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -31,7 +35,7 @@ pub(crate) const INPUT_MD_PATH: &str = "input.md";
 const FEATURE_NAME_SKILL_PATH: &str = "/home/tree/ai/skills/rule-naming/SKILL.md";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct ProjectRecord {
+pub(crate) struct ProjectRecord {
     #[serde(default)]
     id: String,
     name: String,
@@ -40,10 +44,16 @@ struct ProjectRecord {
     created_at: String,
     updated_at: String,
     selected: bool,
+    #[serde(default = "default_project_type")]
+    project_type: String,
+}
+
+fn default_project_type() -> String {
+    "code".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct ProjectRegistry {
+pub(crate) struct ProjectRegistry {
     #[serde(default, rename = "recentActivepane")]
     recent_active_pane: Option<String>,
     #[serde(default)]
@@ -181,7 +191,7 @@ fn generate_project_id(existing: &HashSet<String>) -> String {
     "0000".to_string()
 }
 
-fn normalize_registry(registry: &mut ProjectRegistry) -> bool {
+pub(crate) fn normalize_registry(registry: &mut ProjectRegistry) -> bool {
     let mut changed = false;
     let mut ids: HashSet<String> = registry
         .projects
@@ -401,7 +411,7 @@ pub(crate) fn append_failure_log(task_name: &str, reason: &str) -> Result<(), St
     .map_err(|e| format!("failed to write {}: {}", EXEC_LOG_PATH, e))
 }
 
-fn load_registry(path: &Path) -> Result<ProjectRegistry, String> {
+pub(crate) fn load_registry(path: &Path) -> Result<ProjectRegistry, String> {
     if !path.exists() {
         return Ok(ProjectRegistry::default());
     }
@@ -413,7 +423,7 @@ fn load_registry(path: &Path) -> Result<ProjectRegistry, String> {
     Ok(parsed)
 }
 
-fn save_registry(path: &Path, registry: &ProjectRegistry) -> Result<(), String> {
+pub(crate) fn save_registry(path: &Path, registry: &ProjectRegistry) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
@@ -482,6 +492,7 @@ fn upsert_project(
         created_at: now.clone(),
         updated_at: now,
         selected: false,
+        project_type: default_project_type(),
     });
     ProjectRegistry {
         recent_active_pane: registry.recent_active_pane.clone(),
@@ -515,24 +526,6 @@ fn ensure_project_dir(path: &Path) -> Result<(), String> {
 fn list_projects() -> Result<String, String> {
     let registry = load_registry(&registry_path())?;
     Ok(ui::render_project_list(&registry.projects))
-}
-
-pub(crate) fn run_ui() -> Result<String, String> {
-    let registry_path = registry_path();
-    let mut registry = load_registry(&registry_path)?;
-    let normalized = normalize_registry(&mut registry);
-    save_registry(&registry_path, &registry)?;
-    let result = ui::run_ui(&mut registry.projects, &mut registry.recent_active_pane)?;
-    if normalized {
-        registry.recent_active_pane = registry
-            .recent_active_pane
-            .as_ref()
-            .and_then(|id| registry.projects.iter().find(|p| &p.id == id).map(|p| p.id.clone()));
-    }
-    if result.changed || normalized {
-        save_registry(&registry_path, &registry)?;
-    }
-    Ok(result.message)
 }
 
 fn collect_project_features(project_path: &Path) -> Result<Vec<String>, String> {
@@ -2768,6 +2761,48 @@ fn append_check_code_runtime_log(stage: &str, detail: &str) {
     }
 }
 
+fn collect_draft_constraints_checklist(feature_names: &[String]) -> Result<Vec<String>, String> {
+    if feature_names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let path = Path::new(".project").join("drafts.yaml");
+    if !path.exists() {
+        return Ok(vec!["- (drafts.yaml not found)".to_string()]);
+    }
+    let raw = fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+    let doc: serde_yaml::Value = serde_yaml::from_str(&raw)
+        .map_err(|e| format!("failed to parse {}: {}", path.display(), e))?;
+    let Some(items) = doc.get("draft").and_then(serde_yaml::Value::as_sequence) else {
+        return Ok(vec!["- (draft list not found)".to_string()]);
+    };
+    let feature_set: HashSet<&str> = feature_names.iter().map(String::as_str).collect();
+    let mut lines: Vec<String> = Vec::new();
+    for item in items {
+        let Some(name) = item.get("name").and_then(serde_yaml::Value::as_str) else {
+            continue;
+        };
+        if !feature_set.contains(name) {
+            continue;
+        }
+        let constraints = item.get("constraints").and_then(serde_yaml::Value::as_sequence);
+        match constraints {
+            Some(values) if !values.is_empty() => {
+                for value in values {
+                    if let Some(entry) = value.as_str() {
+                        lines.push(format!("- {} :: {}", name, entry.trim()));
+                    }
+                }
+            }
+            _ => lines.push(format!("- {} :: (constraints 없음)", name)),
+        }
+    }
+    if lines.is_empty() {
+        lines.push("- (constraints checklist 없음)".to_string());
+    }
+    Ok(lines)
+}
+
 pub(crate) fn run_check_code_after_draft_changes(
     feature_names: &[String],
     trigger: &str,
@@ -2782,6 +2817,7 @@ pub(crate) fn run_check_code_after_draft_changes(
             name
         ));
     }
+    let constraints_checklist = collect_draft_constraints_checklist(feature_names)?;
     let checkpoint_context = read_spec_checkpoint_context()?;
     let (spec_line, checkpoint_line, checkpoint_body) = match checkpoint_context {
         Some((spec, primary_path, content)) => {
@@ -2803,11 +2839,12 @@ pub(crate) fn run_check_code_after_draft_changes(
         ),
     };
     let prompt = format!(
-        "트리거: {}\n대상:\n{}\n프로젝트 정보:\n{}\n{}\n\nspec checkpoint history:\n{}\n\n지시:\n- `$check-code` 스킬을 사용해 점검/수정을 수행해.\n- YAML/Markdown 참조 파일이 있으면 먼저 읽고 값을 채워야 할 헤더/속성을 정리한 뒤 형식에 맞게 반영해.\n- draft 점검은 `.project/drafts.yaml`만 기준으로 수행해.\n- spec checkpoint history에 기록된 과거 문제 패턴이 재발하는지 반드시 확인하고, 재발 시 우선 수정 대상으로 처리해.\n- 문제가 없으면 `NO_CHANGE`를 출력.",
+        "트리거: {}\n대상:\n{}\n프로젝트 정보:\n{}\n{}\n\ndraft constraints checklist:\n{}\n\nspec checkpoint history:\n{}\n\n지시:\n- `$check-code` 스킬을 사용해 점검/수정을 수행해.\n- YAML/Markdown 참조 파일이 있으면 먼저 읽고 값을 채워야 할 헤더/속성을 정리한 뒤 형식에 맞게 반영해.\n- draft 점검은 `.project/drafts.yaml`만 기준으로 수행해.\n- `draft constraints checklist`를 기반으로 항목별 체크리스트를 만들고 각 항목의 만족/불만족을 판정해 report에 반영해.\n- spec checkpoint history에 기록된 과거 문제 패턴이 재발하는지 반드시 확인하고, 재발 시 우선 수정 대상으로 처리해.\n- 문제가 없으면 `NO_CHANGE`를 출력.",
         trigger,
         target_lines.join("\n"),
         spec_line,
         checkpoint_line,
+        constraints_checklist.join("\n"),
         checkpoint_body
     );
     let timeout_sec = check_code_timeout_sec();
@@ -2865,7 +2902,7 @@ pub(crate) fn source_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn registry_path() -> PathBuf {
+pub(crate) fn registry_path() -> PathBuf {
     source_root().join(REGISTRY_PATH)
 }
 
