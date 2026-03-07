@@ -17,8 +17,6 @@
 - Apply this as the default for future tasks unless the user explicitly disables it.
 
 ## Notification Output Rule
-- Do not include completion-notification execution details in the final user-facing summary.
-- If a notification command is run by policy, keep it silent in the response unless the user explicitly asks for notification logs.
 
 ## Auto Install Rule
 - When a feature addition or improvement task is completed, run `cargo install --path /home/tree/project/rust-orc` automatically before finalizing the task.

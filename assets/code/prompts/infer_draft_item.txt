@@ -9,5 +9,6 @@ infer_draft_item prompt
 - 각 키 값 타입:
   - `name`, `type`: string
   - 나머지 키: string 리스트
+- `constraints`의 각 항목은 반드시 `입력 -> 출력 : 기능 설명` 포맷으로 작성한다.
 - `project.md`, `plan_yaml`, `name`, `input_rules`, `input_steps`를 함께 읽고 해당 draft_item의 책임을 추론한다.
 - domain은 project.md의 domains 중 적합한 항목을 선택한다.

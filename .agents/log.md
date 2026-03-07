@@ -1812,3 +1812,311 @@
 - `src/code.rs`의 `CodePlanDoc` 루트 호환 필드와 `sync_plan_doc()`의 루트<->drafts 동기화 경로를 제거해 `drafts.*` 단일 상태만 사용하도록 정리함.
 - `assets/code/prompts/add_code_plan.txt`, `assets/code/prompts/impl_code_draft.txt`의 plan 상태 참조 문구를 `drafts.planned/worked/complete` 기준으로 갱신함.
 - 검증: `cargo test -q`, `cargo install --path /home/tree/project/rust-orc`.
+
+## 2026-03-06 - 작업한일
+- 별도 브랜치 `refactor/profile-layer`에서 profile 레이어(`src/profile/mod.rs`)를 추가하고 `Project/Plan/Draft/Feedback` 서비스 인터페이스 및 `Template/Prompt/Parallel` provider 인터페이스를 정의함.
+- `code` 구현체(`CodeProfile`)를 만들어 기존 `src/code.rs` 로직을 profile 서비스로 주입 가능하게 연결함.
+- `src/cli.rs`를 수정해 `[profile] <command>` 라우팅을 지원하고, 설정 기본 profile(`code`)을 사용하도록 변경함. (`orc check_task`, `orc code check_task` 동등 경로 확인)
+- `src/config/mod.rs`에 `profile` 설정 필드와 기본 profile 해석 함수(`default_profile_name`)를 추가함.
+- 검증: `cargo test -q`, `cargo run --bin orc -- --help`, `cargo run --bin orc -- code --help`, `cargo run --bin orc -- check_task`, `cargo run --bin orc -- code check_task`.
+
+## 2026-03-07 - 작업한일
+- `chat.log` 기록 경로를 `debug=true`에서만 동작하도록 게이트를 추가함.
+- `src/chat.rs`의 `append_chat_log`에 debug 체크를 넣어 `debug=false`에서 파일 기록을 중단함.
+- `src/ui/mod.rs`의 `append_project_chat_log`에도 동일한 debug 체크를 추가함.
+- 검증: `cargo test -q`, `cargo run --bin orc -- check_task`, `rg`로 chat.log 기록 함수 2곳의 debug 게이트 확인.
+
+## 2026-03-07 - 작업한일
+- `src/tui/mod.rs`에 `TuiRuntime` 구조체와 `run_ui_entry`를 추가해 TUI 실행 진입/오케스트레이션 책임을 TUI 모듈로 이동함.
+- `src/main.rs`의 `run_ui()`를 제거하고, TUI 실행에 필요한 레지스트리 헬퍼(`load_registry`, `save_registry`, `registry_path`, `normalize_registry`)와 관련 구조체를 `pub(crate)`로 노출해 모듈 경계를 정리함.
+- `open-ui` 경로가 `tui::open_ui()` -> `TuiRuntime::run_ui_entry()` 단일 진입으로 동작하도록 통일함.
+- 검증: `cargo test -q`, `cargo run --bin orc -- --help`, `cargo run --bin orc -- check_task`.
+
+## 2026-03-07 - 작업한일
+- `open-ui` 명령에 `-w|--web` 분기를 추가해 TUI/Web 실행 선택을 지원함 (`src/cli.rs`, `src/web/mod.rs`, `src/main.rs`).
+- `assets/web`에 Astro(Vite) + React + shadcn 스타일 컴포넌트 기반 웹 UI를 추가하고, TUI 핵심 기능 매핑(프로젝트 CRUD, 상세/리스트 편집, draft/check 액션 호출)을 API route + 화면으로 구성함.
+- TUI 기능 분석 결과를 바탕으로 `input.md`를 작성해 웹 기능 요구를 명시함.
+- Playwright E2E를 추가하고 실패 원인을 `feedback.md`/`plan.md`에 반복 반영해 재시도 루프를 수행, 최종 통과 상태를 확인함.
+- 검증: `cargo test -q`, `cargo run --bin orc -- --help`, `cargo run --bin orc -- open-ui -w`, `cd assets/web && npm run test:e2e`.
+
+## 2026-03-07 - 작업한일
+- web UI를 `project/detail` 탭 기반으로 유지하면서 project pane의 선택 item 우상단에 수정/삭제 SVG 아이콘 버튼을 추가함.
+- 수정 아이콘은 item 기준 편집 모달을 열고 `/api/project-info` 저장으로 `project.md` 반영되도록 연결했으며, 삭제 아이콘은 `/api/project-delete` 경로로 즉시 삭제 처리되도록 구현함.
+- web 상태관리를 `zustand`로 전환하기 위해 `assets/web/src/store/orc-store.ts`를 추가하고 `WebApp.tsx`의 탭/선택/편집/로그 상태를 스토어 기반으로 변경함.
+- 검증: `cd assets/web && npm run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- `current.png` 레퍼런스를 반영해 detail의 project info pane을 큰 타이틀/보조설명/spec pill/path 박스 중심으로 재구성함.
+- 모든 주요 pane/card 컨테이너에 rounded border(`rounded-2xl` 계열)를 통일 적용함.
+- project 탭 선택 item 우상단에 수정/삭제 SVG 아이콘 버튼을 유지하고, 수정 모달 저장 경로(`project-info`)와 삭제 경로(`project-delete`)를 검증함.
+- 상태관리 요청에 따라 `zustand` 스토어(`assets/web/src/store/orc-store.ts`)를 추가하고 `WebApp.tsx` 상태를 스토어 기반으로 전환함.
+- 검증: `cd assets/web && npm run test:e2e`, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- web project 탭을 카드 grid로 재구성하고, 헤더 우상단 `Create Project` 버튼 + 생성 모달 구조를 추가함(`assets/web/src/components/WebApp.tsx`).
+- 프로젝트 카드에 `project_type` shadcn Label, 하단 상태 태그(`working|wait`), path 앞 폴더 아이콘, 큰 제목 타이포를 적용함.
+- 프로젝트 스키마에 `project_type(story|movie|code|mono)`를 추가하고 기본값을 `code`로 동기화함(`assets/web/src/server/orc.ts`, `assets/web/src/store/orc-store.ts`, `assets/web/src/pages/api/projects/index.ts`, `src/main.rs`, `src/ui/mod.rs`).
+- Playwright 검증을 갱신해 생성 API -> grid 카드 반영(type/status) -> item edit/save -> 파일 반영 경로를 확인함(`assets/web/tests/web.spec.ts`).
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과, `cargo run --bin orc -- --help` 회귀 확인.
+
+## 2026-03-07 - 작업한일
+- web navbar 레이아웃을 좌측 `selected project`, 우측 `project/detail` 탭으로 재배치함.
+- 기존 navbar 카드형 border를 제거하고 `border-b` 밑줄만 남겨 본문과 이어지는 상단 바 스타일로 변경함(`assets/web/src/components/WebApp.tsx`).
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- web navbar에서 `selected`/project id 표시 영역을 제거하고 탭 버튼 영역만 유지하도록 변경함.
+- detail 화면을 `project info` 1행 full-width 카드 + `rules/constraints/features` 3분할 row 구조로 재구성하고 각 pane별 편집 진입(gear) 동작을 분리함.
+- `assets/web/src/server/orc.ts`에 project.md 속성(`name/description/spec/goal/rules/constraints/features`)을 단일 파서 함수로 읽는 로직을 추가하고, detail pane 데이터가 해당 파서 결과를 사용하도록 연결함.
+- 프로젝트 상태를 `init/basic/work/wait`로 계산하도록 서버 로직을 추가하고 카드/detail 상태 배지에 반영함(bootstrap 전 init, 기능 진행중 work, 완료 대기 wait, 그 외 basic).
+- `drafts.yaml`가 없을 때에만 `create_code_draft` 버튼이 노출되도록 TUI Actions 렌더링 조건을 추가하고, spec 라벨을 톱니바퀴 SVG 아이콘으로 변경함.
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과, `rg`로 UI 트리거->핸들러->API 호출 경로 확인.
+
+## 2026-03-07 - 작업한일
+- detail 화면 렌더링을 `assets/web/src/layouts/detail`로 분리하고 `DetailLayoutProvider`를 추가해 `code/write(story)/mono/movie` 타입별로 서로 다른 detail 레이아웃 컴포넌트를 선택하도록 구성함.
+- 기존 `WebApp.tsx`의 detail 본문을 provider 호출로 교체해 layout 선택 책임을 분리하고, 이후 타입 추가 시 provider 확장만으로 대응 가능한 구조로 변경함.
+- detail 응답에 `project_type`을 포함하도록 서버/스토어 타입을 보강해 layout provider 분기 입력값을 안정적으로 전달함.
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과, `rg`로 detail pane 트리거->핸들러(openEditor/saveEditor)->API 경로 점검.
+
+## 2026-03-07 - 작업한일
+- `assets/story/templates` 폴더를 생성하고 `assets/code/templates`를 복사한 뒤 story 전용 `project.md`, `draft.yaml` 템플릿을 추가/수정함.
+- `project.md`를 story 스키마로 조정해 `spec` 허용값을 `장편|단편|중`으로 제한하고 `features` 대신 `scene`, `character` 섹션을 제공함.
+- `src/story.rs`를 추가해 story 모드 초기화/템플릿 생성 책임(`project.md`, `plan.yaml`, `drafts.yaml`, `draft.yaml`)을 한 파일에 모아 관리하도록 구성함.
+- `src/profile/mod.rs`에 `story` 프로필 구현을 추가해 `story init_code_project` 경로가 `story.rs`를 사용하도록 연결하고, `src/cli.rs` 도움말에 `story` 프로필을 노출함.
+- 검증: `cargo test -q` 통과, `cargo run --bin orc -- story init_code_project ...` 실행으로 `/home/tree/project/rust-orc/temp-story/.project/{project.md,plan.yaml,drafts.yaml,draft.yaml}` 생성 확인.
+
+## 2026-03-07 - 작업한일
+- web project 카드에서 `project_type` 텍스트 라벨을 제거하고 타입별 아이콘(`code/movie/story/mono`) + 오른쪽 프로젝트 이름 표시 구조로 변경함.
+- 타입 아이콘 렌더 함수를 `WebApp.tsx`에 추가해 `project_type`에 따라 서로 다른 SVG 아이콘을 노출하도록 구성함.
+- e2e 테스트에서 기존 `code` 텍스트 라벨 검증을 제거해 새 UI 규칙에 맞게 갱신함.
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- project 카드 경로 표시를 `compactPath()`로 정규화해 절대경로를 마지막 2단계만 보이도록 변경함 (`/home/tree/project/a` -> `/project/a`).
+- 경로 텍스트를 카드 우측 상단의 흐린 보조 텍스트(`text-muted-foreground/60`)로 배치하고, 선택 카드의 액션 아이콘과 겹치지 않도록 위치를 분기함.
+- 기존 하단 경로 라인은 제거해 상단 우측 단일 경로 표시만 유지함.
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- `assets/web/src/server/orc.ts`에서 `project.md`의 `# domains` 섹션(`## <domain>`)을 파싱해 detail 응답에 `domains` 배열을 포함하도록 확장함.
+- detail 타입(`assets/web/src/store/orc-store.ts`)에 `domains` 필드를 추가해 프론트 상태 타입을 동기화함.
+- `assets/web/src/components/WebApp.tsx`의 `TUI Actions` pane에 `code` 타입 프로젝트일 때만 domain badge를 표시하도록 UI를 추가함.
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과, `rg`로 parser->detail payload->UI 렌더 경로 확인.
+
+## 2026-03-07 - 작업한일
+- `code` 상세 화면에 domains 전용 pane(`detail-pane-domains`)을 추가하고, 내부를 좌측 domain tag 목록 / 우측 선택 domain detail(feature, description) 2분할 구조로 구현함.
+- domain 선택 상태를 `zustand` 스토어(`selectedDomain`)로 승격해 detail 재로딩 시 기본 선택/유효성 보정을 적용함.
+- `project.md` domains 파서를 확장해 domain별 `description`과 `features`를 함께 수집하도록 서버 응답 구조를 `domains: {name, description, features[]}[]`로 변경함.
+- 기존 `TUI Actions` pane의 domains 표시는 제거하고 domains를 별도 pane으로 분리함.
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과, `rg`로 UI 트리거->스토어 선택->detail 렌더 경로 확인.
+
+## 2026-03-07 - 작업한일
+- domains pane 스타일을 단순화해 `domain tags`, `domain detail` 컨테이너의 border를 제거함.
+- `domain tags`, `domain detail` 라벨 텍스트를 삭제하고 콘텐츠만 보이도록 정리함.
+- domain tag 버튼의 배경색(`bg-*`)을 제거해 배경 칠 없이 텍스트 중심 스타일로 변경함.
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- detail tab의 code 레이아웃에서 spec 영역을 축소/저강조 스타일(`text-sm`, `text-muted-foreground`)로 변경해 description보다 작게 표시하도록 조정함.
+- spec 앞 톱니바퀴 아이콘을 제거하고 텍스트(`spec: ...`)만 노출하도록 변경함.
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- detail tab의 code 레이아웃에서 spec 라벨 텍스트(`spec:`)를 제거하고 값만 표시하도록 변경함.
+- detail project pane의 goal 항목 출력 라인을 제거함.
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- detail view의 `rules`, `constraints`, `features`, `domains` 섹션 헤더를 밑줄(border-b) 스타일로 통일해 가로 구분선을 명확히 추가함.
+- domains 섹션 상단에 `domains` 표시와 함께 밑줄을 넣어 다른 정보 블록과 구분되도록 조정함.
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- info pane의 외곽 border를 제거하고 상단 가로줄 + `info` 라벨 구조로 변경함.
+- path 박스 배경/테두리를 제거하고 spec과 같은 라인에서 우측 끝 정렬로 배치함.
+- rules/constraints/features 영역의 개별 border를 제거하고, 상단 가로줄 + `detail` 라벨 + 세로 구분선(`divide-x`)으로 구분되게 변경함.
+- domains 영역도 상단 가로줄 + `domains` 라벨을 적용하고 좌/우 영역 사이 세로 구분선을 추가함.
+- domain tags를 라벨 형태(`rounded-md border`)로 표시하고, 우측 도메인 설명/feature 영역과 시각적으로 분리함.
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- `info`, `detail`, `domains` 라벨 영역에 하단 가로줄(`border-b`)을 추가해 라벨 아래 구분선이 항상 보이도록 조정함.
+- 검증: `npm run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- detail code 레이아웃의 `Info`, `Detail`, `Domains` 섹션 라벨에서 상단 선(`border-t`)을 제거하고 라벨 하단 선(`border-b`)만 남기도록 수정함.
+- 세 라벨에 공통 스타일(`text-base`, `font-bold`, `mt-6`)을 적용해 본문(`rules/constraints/features`)보다 크고 프로젝트명보다 작은 계층으로 통일함.
+- `rules`, `constraints`, `features` 라벨 왼쪽에 아이콘(`ListChecks`, `ShieldAlert`, `Sparkles`)을 추가함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과, `rg -n "CodeDetailLayout|DetailLayoutProvider|setSelectedPane\(" assets/web/src`로 UI 트리거->핸들러->레이아웃 경로 확인.
+
+## 2026-03-07 - 작업한일
+- Rust 내장 API 서버 명령 `serve-web-api`를 추가해 `GET/POST /api/*`(projects, project-detail, project-select, project-delete, project-info, project-lists, run, tui-map)를 Axum으로 제공하도록 구현함.
+- 웹 API 핸들러가 `project.yaml`, `.project/project.md`, `drafts_list.yaml`, `drafts.yaml`를 직접 읽고 쓰는 서비스 로직을 Rust로 이관해 Node 서버 레이어 없이 동일 응답 스키마를 반환하도록 구성함.
+- 액션 실행(`/api/run`)은 외부 `orc` 프로세스 spawn 대신 Rust 내부 함수(`create_code_draft`, `add_code_draft`, `impl_code_draft`, `check_code_draft`, `check_draft`)를 직접 호출하도록 변경함.
+- 프론트(`WebApp.tsx`)에 `PUBLIC_ORC_API_BASE` 기반 API URL 라우팅을 추가해 Astro API 대신 Rust API 서버를 선택적으로 호출할 수 있게 함.
+- README에 Rust API 서버 실행 방법과 프론트 연결 방법(`PUBLIC_ORC_API_BASE=http://127.0.0.1:7788`)을 문서화함.
+- 검증: `cargo test -q` 통과, `npm --prefix assets/web run test:e2e` 통과, `cargo run --bin orc -- serve-web-api --addr 127.0.0.1:7788` 후 `curl http://127.0.0.1:7788/api/projects` 실호출 성공, `rg`로 UI 트리거->fetch->Rust route->내부 함수 호출 경로 확인.
+
+## 2026-03-07 - 작업한일
+- detail code 레이아웃에서 `Info`, `Detail`, `Domains` 라벨을 pane 내부가 아닌 pane 바깥 상단으로 이동해 섹션 분리 구조를 변경함.
+- 세 섹션 라벨의 가로 구분선(border-b)을 제거하고 공통 라벨 스타일(`mt-8`, `text-base`, `font-bold`)만 유지하도록 조정함.
+- info pane 하단의 spec/path 행에 있던 가로줄(border-b)도 제거해 전체 섹션의 수평 라인을 정리함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과, `rg`로 `WebApp -> DetailLayoutProvider -> CodeDetailLayout -> setSelectedPane` 호출 경로 확인.
+
+## 2026-03-07 - 작업한일
+- code detail 화면의 `info`, `detail`, `domains`를 각각 독립적인 pane 컨테이너(`rounded + border`)로 분리해 섹션 단위가 명확히 보이도록 수정함.
+- 세 섹션 라벨은 pane 바깥 상단에 유지하고, 가로줄(border) 없이 텍스트 라벨만 표시되도록 유지함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- detail 탭에서 `DetailLayoutProvider`를 감싸던 상위 `Detail View` 카드 wrapper를 제거해, detail 레이아웃이 루트 레벨에서 `TUI Actions`/`Runtime Log`와 동일 계층으로 렌더되도록 변경함.
+- 기존처럼 라벨은 pane 바깥 상단, 가로줄 없는 상태를 유지한 채 `info/detail/domains` 섹션이 독립적으로 보이도록 정렬 구조를 확정함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- web main 컨테이너 배경을 흰색(`bg-white`)으로 변경함.
+- detail 탭의 `TUI Actions`, `Runtime Log`를 카드 내부 헤더가 아닌 pane 바깥 상단 라벨로 이동하고, 카드 본문만 남기도록 구조를 조정함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- `info/detail/domains` pane 내부 컨테이너 배경색을 `bg-white`로 고정해 섹션 내부가 흰색으로 표시되도록 수정함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- detail code 레이아웃에서 `info/detail/domains`를 감싸던 최상위 래퍼 컨테이너(`CardShell`)를 제거하고 루트 Fragment로 직접 렌더되도록 변경함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- `WebApp` 메인 컨테이너 class에서 `bg-white`를 제거함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- detail 탭에 `drafts` pane을 추가하고 `tui actions` 오른쪽에 배치함.
+- drafts pane에 `add_code_draft`, `impl_code_draft`, `check_code_draft`를 텍스트 대신 아이콘 버튼으로 추가함.
+- `impl_code_draft` 실행 중에는 drafts pane 배경색이 바뀌도록 실행 상태(`runningImplDraft`)를 연결함.
+- code detail의 info 영역을 2분할로 재구성해 좌측 info(절반) + 우측 memo pane(절반) 구조로 변경함.
+- memo pane은 `./.project/memo.md`를 읽고/쓰기 하도록 API를 추가하고 UI 저장 버튼과 연결함.
+  - Astro API: `POST /api/project-memo`
+  - Rust API 서버: `POST /api/project-memo`
+- project bootstrap 시 기본적으로 `./.project/memo.md`가 생성되도록 초기화 로직을 추가함.
+  - code: `init_code_project` 경로
+  - story: `init_story_project` 경로
+  - web 서버 detail 로딩 보정(`ensureProjectFiles`, `ensure_project_files`)에도 memo 파일 생성 보강
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과, `rg`로 UI 트리거->API->내부 함수/파일 경로 점검.
+
+## 2026-03-07 - 작업한일
+- code detail 상단 `info` pane을 제거하고 텍스트 헤더형 정보 블록으로 변경함.
+- `info` 라벨 위치에 프로젝트명을 크게 표시하고, 하단에 description(작고 흐린 글자), spec(tag 스타일), 우측에 폴더 아이콘 + path를 배치함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- info 헤더에서 project name과 description 사이 여백을 늘려 시각 간격을 조정함.
+- spec 값을 배경색이 있는 tag 스타일(`bg-muted`)로 변경함.
+- path(폴더 아이콘 + 경로)를 spec tag와 같은 row로 이동해 동일 행에 표시되도록 수정함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- info 섹션의 spec tag 배경색을 `bg-white`로 변경함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- detail pane의 `rules`, `constraints`, `features` 제목 폰트를 키우고(`text-sm`), bold + 검은색(`font-bold`, `text-foreground`)으로 변경함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- detail 화면에 좌측 sidebar pane(`projects`)를 추가해 프로젝트 이름 목록을 세로로 표시하도록 변경함.
+- sidebar에서 프로젝트를 선택하면 기존 선택 로직(`markSelected -> /api/project-select -> setSelectedId -> loadDetail`)을 재사용해 우측 detail 내용이 즉시 변경되도록 연결함.
+- detail 본문은 우측 컬럼으로 분리해 기존 `info/memo/detail/domains`, `drafts`, `runtime log`가 유지되도록 레이아웃을 재구성함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과, `rg`로 sidebar 트리거->선택 핸들러->detail 재로딩 경로 확인.
+
+## 2026-03-07 - 작업한일
+- project 탭 카드에 더블클릭 이벤트를 추가해 해당 프로젝트 선택 후 detail 탭으로 즉시 이동하도록 변경함.
+- 동작 경로: `project card onDoubleClick -> markSelected(id) -> setTab("detail")`.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- Playwright e2e 테스트의 임시 프로젝트 경로를 동적 `/tmp/<unique>`에서 고정 `/tmp/tmp_project`로 변경함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- project 탭 헤더의 `create project`, `refresh`를 아이콘 버튼으로 변경하고, `load project` 아이콘 버튼을 추가함.
+- `load project` 모달에서 경로 입력 후 해당 폴더의 `.project` 존재 여부를 서버에서 검사하고, 없으면 생성 여부를 확인하는 플로우를 구현함.
+  - `.project` 없음 + 미허용: `PROJECT_META_MISSING` 응답
+  - 사용자 확인 시 `create_if_missing=true`로 재호출하여 `.project` 생성 후 로드
+- Astro API에 `POST /api/project-load`를 추가하고, Rust API 서버(`serve-web-api`)에도 동일 엔드포인트를 추가해 경로 로드 동작을 공통 지원함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- `create project`와 `load project` 모달에서 공통으로 사용할 수 있는 파일 탐색기(File Explorer) 모달을 구현함.
+- 탐색기 기능: 현재 경로 입력/새로고침, 상위 폴더 이동, 하위 디렉터리 목록 탐색, 선택 경로를 create/load path 필드에 반영.
+- Astro 서버 API에 `GET /api/project-browse`를 추가하고, Rust 웹 API(`serve-web-api`)에도 동일 `GET /api/project-browse`를 추가해 디렉터리 목록과 `.project` 존재 여부를 제공함.
+- 기존 `load project`의 `.project` 미존재 확인 플로우(`PROJECT_META_MISSING` -> 생성 확인 -> 재시도)를 유지하고, 탐색기와 연결함.
+- 고정 경로 e2e 안정성을 위해 `/tmp/tmp_project/.project`를 테스트 시작 시 초기화하도록 보강함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과, `rg`로 트리거->API->검증 경로 점검.
+
+## 2026-03-07 - 작업한일
+- 파일 탐색기 UI를 요청사항에 맞게 재배치함.
+  - `Use Current`를 하단 우측으로 이동하고 버튼명을 `Submit`으로 변경
+  - `Submit` 왼쪽에 `hidden` 체크박스를 추가해 숨김 폴더 표시 토글 지원
+  - 폴더 리스트 아래/Submit 위에 검색 입력 + 돋보기 아이콘 + Search 버튼 추가
+  - 검색어 적용 시 폴더명 필터링
+- 파일 탐색기 pane 크기를 확대해 `max-w-[1920px]`, 높이 `90vh` 기반의 긴 레이아웃으로 변경함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- file explorer 모달 최대 너비를 `max-w-[600px]`로 축소함.
+- 직전 변경에서 발생한 Rust API 생성 경로 중복 방지 로직의 borrow 충돌을 인덱스 기반으로 수정함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- 기존 프로젝트(`.project/project.md`)를 load할 때 빈 detail로 보이던 문제를 수정함.
+- 원인: 파서가 구형 문서 포맷(`- name :`, `## rule`, 번호 목록 `1. ...`, `### domain` + `- **name**:`)을 인식하지 못해 name/description/rules/features/domains를 비워서 반환하던 동작.
+- 조치: 웹(Node) 파서와 Rust API 파서 모두에 호환 파싱을 추가해 구형/신형 포맷을 모두 읽도록 개선함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- project 탭에 `Monorepo` pane을 추가하고, `/home/tree/home`(기본) 기준으로 `apps|app`, `packages/features|features|feature`, `template|templates`를 순회해 패키지별 ORC 프로젝트를 생성/등록하는 sync 흐름을 구현함.
+- Astro API `POST /api/monorepo-sync`를 추가하고, Rust 웹서버(`serve_web_api`)에도 동일 endpoint를 추가해 동일 동작을 지원함.
+- monorepo package 프로젝트는 `project_type: mono`로 등록되며, detail 조회 시 해당 경로가 monorepo 관리 경로면 도메인을 `/home/tree/home/packages/domains` 하위 패키지명으로 강제 매핑해 표시하도록 변경함.
+- UI 검증 경로(`syncMonorepo -> /api/monorepo-sync -> syncMonorepoProjects/sync_monorepo_projects -> registry/.project 반영 -> project/monorepo pane 재표시`)를 `rg`로 점검함.
+- 검증: `cargo test -q` 통과, `npm --prefix assets/web run test:e2e` 통과.
+
+## 2026-03-07 - 작업한일
+- project 탭 레이아웃에서 `Orc Projects`와 `Monorepo` pane을 좌우 분리해 독립 영역으로 재구성함.
+- Monorepo pane 내부를 `app`, `feature`, `templates` 섹션으로 분리해 각각 별도 목록으로 표시하도록 변경함.
+- monorepo 패키지 수집 규칙을 kind별로 분기함.
+  - `feature`: 1단계 depth(`packages/features/*` 등)
+  - `app`, `templates`: 2단계 depth 우선 수집(`web/next` 형태 이름), 2단계가 없으면 프레임워크 추론 fallback(`next|astro|expo|app`) 적용
+- Astro 서버/ Rust 웹 API 양쪽의 monorepo sync 로직을 동일 규칙으로 맞춤.
+- 검증: `rg`로 UI 트리거->API->내부 수집 함수->UI 섹션 렌더 호출 경로 확인, `cargo test -q` 통과, `npm --prefix assets/web run test:e2e` 통과.
+
+## 2026-03-07 - 작업한일
+- detail 화면에서 선택 프로젝트가 monorepo(`project_type=mono`)인 경우, 좌측 sidebar 프로젝트 목록을 `app`, `feature`, `templates` 그룹으로 분리 표시하도록 변경함.
+- monorepo sync 시 monorepo 관리 경로(`apps/app/packages/features/feature(s)/template(s)`)에 잘못 남아있던 `code` 타입 프로젝트를 registry에서 제거하도록 정리 로직을 추가함.
+- 웹 UI 회귀 테스트가 새 project pane 타이틀(`Code`) 구조를 따르도록 Playwright 기대값을 heading 기준으로 수정함.
+- 검증: `rg`로 sidebar 분기/cleanup 로직 호출 경로 확인, `cargo test -q` 통과, `npm --prefix assets/web run test:e2e` 통과.
+
+## 2026-03-07 - 작업한일
+- project 탭 pane 구성을 가로 분할(4열)에서 세로 스택으로 변경해 스크롤로 `Code -> Monorepo -> Video -> Write` 순서로 내려가며 보이도록 수정함.
+- `Monorepo`, `Video`, `Write` 섹션에도 `create/load/refresh` 버튼을 추가하고, 각 버튼이 해당 project_type(`mono/movie/story`)로 생성/불러오기 되도록 요청 바디를 분기함.
+- navbar 좌측에 `code/monorepo/video/write` 빠른 이동 텍스트를 추가하고 클릭 시 project 탭의 해당 섹션으로 스크롤 이동하도록 구현함.
+- 검증: `cargo test -q` 통과, `npm --prefix assets/web run test:e2e` 통과.
+
+## 2026-03-07 - 작업한일
+- navbar를 fixed 상단으로 변경해 스크롤 중에도 항상 보이도록 수정함.
+- navbar 배경에 반투명 + `backdrop-blur`를 적용해 겹치는 본문 영역이 blur되어 보이도록 처리함.
+- 고정 navbar 높이만큼 본문 top padding(`pt-20`)을 추가해 콘텐츠 가림을 방지함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- project-container pane 하위 카드/버튼에 공통 `project-container-item` 클래스를 적용함.
+- monorepo/video/write item도 code item과 동일한 카드 스타일(rounded/border/bg/padding/hover)을 사용하도록 통일함.
+- monorepo pane 상단의 path/domain 표시 UI를 제거함.
+- project-container pane 내부 item 레이아웃을 반응형 그리드로 통일함(최대 5열, 화면 축소 시 1열 리스트).
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
+
+## 2026-03-07 - 작업한일
+- project pane의 모든 섹션(code/monorepo/video/write) 아이템 렌더를 `renderProjectContainerItem` 공통 함수로 통합해 완전히 동일한 카드 형식으로 맞춤.
+- monorepo 섹션도 `monorepoPackages` 전용 간소 카드 대신 실제 `Project` 레코드를 사용하도록 변경해, path/description/state/edit/delete 포함 구조를 code item과 동일하게 적용함.
+- 요구사항 정리 반영: item 차이는 `project_type`만 다르고, 카드 형식/행동(onClick/onDoubleClick/edit/delete)은 동일.
+- 검증: `npm --prefix assets/web run test:e2e` 통과, `cargo test -q` 통과.
