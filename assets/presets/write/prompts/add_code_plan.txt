@@ -1,0 +1,5 @@
+add_code_plan prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/YAML 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- templates/plan.yaml을 따르고 `drafts.planned` 항목을 생성/추가한다.

@@ -77,6 +77,12 @@ pub(crate) struct DraftsListDoc {
     #[serde(default)]
     pub(crate) planned: Vec<String>,
     #[serde(default)]
+    pub(crate) worked: Vec<String>,
+    #[serde(default)]
+    pub(crate) complete: Vec<String>,
+    #[serde(default)]
+    pub(crate) failed: Vec<String>,
+    #[serde(default)]
     pub(crate) planned_items: Vec<PlannedItem>,
     #[serde(default)]
     pub(crate) draft_state: DraftStateDoc,
@@ -281,7 +287,7 @@ fn build_draft_prompt(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| feature.to_string());
     format!(
-        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능 key:\n- {}\n입력 기능 설명:\n- {}\n\n지시:\n- `drafts.yaml`은 템플릿(`assets/code/templates/drafts.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- FEATURE_NAME은 반드시 입력 기능 key와 동일하게 출력해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `rule`은 자동 검증 가능한 식(`==`, `!=`, `>=`, `<=`, `matches`, `contains`, `exists`)으로만 작성해.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<drafts.yaml 본문>\n```\n설명 문장 금지.",
+        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능 key:\n- {}\n입력 기능 설명:\n- {}\n\n지시:\n- `drafts.yaml`은 템플릿(`assets/presets/code/templates/drafts.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- FEATURE_NAME은 반드시 입력 기능 key와 동일하게 출력해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `rule`은 자동 검증 가능한 식(`==`, `!=`, `>=`, `<=`, `matches`, `contains`, `exists`)으로만 작성해.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<drafts.yaml 본문>\n```\n설명 문장 금지.",
         project_info,
         project_rules.join("\n- "),
         feature,
@@ -486,7 +492,7 @@ pub(crate) fn draft_add(feature_name: &str, request: Option<String>) -> Result<S
     let project_rules = crate::extract_project_rules(&project_md);
     let debug_instruction = debug_prompt_instruction();
     let prompt = format!(
-        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능명:\n- {}\n요구사항:\n- {}\n\n지시:\n- `drafts.yaml`은 템플릿(`assets/code/templates/drafts.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<drafts.yaml 본문>\n```\n설명 문장 금지.",
+        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능명:\n- {}\n요구사항:\n- {}\n\n지시:\n- `drafts.yaml`은 템플릿(`assets/presets/code/templates/drafts.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<drafts.yaml 본문>\n```\n설명 문장 금지.",
         project_info,
         project_rules.join("\n- "),
         feature_name,
@@ -506,8 +512,10 @@ pub(crate) fn draft_add(feature_name: &str, request: Option<String>) -> Result<S
     )?;
     fs::write(&draft_path, &draft_yaml)
         .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
-    let check_msg =
-        crate::run_check_code_after_draft_changes(&[generated_name.clone()], "add_code_draft")?;
+    let check_msg = crate::run_check_code_after_draft_changes(
+        std::slice::from_ref(&generated_name),
+        "add_code_draft",
+    )?;
     Ok(format!(
         "add_code_draft completed with llm: planned+file updated for {} ({}) | {}",
         generated_name,

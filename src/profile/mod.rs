@@ -133,7 +133,7 @@ impl TemplateProvider for CodeTemplateProvider {
     fn project_template_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("templates")
             .join("project.md")
     }
@@ -141,7 +141,7 @@ impl TemplateProvider for CodeTemplateProvider {
     fn plan_template_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("templates")
             .join("plan.yaml")
     }
@@ -149,7 +149,7 @@ impl TemplateProvider for CodeTemplateProvider {
     fn drafts_template_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("templates")
             .join("drafts.yaml")
     }
@@ -159,7 +159,7 @@ impl PromptProvider for CodePromptProvider {
     fn add_project_detail_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join("add_detail_project_code.txt")
     }
@@ -167,7 +167,7 @@ impl PromptProvider for CodePromptProvider {
     fn infer_plan_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join("infer_plan_yaml.txt")
     }
@@ -175,7 +175,7 @@ impl PromptProvider for CodePromptProvider {
     fn infer_draft_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join("infer_draft_item.txt")
     }
@@ -183,7 +183,7 @@ impl PromptProvider for CodePromptProvider {
     fn impl_draft_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join("impl_code_draft.txt")
     }
@@ -219,7 +219,7 @@ impl PromptProvider for StoryPromptProvider {
     fn add_project_detail_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join("add_detail_project_code.txt")
     }
@@ -227,7 +227,7 @@ impl PromptProvider for StoryPromptProvider {
     fn infer_plan_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join("infer_plan_yaml.txt")
     }
@@ -235,7 +235,7 @@ impl PromptProvider for StoryPromptProvider {
     fn infer_draft_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join("infer_draft_item.txt")
     }
@@ -243,7 +243,7 @@ impl PromptProvider for StoryPromptProvider {
     fn impl_draft_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join("impl_code_draft.txt")
     }

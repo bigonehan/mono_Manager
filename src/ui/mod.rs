@@ -294,6 +294,12 @@ struct DraftsListDoc {
     #[serde(default)]
     planned: Vec<String>,
     #[serde(default)]
+    worked: Vec<String>,
+    #[serde(default)]
+    complete: Vec<String>,
+    #[serde(default)]
+    failed: Vec<String>,
+    #[serde(default)]
     planned_items: Vec<PlannedItemDoc>,
     #[serde(default)]
     draft_state: DraftStateDoc,
@@ -673,11 +679,11 @@ fn resolve_draft_template_path() -> Result<PathBuf, String> {
     let candidates = [
         manifest_root
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("templates")
             .join("drafts.yaml"),
         manifest_root.join("assets").join("templates").join("drafts.yaml"),
-        root.join("assets").join("code").join("templates").join("drafts.yaml"),
+        root.join("assets").join("presets").join("code").join("templates").join("drafts.yaml"),
         PathBuf::from("assets")
             .join("code")
             .join("templates")
@@ -1673,16 +1679,16 @@ fn load_bootstrap_rule_for_spec(spec: &str) -> Option<BootstrapRule> {
 fn resolve_bootstrap_prompt_path() -> Result<PathBuf, String> {
     let root = crate::source_root();
     let candidates = [
-        root.join("assets").join("code").join("prompts").join("bootstrap.txt"),
-        PathBuf::from("assets").join("code").join("prompts").join("bootstrap.txt"),
+        root.join("assets").join("presets").join("code").join("prompts").join("bootstrap.txt"),
+        PathBuf::from("assets").join("presets").join("code").join("prompts").join("bootstrap.txt"),
         root.join("src")
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join("bootstrap.txt"),
         PathBuf::from("src")
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join("bootstrap.txt"),
     ];
@@ -2234,15 +2240,10 @@ fn extract_key_tokens_from_text(raw: &str) -> Vec<String> {
 fn extract_add_plan_update_from_raw_response(raw_response: &str) -> Option<AddPlanUpdateBody> {
     let raw = raw_response.replace('`', " ").replace(['│', '|'], " ");
     let lower = raw.to_ascii_lowercase();
-    let features_idx = lower.find("features:");
-    if features_idx.is_none() {
-        return None;
-    }
+    let features_idx = lower.find("features:")?;
     let mut body = AddPlanUpdateBody::default();
-    if let Some(fi) = features_idx {
-        if fi < raw.len() {
-            body.features = extract_key_tokens_from_text(&raw[fi..]);
-        }
+    if features_idx < raw.len() {
+        body.features = extract_key_tokens_from_text(&raw[features_idx..]);
     }
     if body.features.is_empty() {
         None
@@ -2318,34 +2319,9 @@ fn append_planned_from_add_plan_items(
     project_path: &Path,
     feature_keys: &[String],
 ) -> Result<usize, String> {
-    if feature_keys.is_empty() {
-        return Ok(0);
-    }
-    let base = project_path.join(".project");
-    let tasks_path = base.join("drafts_list.yaml");
-    let mut doc = load_tasks_list_doc(&base).unwrap_or_default();
-    let mut changed = 0usize;
-    for key in feature_keys {
-        if doc.features.iter().any(|v| v == key) || doc.planned.iter().any(|v| v == key) {
-            continue;
-        }
-        doc.planned.push(key.clone());
-        if !doc.planned_items.iter().any(|v| v.name == *key) {
-            doc.planned_items.push(PlannedItemDoc {
-                name: key.clone(),
-                value: key.clone(),
-            });
-        }
-        changed += 1;
-    }
-    if changed == 0 {
-        return Ok(0);
-    }
-    let encoded =
-        serde_yaml::to_string(&doc).map_err(|e| format!("failed to encode tasks_list yaml: {}", e))?;
-    fs::write(&tasks_path, encoded)
-        .map_err(|e| format!("failed to write {}: {}", tasks_path.display(), e))?;
-    Ok(changed)
+    let _ = project_path;
+    let _ = feature_keys;
+    Ok(0)
 }
 
 fn run_add_plan_via_cli(project_path: &Path, hint: &str) -> Result<String, String> {
@@ -3279,22 +3255,27 @@ fn apply_delete_confirm(
     Ok(())
 }
 
+#[derive(Copy, Clone)]
+struct ProjectsTabState {
+    active: bool,
+    overlay_modal: bool,
+    parallel_running: bool,
+}
+
 fn render_projects_tab(
     f: &mut ratatui::Frame,
     area: Rect,
     projects: &[ProjectRecord],
     selected_index: usize,
-    active: bool,
-    overlay_modal: bool,
-    parallel_running: bool,
+    state: ProjectsTabState,
     palette: BorderPalette,
 ) {
     let panel = Block::default()
         .title("Project Select")
         .borders(Borders::ALL)
-        .border_style(if overlay_modal {
+        .border_style(if state.overlay_modal {
             Style::default().fg(palette.inactive).add_modifier(Modifier::DIM)
-        } else if active {
+        } else if state.active {
             pane_border_style(true, palette).add_modifier(Modifier::BOLD)
         } else {
             pane_border_style(false, palette).add_modifier(Modifier::DIM)
@@ -3345,7 +3326,7 @@ fn render_projects_tab(
             }
             let p = &visible[idx];
             let is_selected = idx == selected_index;
-            let card_border = if overlay_modal {
+            let card_border = if state.overlay_modal {
                 Style::default().fg(palette.inactive).add_modifier(Modifier::DIM)
             } else if is_selected {
                 pane_border_style(true, palette)
@@ -3360,7 +3341,7 @@ fn render_projects_tab(
             .block(Block::default().borders(Borders::ALL).border_style(card_border))
             .wrap(Wrap { trim: false });
             f.render_widget(card, *card_area);
-            if parallel_running && is_selected {
+            if state.parallel_running && is_selected {
                 let badge = Rect {
                     x: card_area.x.saturating_add(1),
                     y: card_area.y,
@@ -3400,7 +3381,7 @@ fn render_details_tab(
     let selected_project = projects.get(app.project_index);
     let project_md = selected_project.and_then(read_project_md);
     let parsed = project_md.as_deref().map(parse_project_md);
-    let parsed_has_core_info = parsed.as_ref().map_or(false, |doc| {
+    let parsed_has_core_info = parsed.as_ref().is_some_and(|doc| {
         !doc.name.trim().is_empty()
             || !doc.description.trim().is_empty()
             || !doc.spec.trim().is_empty()
@@ -4223,20 +4204,10 @@ fn save_drafts_feature_list(
     project_index: usize,
     items: &[String],
 ) -> Result<(), String> {
-    let Some(project) = projects.get(project_index) else {
-        return Err("selected project index out of range".to_string());
-    };
-    let base = Path::new(&project.path).join(".project");
-    let path = base.join("drafts_list.yaml");
-    let mut doc = load_tasks_list_doc(&base).unwrap_or_default();
-    let mut normalized = Vec::new();
-    for item in items {
-        normalized.push(normalize_feature_item(item)?);
-    }
-    doc.features = normalized;
-    let encoded =
-        serde_yaml::to_string(&doc).map_err(|e| format!("failed to encode tasks_list yaml: {}", e))?;
-    fs::write(&path, encoded).map_err(|e| format!("failed to write {}: {}", path.display(), e))
+    let _ = projects;
+    let _ = project_index;
+    let _ = items;
+    Ok(())
 }
 
 fn truncate_to_width_ellipsis(value: &str, width: u16) -> String {
@@ -4954,9 +4925,11 @@ pub fn run_ui(
                     chunks[1],
                     projects,
                     app.project_index,
-                    app.menu_active,
-                    overlay_modal,
-                    app.parallel_running,
+                    ProjectsTabState {
+                        active: app.menu_active,
+                        overlay_modal,
+                        parallel_running: app.parallel_running,
+                    },
                     palette,
                 );
             } else {
@@ -4993,17 +4966,10 @@ pub fn run_ui(
                     "{} | {} | status: {} ({})",
                     shared_help, modal_help, app.status_line, running
                 )
-            } else if app.path_change_confirm.is_some() {
-                format!(
-                    "{} | y/n apply | esc cancel | status: {} ({})",
-                    shared_help, app.status_line, running
-                )
-            } else if app.delete_confirm.is_some() {
-                format!(
-                    "{} | y/n apply | esc cancel | status: {} ({})",
-                    shared_help, app.status_line, running
-                )
-            } else if app.detail_fill_confirm.is_some() {
+            } else if app.path_change_confirm.is_some()
+                || app.delete_confirm.is_some()
+                || app.detail_fill_confirm.is_some()
+            {
                 format!(
                     "{} | y/n apply | esc cancel | status: {} ({})",
                     shared_help, app.status_line, running
@@ -5030,12 +4996,7 @@ pub fn run_ui(
                         shared_help, app.status_line, running
                     )
                 }
-            } else if app.draft_create_confirm.is_some() {
-                format!(
-                    "{} | y/n apply | esc cancel | status: {} ({})",
-                    shared_help, app.status_line, running
-                )
-            } else if app.bootstrap_confirm.is_some() {
+            } else if app.draft_create_confirm.is_some() || app.bootstrap_confirm.is_some() {
                 format!(
                     "{} | y/n apply | esc cancel | status: {} ({})",
                     shared_help, app.status_line, running
@@ -6031,15 +5992,9 @@ pub fn run_ui(
         .show_cursor()
         .map_err(|e| format!("failed to show cursor: {}", e));
 
-    if let Err(e) = leave_screen_result {
-        return Err(e);
-    }
-    if let Err(e) = raw_off_result {
-        return Err(e);
-    }
-    if let Err(e) = cursor_result {
-        return Err(e);
-    }
+    leave_screen_result?;
+    raw_off_result?;
+    cursor_result?;
 
     if run_result.is_ok() {
         run_result = Ok(UiRunResult {

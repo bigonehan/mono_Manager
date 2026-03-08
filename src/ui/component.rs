@@ -216,9 +216,7 @@ pub(crate) fn render_llm_chat_pane(
         .history
         .iter()
         .flat_map(|msg| {
-            let mut out = Vec::new();
-            out.push(Line::from(msg.clone()));
-            out.push(Line::from(""));
+            let out = vec![Line::from(msg.clone()), Line::from("")];
             out
         })
         .collect();

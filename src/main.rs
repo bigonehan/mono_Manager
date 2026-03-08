@@ -1,3 +1,7 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+#![allow(unused_mut)]
+
 mod config;
 mod code;
 mod cli;
@@ -165,8 +169,9 @@ pub(crate) fn save_drafts_list_primary(
     project_root: &Path,
     doc: &DraftsListDoc,
 ) -> Result<(), String> {
-    let primary = resolve_drafts_list_path(project_root)?;
-    save_drafts_list(&primary, doc)
+    let _ = project_root;
+    let _ = doc;
+    Ok(())
 }
 
 fn generate_project_id(existing: &HashSet<String>) -> String {
@@ -951,6 +956,16 @@ pub(crate) fn sync_project_tasks_list_from_project_md(project_root: &Path) -> Re
     Ok(false)
 }
 
+fn dedup_str_vec(items: &mut Vec<String>) {
+    let mut out = Vec::new();
+    for item in items.iter() {
+        if !out.iter().any(|v: &String| v == item) {
+            out.push(item.clone());
+        }
+    }
+    *items = out;
+}
+
 fn run_command_in_dir(
     dir: &Path,
     cmd: &str,
@@ -1124,10 +1139,10 @@ fn resolve_build_funciton_prompt_path() -> Result<PathBuf, String> {
     let root = source_root();
     let file_name = "build-funciton.txt";
     let candidates = [
-        root.join("assets").join("code").join("prompts").join(file_name),
-        PathBuf::from("assets").join("code").join("prompts").join(file_name),
-        root.join("src").join("assets").join("code").join("prompts").join(file_name),
-        PathBuf::from("src").join("assets").join("code").join("prompts").join(file_name),
+        root.join("assets").join("presets").join("code").join("prompts").join(file_name),
+        PathBuf::from("assets").join("presets").join("code").join("prompts").join(file_name),
+        root.join("src").join("assets").join("presets").join("code").join("prompts").join(file_name),
+        PathBuf::from("src").join("assets").join("presets").join("code").join("prompts").join(file_name),
     ];
     for candidate in candidates {
         if candidate.exists() {
@@ -1239,70 +1254,75 @@ pub(crate) fn generate_project_md_from_workspace(project_root: &Path) -> Result<
     );
     let spec = infer_workspace_spec(&file_hints);
     let goal = "현재 워크스페이스 파일 구조를 기반으로 project.md 설계를 초기화한다.";
-    generate_project_plan(
+    let plan_input = ProjectPlanInput {
         project_root,
         project_name,
-        &description,
-        &spec,
+        description: &description,
+        spec: &spec,
         goal,
-        &[],
-        "",
-        None,
-        true,
-    )
+        user_rules: &[],
+        feature_request: "",
+        llm: None,
+        auto_mode: true,
+    };
+    generate_project_plan(&plan_input)
 }
 
 fn add_plan(request_input: Option<String>) -> Result<String, String> {
     plan::add_plan(request_input)
 }
 
-fn generate_project_plan(
-    project_root: &Path,
-    project_name: &str,
-    description: &str,
-    spec: &str,
-    goal: &str,
-    user_rules: &[String],
-    feature_request: &str,
-    llm: Option<&str>,
+struct ProjectPlanInput<'a> {
+    project_root: &'a Path,
+    project_name: &'a str,
+    description: &'a str,
+    spec: &'a str,
+    goal: &'a str,
+    user_rules: &'a [String],
+    feature_request: &'a str,
+    llm: Option<&'a str>,
     auto_mode: bool,
-) -> Result<String, String> {
-    let llm_bin_owned = llm
+}
+
+fn generate_project_plan(input: &ProjectPlanInput<'_>) -> Result<String, String> {
+    let llm_bin_owned = input
+        .llm
         .map(|v| v.to_string())
         .unwrap_or_else(default_model_bin);
     let llm_bin = llm_bin_owned.as_str();
-    let rules_text = if user_rules.is_empty() {
+    let rules_text = if input.user_rules.is_empty() {
         "- (작성 필요)".to_string()
     } else {
-        user_rules
+        input
+            .user_rules
             .iter()
             .map(|v| format!("- {}", v))
             .collect::<Vec<_>>()
             .join("\n")
     };
-    let prompt = match resolve_project_md_prompt_path(auto_mode)
+    let prompt = match resolve_project_md_prompt_path(input.auto_mode)
         .ok()
         .and_then(|path| fs::read_to_string(path).ok())
     {
         Some(template) => render_template_pairs(
             &template,
             &[
-                ("project_name", project_name),
-                ("description", description),
-                ("spec", spec),
-                ("goal", goal),
+                ("project_name", input.project_name),
+                ("description", input.description),
+                ("spec", input.spec),
+                ("goal", input.goal),
                 ("rules_text", &rules_text),
             ],
         ),
         None => format!(
-            "너는 project.md 생성기다.\n입력:\n- name: {}\n- description: {}\n- spec: {}\n- goal: {}\n- rules:\n{}\n\n지시:\n- 템플릿(`assets/code/templates/project.md`) 구조를 정확히 따른다.\n- `# domains`는 `## <domain_name>` 블록 리스트로 작성하고, 각 블록에 `### states`, `### action`, `### rules`를 모두 포함한다.\n- `### states`, `### action`, `### rules`의 내용은 모두 `-` 리스트 형식으로 작성한다.\n- 규칙은 `$plan-project-code`, `$build_domain` 스킬을 사용해.\n- 특히 도메인 설계는 `/home/tree/ai/skills/build-domain/SKILL.md`를 참조해 결정한다.\n- 최종 출력은 markdown 본문만.",
-            project_name, description, spec, goal, rules_text
+            "너는 project.md 생성기다.\n입력:\n- name: {}\n- description: {}\n- spec: {}\n- goal: {}\n- rules:\n{}\n\n지시:\n- 템플릿(`assets/presets/code/templates/project.md`) 구조를 정확히 따른다.\n- `# domains`는 `## <domain_name>` 블록 리스트로 작성하고, 각 블록에 `### states`, `### action`, `### rules`를 모두 포함한다.\n- `### states`, `### action`, `### rules`의 내용은 모두 `-` 리스트 형식으로 작성한다.\n- 규칙은 `$plan-project-code`, `$build_domain` 스킬을 사용해.\n- 특히 도메인 설계는 `/home/tree/ai/skills/build-domain/SKILL.md`를 참조해 결정한다.\n- 최종 출력은 markdown 본문만.",
+            input.project_name, input.description, input.spec, input.goal, rules_text
         ),
     };
     let generated = run_llm_exec_capture(llm_bin, &prompt)?;
     let mut project_md = extract_markdown_block(&generated);
-    if !feature_request.trim().is_empty() {
-        let parsed_features = parse_add_function_objects(&feature_request);
+    if !input.feature_request.trim().is_empty() {
+        let parsed_features = parse_add_function_objects(input.feature_request);
         if !parsed_features.is_empty() {
             let mut lines: Vec<String> = project_md.lines().map(|v| v.to_string()).collect();
             let header_idx = lines
@@ -1343,15 +1363,15 @@ fn generate_project_plan(
     }
     project_md = normalize_project_md_min_sections(&project_md);
     validate_project_md_format(&project_md)?;
-    let project_md_path = project_root.join(PROJECT_MD_PATH);
+    let project_md_path = input.project_root.join(PROJECT_MD_PATH);
     if let Some(parent) = project_md_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
     }
     fs::write(&project_md_path, &project_md)
         .map_err(|e| format!("failed to write {}: {}", project_md_path.display(), e))?;
-    let _ = sync_project_tasks_list_from_project_md(project_root)?;
-    let bootstrap_status = ui::apply_bootstrap_by_spec(project_root, project_name)?;
+    let _ = sync_project_tasks_list_from_project_md(input.project_root)?;
+    let bootstrap_status = ui::apply_bootstrap_by_spec(input.project_root, input.project_name)?;
     Ok(format!(
         "init_code_project completed with {} -> {} | {}",
         llm_bin,
@@ -1451,8 +1471,8 @@ fn validate_draft_doc(doc: &DraftDoc) -> Vec<String> {
 fn resolve_draft_yaml_template_path() -> Option<PathBuf> {
     let root = source_root();
     let candidates = [
-        root.join("assets").join("code").join("templates").join("drafts.yaml"),
-        PathBuf::from("assets").join("code").join("templates").join("drafts.yaml"),
+        root.join("assets").join("presets").join("code").join("templates").join("drafts.yaml"),
+        PathBuf::from("assets").join("presets").join("code").join("templates").join("drafts.yaml"),
         root.join("assets").join("templates").join("drafts.yaml"),
         PathBuf::from("assets").join("templates").join("drafts.yaml"),
     ];
@@ -2386,7 +2406,7 @@ fn normalize_draft_task_step_yaml(raw_yaml: &str) -> Result<String, String> {
 fn repair_draft_yaml_with_llm(raw: &str) -> Result<String, String> {
     let prompt = format!(
         "너는 YAML 포맷 복구기다.\n\
-다음 깨진 draft 출력을 `assets/code/templates/drafts.yaml` 스키마로 복구해라.\n\
+다음 깨진 draft 출력을 `assets/presets/code/templates/drafts.yaml` 스키마로 복구해라.\n\
 규칙:\n\
 - 루트는 `task:` 배열이어야 한다.\n\
 - task item 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n\
@@ -2552,21 +2572,12 @@ fn add_feature_to_planned_doc(doc: &mut DraftsListDoc, feature_name: &str) -> bo
         doc.planned.push(feature_name.to_string());
         changed = true;
     }
-    if !doc.planned_items.iter().any(|v| v.name == feature_name) {
-        doc.planned_items.push(PlannedItem {
-            name: feature_name.to_string(),
-            value: feature_name.to_string(),
-        });
-        changed = true;
-    }
     changed
 }
 
 fn add_feature_to_planned_at(path: &Path, feature_name: &str) -> Result<(), String> {
-    let mut doc = load_drafts_list(path)?;
-    if add_feature_to_planned_doc(&mut doc, feature_name) {
-        save_drafts_list(path, &doc)?;
-    }
+    let _ = path;
+    let _ = feature_name;
     Ok(())
 }
 
@@ -2693,13 +2704,8 @@ fn promote_project_md_plan_to_features(project_root: &Path, items: &[String]) ->
 }
 
 fn promote_planned_to_features_at(path: &Path, items: &[String]) -> Result<(), String> {
-    if items.is_empty() {
-        return Ok(());
-    }
-    let mut doc = load_drafts_list(path)?;
-    if promote_planned_to_features_doc(&mut doc, items) {
-        save_drafts_list(path, &doc)?;
-    }
+    let _ = path;
+    let _ = items;
     Ok(())
 }
 
@@ -2909,7 +2915,7 @@ pub(crate) fn registry_path() -> PathBuf {
 fn resolve_project_template_path() -> Result<PathBuf, String> {
     let root = source_root();
     let candidates = [
-        root.join("assets").join("code").join("templates").join("project.md"),
+        root.join("assets").join("presets").join("code").join("templates").join("project.md"),
         PathBuf::from("assets")
             .join("code")
             .join("templates")
@@ -2930,33 +2936,6 @@ fn resolve_project_template_path() -> Result<PathBuf, String> {
     ))
 }
 
-fn resolve_drafts_list_template_path() -> Result<PathBuf, String> {
-    let root = source_root();
-    let candidates = [
-        root.join("assets")
-            .join("code")
-            .join("templates")
-            .join("drafts_list.yaml"),
-        PathBuf::from("assets")
-            .join("code")
-            .join("templates")
-            .join("drafts_list.yaml"),
-        root.join("assets").join("templates").join("drafts_list.yaml"),
-        PathBuf::from("assets").join("templates").join("drafts_list.yaml"),
-        root.join("src").join("assets").join("templates").join("drafts_list.yaml"),
-        PathBuf::from("src").join("assets").join("templates").join("drafts_list.yaml"),
-    ];
-    for candidate in candidates {
-        if candidate.exists() {
-            return Ok(candidate);
-        }
-    }
-    Err(format!(
-        "drafts_list template not found (source root: {})",
-        root.display()
-    ))
-}
-
 pub(crate) fn resolve_project_md_prompt_path(auto_mode: bool) -> Result<PathBuf, String> {
     let root = source_root();
     let file_name = if auto_mode {
@@ -2965,16 +2944,16 @@ pub(crate) fn resolve_project_md_prompt_path(auto_mode: bool) -> Result<PathBuf,
         "project-md-init.txt"
     };
     let candidates = [
-        root.join("assets").join("code").join("prompts").join(file_name),
-        PathBuf::from("assets").join("code").join("prompts").join(file_name),
+        root.join("assets").join("presets").join("code").join("prompts").join(file_name),
+        PathBuf::from("assets").join("presets").join("code").join("prompts").join(file_name),
         root.join("src")
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join(file_name),
         PathBuf::from("src")
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join(file_name),
     ];
@@ -2993,19 +2972,19 @@ pub(crate) fn resolve_project_md_prompt_path(auto_mode: bool) -> Result<PathBuf,
 pub(crate) fn resolve_task_template_path() -> Result<PathBuf, String> {
     let root = source_root();
     let candidates = [
-        root.join("assets").join("code").join("prompts").join("tasks.txt"),
+        root.join("assets").join("presets").join("code").join("prompts").join("tasks.txt"),
         PathBuf::from("assets")
             .join("code")
             .join("prompts")
             .join("tasks.txt"),
         root.join("src")
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join("tasks.txt"),
         PathBuf::from("src")
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join("tasks.txt"),
     ];
@@ -3024,16 +3003,16 @@ pub(crate) fn resolve_parallel_feedback_prompt_path() -> Result<PathBuf, String>
     let root = source_root();
     let file_name = "parallel-feedback.txt";
     let candidates = [
-        root.join("assets").join("code").join("prompts").join(file_name),
-        PathBuf::from("assets").join("code").join("prompts").join(file_name),
+        root.join("assets").join("presets").join("code").join("prompts").join(file_name),
+        PathBuf::from("assets").join("presets").join("code").join("prompts").join(file_name),
         root.join("src")
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join(file_name),
         PathBuf::from("src")
             .join("assets")
-            .join("code")
+            .join("presets").join("code")
             .join("prompts")
             .join(file_name),
     ];
@@ -3136,18 +3115,6 @@ pub(crate) fn initialize_parallel_workspace_if_empty(path: &Path) -> Result<Opti
         )
     })?;
     let _ = sync_project_tasks_list_from_project_md(path)?;
-
-    let drafts_list_path = project_dir.join("drafts_list.yaml");
-    let drafts_template_path = resolve_drafts_list_template_path()?;
-    let draft_template = fs::read_to_string(&drafts_template_path).map_err(|e| {
-        format!(
-            "failed to read drafts_list template {}: {}",
-            drafts_template_path.display(),
-            e
-        )
-    })?;
-    fs::write(&drafts_list_path, draft_template)
-        .map_err(|e| format!("failed to write {}: {}", drafts_list_path.display(), e))?;
 
     Ok(Some(format!(
         "workspace was empty; initialized parallel environment at {}",
@@ -3490,9 +3457,7 @@ mod tests {
         let changed = add_feature_to_planned_doc(&mut doc, "new_feature");
         assert!(changed);
         assert_eq!(doc.planned, vec!["new_feature".to_string()]);
-        assert_eq!(doc.planned_items.len(), 1);
-        assert_eq!(doc.planned_items[0].name, "new_feature");
-        assert_eq!(doc.planned_items[0].value, "new_feature");
+        assert_eq!(doc.planned_items.len(), 0);
     }
 
     #[test]

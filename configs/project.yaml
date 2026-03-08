@@ -1,4 +1,4 @@
-recentActivepane: 7zpF
+recentActivepane: CbgR
 projects:
   - id: Crqr
     name: blender-bots
@@ -21,7 +21,7 @@ projects:
     path: /home/tree/temp
     description: zustand 상태관리 예제 앱
     created_at: "1772265929"
-    updated_at: "1772888105"
+    updated_at: "1772893558"
     selected: false
     project_type: code
   - id: rCmQ
@@ -29,23 +29,23 @@ projects:
     path: /home/tree/home
     description: loaded project
     created_at: "1772888117"
-    updated_at: "1772888119"
+    updated_at: "1772892629"
     selected: false
     project_type: code
   - id: 7zpF
-    name: pw-1772889995107
+    name: pw-1772902015381
     path: /tmp/tmp_project
     description: playwright e2e project
     created_at: "1772888365"
-    updated_at: "1772889997"
-    selected: true
+    updated_at: "1772902016"
+    selected: false
     project_type: code
   - id: ue6A
     name: api/app
     path: /home/tree/home/apps/api
     description: monorepo app package
     created_at: "1772888760"
-    updated_at: "1772888984"
+    updated_at: "1772947528"
     selected: false
     project_type: mono
   - id: T4Yu
@@ -53,15 +53,7 @@ projects:
     path: /home/tree/home/apps/mobile
     description: monorepo app package
     created_at: "1772888760"
-    updated_at: "1772888984"
-    selected: false
-    project_type: mono
-  - id: 3ert
-    name: script/app
-    path: /home/tree/home/apps/script
-    description: monorepo app package
-    created_at: "1772888760"
-    updated_at: "1772888984"
+    updated_at: "1772947526"
     selected: false
     project_type: mono
   - id: gMsN
@@ -69,7 +61,15 @@ projects:
     path: /home/tree/home/apps/web
     description: monorepo app package
     created_at: "1772888760"
-    updated_at: "1772888760"
+    updated_at: "1772947539"
+    selected: false
+    project_type: mono
+  - id: 3ert
+    name: script/app
+    path: /home/tree/home/apps/script
+    description: monorepo app package
+    created_at: "1772888760"
+    updated_at: "1772947533"
     selected: false
     project_type: mono
   - id: Eypy
@@ -77,7 +77,7 @@ projects:
     path: /home/tree/home/packages/features/article
     description: monorepo feature package
     created_at: "1772888760"
-    updated_at: "1772888984"
+    updated_at: "1772947529"
     selected: false
     project_type: mono
   - id: xxaS
@@ -85,7 +85,7 @@ projects:
     path: /home/tree/home/packages/features/auth
     description: monorepo feature package
     created_at: "1772888760"
-    updated_at: "1772888984"
+    updated_at: "1772895435"
     selected: false
     project_type: mono
   - id: VcBt
@@ -93,7 +93,7 @@ projects:
     path: /home/tree/home/packages/features/comment
     description: monorepo feature package
     created_at: "1772888760"
-    updated_at: "1772888984"
+    updated_at: "1772898552"
     selected: false
     project_type: mono
   - id: uvVR
@@ -101,7 +101,7 @@ projects:
     path: /home/tree/home/packages/features/dashboard
     description: monorepo feature package
     created_at: "1772888760"
-    updated_at: "1772888984"
+    updated_at: "1772898558"
     selected: false
     project_type: mono
   - id: jLkN
@@ -109,7 +109,7 @@ projects:
     path: /home/tree/home/packages/features/editor
     description: monorepo feature package
     created_at: "1772888760"
-    updated_at: "1772888984"
+    updated_at: "1772891325"
     selected: false
     project_type: mono
   - id: Yp7p
@@ -117,7 +117,7 @@ projects:
     path: /home/tree/home/packages/features/reader
     description: monorepo feature package
     created_at: "1772888760"
-    updated_at: "1772888984"
+    updated_at: "1772895946"
     selected: false
     project_type: mono
   - id: YLSv
@@ -125,87 +125,7 @@ projects:
     path: /home/tree/home/packages/features/user
     description: monorepo feature package
     created_at: "1772888760"
-    updated_at: "1772888984"
-    selected: false
-    project_type: mono
-  - id: NHVc
-    name: template/desktop
-    path: /home/tree/home/template/desktop
-    description: monorepo template package
-    created_at: "1772888760"
-    updated_at: "1772888760"
-    selected: false
-    project_type: mono
-  - id: wpVJ
-    name: template/mobile
-    path: /home/tree/home/template/mobile
-    description: monorepo template package
-    created_at: "1772888760"
-    updated_at: "1772888760"
-    selected: false
-    project_type: mono
-  - id: 2qZZ
-    name: template/web
-    path: /home/tree/home/template/web
-    description: monorepo template package
-    created_at: "1772888760"
-    updated_at: "1772888760"
-    selected: false
-    project_type: mono
-  - id: vtez
-    name: web/app
-    path: /home/tree/home/apps/web/app
-    description: monorepo app package
-    created_at: "1772888984"
-    updated_at: "1772888984"
-    selected: false
-    project_type: mono
-  - id: DhKk
-    name: web/public
-    path: /home/tree/home/apps/web/public
-    description: monorepo app package
-    created_at: "1772888984"
-    updated_at: "1772888984"
-    selected: false
-    project_type: mono
-  - id: sTed
-    name: desktop/astro
-    path: /home/tree/home/template/desktop/astro
-    description: monorepo template package
-    created_at: "1772888984"
-    updated_at: "1772888984"
-    selected: false
-    project_type: mono
-  - id: HinQ
-    name: mobile/expo
-    path: /home/tree/home/template/mobile/expo
-    description: monorepo template package
-    created_at: "1772888984"
-    updated_at: "1772888984"
-    selected: false
-    project_type: mono
-  - id: dS7C
-    name: web/astro
-    path: /home/tree/home/template/web/astro
-    description: monorepo template package
-    created_at: "1772888984"
-    updated_at: "1772888984"
-    selected: false
-    project_type: mono
-  - id: ArCm
-    name: web/blog
-    path: /home/tree/home/template/web/blog
-    description: monorepo template package
-    created_at: "1772888984"
-    updated_at: "1772888984"
-    selected: false
-    project_type: mono
-  - id: YEnP
-    name: web/blog-feature-gapfix
-    path: /home/tree/home/template/web/blog-feature-gapfix
-    description: monorepo template package
-    created_at: "1772888984"
-    updated_at: "1772888984"
+    updated_at: "1772898385"
     selected: false
     project_type: mono
   - id: CbgR
@@ -213,6 +133,86 @@ projects:
     path: /home/tree/home/template/web/next
     description: monorepo template package
     created_at: "1772888984"
-    updated_at: "1772888984"
+    updated_at: "1772963389"
+    selected: true
+    project_type: mono
+  - id: NHVc
+    name: template/desktop
+    path: /home/tree/home/template/desktop
+    description: monorepo template package
+    created_at: "1772888760"
+    updated_at: "1772950306"
+    selected: false
+    project_type: mono
+  - id: wpVJ
+    name: template/mobile
+    path: /home/tree/home/template/mobile
+    description: monorepo template package
+    created_at: "1772888760"
+    updated_at: "1772898998"
+    selected: false
+    project_type: mono
+  - id: 2qZZ
+    name: template/web
+    path: /home/tree/home/template/web
+    description: monorepo template package
+    created_at: "1772888760"
+    updated_at: "1772899718"
+    selected: false
+    project_type: mono
+  - id: vtez
+    name: web/app
+    path: /home/tree/home/apps/web/app
+    description: monorepo app package
+    created_at: "1772888984"
+    updated_at: "1772947532"
+    selected: false
+    project_type: mono
+  - id: DhKk
+    name: web/public
+    path: /home/tree/home/apps/web/public
+    description: monorepo app package
+    created_at: "1772888984"
+    updated_at: "1772892530"
+    selected: false
+    project_type: mono
+  - id: sTed
+    name: desktop/astro
+    path: /home/tree/home/template/desktop/astro
+    description: monorepo template package
+    created_at: "1772888984"
+    updated_at: "1772948754"
+    selected: false
+    project_type: mono
+  - id: HinQ
+    name: mobile/expo
+    path: /home/tree/home/template/mobile/expo
+    description: monorepo template package
+    created_at: "1772888984"
+    updated_at: "1772898647"
+    selected: false
+    project_type: mono
+  - id: dS7C
+    name: web/astro
+    path: /home/tree/home/template/web/astro
+    description: monorepo template package
+    created_at: "1772888984"
+    updated_at: "1772896613"
+    selected: false
+    project_type: mono
+  - id: ArCm
+    name: web/blog
+    path: /home/tree/home/template/web/blog
+    description: monorepo template package
+    created_at: "1772888984"
+    updated_at: "1772949882"
+    selected: false
+    project_type: mono
+  - id: YEnP
+    name: web/blog-feature-gapfix
+    path: /home/tree/home/template/web/blog-feature-gapfix
+    description: monorepo template package
+    created_at: "1772888984"
+    updated_at: "1772897749"
     selected: false
     project_type: mono
