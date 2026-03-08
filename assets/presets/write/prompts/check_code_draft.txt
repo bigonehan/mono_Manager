@@ -1,0 +1,5 @@
+check_code_draft prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/YAML/Markdown 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- check-code skill 기준으로 draft 품질/의존성/도메인/제약을 점검하고 report.md를 생성한다.

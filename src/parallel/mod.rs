@@ -31,7 +31,6 @@ async fn run_one_parallel_task(
     task_name: String,
     prompt: String,
     timeout_sec: u64,
-    _auto_yes: bool,
     dangerous_bypass: bool,
     debug_enabled: bool,
 ) -> Result<String, String> {
@@ -223,7 +222,6 @@ pub async fn run_parallel_build_code() -> Result<String, String> {
                 task.name.clone(),
                 prompt,
                 timeout_sec,
-                auto_yes,
                 dangerous_bypass,
                 debug_enabled,
             )));

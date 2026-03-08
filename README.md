@@ -20,14 +20,21 @@
 - `orc chat -n <name> --background`
 - `orc chat -n <name> -m <message> [-i <receiver_id>] [--data <data>]`
 - `orc chat-wait -n <name> -a <true|false> [-c <count>]`
-- `orc open-ui`
+- `orc open-ui [-w|--web]`
+- `orc serve-web-api [--addr <host:port>]`
 - `orc auto <message>`
 - `orc auto -f` (auto-generate `input.md` from `project.md + plan.yaml`, then continue to implementation)
 
 ## UI Mode
 - Enter UI mode:
-- `orc open-ui`
-  - or `cargo run --bin orc -- ui`
+- `orc open-ui` (TUI)
+- `orc open-ui -w` (Web UI at `assets/web`)
+
+## Rust Web API Mode
+- Start Rust API server:
+  - `cargo run --bin orc -- serve-web-api --addr 127.0.0.1:7788`
+- Run Astro Web UI against Rust API:
+  - `PUBLIC_ORC_API_BASE=http://127.0.0.1:7788 npm --prefix assets/web run dev`
 
 ## tmux Send
 - Send text to a tmux pane:

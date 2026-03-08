@@ -1,0 +1,6 @@
+add_code_draft_by_message prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/YAML 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- draft item은 `assets/presets/code/templates/draft_item.yaml` 단일 item 스키마를 기준으로 생성한다.
+- message를 해석해 `./.project/plan.yaml`과 `./.project/drafts.yaml` 흐름에 맞춰 draft_item을 추가한다.
