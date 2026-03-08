@@ -1,0 +1,18 @@
+build-code-parallel 스킬을 사용해 아래 task를 구현한다.
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- scope 밖 파일은 수정하지 않는다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- step 순서를 지킨다.
+- 실패 시 사유를 남긴다.
+- task의 domain/flow 제약을 합성해 구현 제약으로 적용한다.
+- YAML/Markdown 파일이 필요하면 템플릿을 먼저 복사하고 주석/예시를 제거한 뒤 값을 채운다.
+- auto 모드에서는 질문/확인 없이 task 정보를 기준으로 바로 구현한다.
+
+[project_info]
+{{project_info}}
+
+[draft_path]
+{{draft_path}}
+
+[draft]
+{{draft_content}}

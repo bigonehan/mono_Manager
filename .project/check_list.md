@@ -1,0 +1,4 @@
+- [ ] 프로젝트 생성/수정/삭제 요청 -> registry/project 파일 반영 : 프로젝트 관리 API가 입력값을 파일 상태로 정확히 반영한다
+- [ ] project.md/rules/constraints/features 변경 요청 -> .project 문서 갱신 : 상세 편집 UI에서 변경한 값이 저장 후 재조회 시 일치한다
+- [ ] draft 실행 액션(create/add/impl/check) -> drafts/feature/report 갱신 : 실행 버튼이 실제 orc 함수 호출로 산출물을 만든다
+- [ ] 계획/초안 상태 동기화 요청 -> plan.yaml/drafts_list.yaml 상태 일치 : planned/worked/complete가 문서 간 충돌 없이 호환된다
