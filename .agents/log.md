@@ -203,6 +203,7 @@
 - `AGENTS.md`의 중복 규칙(금지어 하드블록/CLI 해석/하드코딩 규칙 반복)을 단일 섹션으로 정리하고, 현재 저장소와 무관한 모노레포 전용 규칙(`Port Ownership Override`)을 제거해 문서를 간소화함.
 
 ## 2026-03-04 - 작업한일
+
 - TUI 커맨드 게이트를 `src/tui/mod.rs`로 분리하고, `open-ui` 실행 전 `client.tui` 설정을 검사하도록 연결함. `client.tui: false`면 `orc activate-tui` 안내와 함께 실행을 차단하도록 구현함.
 - `orc activate-tui` 명령을 추가해 설정 파일(`configs.yaml` 우선, 없으면 `config.yaml`)의 `client.tui` 값을 `true`로 기록하도록 구현함.
 - `src/config/mod.rs`에 `client.tui` 스키마(`ClientConfig`)와 기본값 메서드(`tui_enabled`, 기본 `true`)를 추가함.
@@ -2545,3 +2546,32 @@
 - `current.png` 기준 모바일 액션 버튼 재배치: 햄버거 버튼을 상태 아래 단독 배치에서 액션 버튼 줄(auto/add/modify/build/test) 맨 앞으로 이동
 - 모바일에서 액션 버튼 줄 우측 정렬/가로 스크롤 동작은 유지하고 desktop에서는 햄버거 버튼 숨김 처리
 - 검증: `npm --prefix assets/web exec -- tsc --noEmit -p assets/web/tsconfig.json`, `cargo test --quiet` (23 passed)
+
+## 2026-03-08 - 작업한일
+- web detail page drafts pane에 `input.md`/`drafts.yaml` 탭별 휴지통 버튼을 추가하고, 버튼 클릭 시 `y/n` 입력 확인 후 `y`일 때만 파일 삭제되도록 구현함.
+- `assets/web/src/pages/api/drafts-pane-file-delete.ts` 및 `assets/web/src/server/orc.ts`의 `deleteDraftPaneFile`를 추가해 선택 파일을 실제 삭제하고 최신 detail을 반환하도록 연결함.
+- 파일 부재 가드로 `saveRawInputMd`(input.md), `runOrcAction`의 `add_draft`/`impl_draft`/`check_code`(drafts.yaml), `create_draft`(input.md) 선행 조건 검증을 추가함.
+- 실제 실행 검증으로 API 경로를 직접 호출해 삭제 후 `input-md-raw` 저장이 `input.md not found`로 차단되고, `add_draft`가 `drafts.yaml not found`로 차단되는 것을 확인함.
+
+## 2026-03-08 - 작업한일
+- detail 페이지 액션 버튼 중 `add/modify/build/test` 텍스트를 모바일에서 숨기고(`hidden lg:inline`) 아이콘만 노출되도록 조정함.
+- 데스크톱(`lg` 이상)에서는 기존 텍스트 라벨이 그대로 보이도록 유지함.
+- 검증: `npx tsc --noEmit` (assets/web) 통과.
+
+## 2026-03-08 - 작업한일
+- detail 상단 액션 줄의 `auto` 버튼도 모바일에서 텍스트를 숨기고 아이콘만 보이도록 통일함(`hidden lg:inline`).
+- 결과적으로 모바일에서 `auto/add/modify/build/test` 전부 아이콘-only, desktop은 텍스트 유지로 일관화함.
+- 검증: `npx tsc --noEmit` (assets/web) 통과.
+
+## 2026-03-08 - 작업한일
+- 신규 CLI 명령 `auto_add_function <message>`를 추가하고 `src/code.rs`에 오케스트레이션 함수(`auto_add_function_message`)를 구현함.
+- `auto_add_function` 흐름에 message 기반 초기화, auto 재시도 루프, `plan.md` 스냅샷 생성, 개선 Codex 실행, 개선 후 재검증 루프를 연결함.
+- web auto 경로를 `auto`에서 `auto_add_function` 호출로 변경하고, 성공 시 project state를 `complete`로 갱신하도록 서버 로직을 반영함.
+- web 상태 타입/배지 스타일에 `complete` 상태를 추가해 detail/project 카드에서 완료 상태를 표시하도록 확장함.
+- 검증: `cargo test` (23 passed), `npx tsc --noEmit` (assets/web) 통과.
+
+## 2026-03-08 - 작업한일
+- web project type에서 `video`/`write`를 제거하고 `code`/`monorepo` 2종만 노출되도록 UI 섹션(상단 탭, 카드 영역)을 정리함.
+- `assets/web/src/store/orc-store.ts`, `assets/web/src/server/orc.ts`, `assets/web/src/pages/api/projects/index.ts`의 타입/정규화 로직에서 `story`/`movie` 입력을 제거(또는 `code`로 정규화)해 신규 생성 경로를 제한함.
+- detail layout 타입을 `code|mono`로 축소하고 provider의 `movie/write` 분기를 제거함.
+- 검증: `npx tsc --noEmit` (assets/web), `cargo test` (23 passed).

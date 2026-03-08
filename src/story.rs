@@ -114,6 +114,10 @@ pub(crate) fn auto_story_from_input_file() -> Result<String, String> {
     init_story_project(&[])
 }
 
+pub(crate) fn auto_story_add_function_message(message: &str) -> Result<String, String> {
+    auto_story_message(message)
+}
+
 fn parse_common_opts(args: &[String]) -> StoryCommonOpts {
     let mut opts = StoryCommonOpts::default();
     let mut i = 0usize;

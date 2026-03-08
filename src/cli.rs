@@ -41,6 +41,7 @@ pub fn print_usage(program: &str) {
         "open-ui [-w|--web]",
         "serve-web-api [--addr <host:port>]",
         "auto <message> | auto -f",
+        "auto_add_function <message>",
         "send-tmux <pane_id> <msg...> [enter|raw]",
         "chat -n <name> [--background] [-m <message>] [-i <receiver_id>] [--data <data>]",
         "chat-wait -n <name> -a <true|false> [-c <count>]",
@@ -164,6 +165,14 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                 return Err("auto requires <message>".to_string());
             }
             profile.project_service().auto_message(&tail.join(" "))
+        }
+        "auto_add_function" => {
+            if tail.is_empty() || tail[0].starts_with('-') {
+                return Err("auto_add_function requires <message>".to_string());
+            }
+            profile
+                .project_service()
+                .auto_add_function_message(&tail.join(" "))
         }
         "send-tmux" => {
             if tail.len() < 2 {

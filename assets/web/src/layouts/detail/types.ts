@@ -1,6 +1,6 @@
 import type { Detail, DetailPane, Project } from "@/store/orc-store";
 
-export type DetailLayoutType = "code" | "write" | "mono" | "movie";
+export type DetailLayoutType = "code" | "mono";
 
 export type DetailLayoutProps = {
   detail: Detail | null;
@@ -29,7 +29,5 @@ export function resolveDetailLayoutType(
 ): DetailLayoutType {
   const projectType = detail?.project_type ?? selectedProject?.project_type ?? "code";
   if (projectType === "mono") return "mono";
-  if (projectType === "movie") return "movie";
-  if (projectType === "story") return "write";
   return "code";
 }

@@ -29,6 +29,7 @@ pub(crate) trait ProjectService: Send + Sync {
     fn add_domain(&self) -> Result<String, String>;
     fn auto_message(&self, message: &str) -> Result<String, String>;
     fn auto_from_input(&self) -> Result<String, String>;
+    fn auto_add_function_message(&self, message: &str) -> Result<String, String>;
 }
 
 pub(crate) trait PlanService: Send + Sync {
@@ -293,6 +294,10 @@ impl ProjectService for CodeProjectService {
     fn auto_from_input(&self) -> Result<String, String> {
         crate::code::auto_code_from_input_file()
     }
+
+    fn auto_add_function_message(&self, message: &str) -> Result<String, String> {
+        crate::code::auto_add_function_message(message)
+    }
 }
 
 impl ProjectService for StoryProjectService {
@@ -322,6 +327,10 @@ impl ProjectService for StoryProjectService {
 
     fn auto_from_input(&self) -> Result<String, String> {
         crate::story::auto_story_from_input_file()
+    }
+
+    fn auto_add_function_message(&self, message: &str) -> Result<String, String> {
+        crate::code::auto_add_function_message(message)
     }
 }
 

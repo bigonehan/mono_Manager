@@ -22,10 +22,12 @@ path : /home/tree/project/rust-orc
 - cli_add_code_draft_item
 - cli_check_code_draft
 - cli_auto
+- cli_auto_add_function
 - cli_send_tmux
 - cli_enter
 - cli_chat
 - cli_chat_wait
+- web_detail_drafts_delete_guard
 
 # rules
 - 모든 기능은 `/home/tree/project/rust-orc` 경로 기준으로 동작한다.

@@ -450,6 +450,42 @@ pub(crate) fn auto_code_message(message: &str) -> Result<String, String> {
     }
 }
 
+pub(crate) fn auto_add_function_message(message: &str) -> Result<String, String> {
+    debug_log_auto_stage("auto-add", "auto_add_function flow start");
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        return Err("auto_add_function requires non-empty message".to_string());
+    }
+    let init_out = run_code_subcommand_in_new_session("init_code_project", &["-a", trimmed])?;
+    let retry_out = run_auto_retry_loop("auto_add_function", Some(trimmed), false)?;
+    let plan_md_out = write_plan_md_snapshot(trimmed)?;
+    let improve_prompt = format!(
+        "프로젝트 루트에서 다음 작업을 수행해.\n\
+요청: {}\n\
+현재 구현 결과를 점검하고 개선이 필요한 항목이 있으면 직접 수정해.\n\
+수정 후 `check_code_draft -a`가 통과하도록 정리해.\n\
+출력 형식:\n\
+- improve_summary: <요약>\n\
+- actions: <수행한 작업>\n",
+        trimmed
+    );
+    let improve_out = crate::run_codex_exec_capture_with_timeout(&improve_prompt, 600)
+        .map(|v| v.trim().to_string())
+        .unwrap_or_else(|e| format!("improve stage skipped: {}", e));
+    let post_retry_out = run_auto_retry_loop("auto_add_function-post-improve", Some(trimmed), false)?;
+    let final_check = check_code_draft(true)?;
+    debug_log_auto_stage("auto-add", "auto_add_function flow completed");
+    Ok(format!(
+        "auto_add_function completed: {} | {} | {} | improve={} | {} | {}",
+        init_out,
+        retry_out,
+        plan_md_out,
+        improve_out,
+        post_retry_out,
+        final_check
+    ))
+}
+
 pub(crate) fn auto_code_from_input_file() -> Result<String, String> {
     debug_log_auto_stage("auto-file", "auto -f flow start");
     let init_msg = run_code_subcommand_in_new_session("init_code_project", &[])?;
@@ -466,6 +502,49 @@ pub(crate) fn auto_code_from_input_file() -> Result<String, String> {
         "auto -f completed: {} | {} | {} | {}",
         init_msg, plan_msg, input_msg, retry_msg
     ))
+}
+
+fn write_plan_md_snapshot(message: &str) -> Result<String, String> {
+    let plan = load_plan_doc()?;
+    let planned = if plan.drafts.planned.is_empty() {
+        "- (none)".to_string()
+    } else {
+        plan.drafts
+            .planned
+            .iter()
+            .map(|v| format!("- {}", v))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let worked = if plan.drafts.worked.is_empty() {
+        "- (none)".to_string()
+    } else {
+        plan.drafts
+            .worked
+            .iter()
+            .map(|v| format!("- {}", v))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let complete = if plan.drafts.complete.is_empty() {
+        "- (none)".to_string()
+    } else {
+        plan.drafts
+            .complete
+            .iter()
+            .map(|v| format!("- {}", v))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let body = format!(
+        "# plan.md\n\n## request\n- {}\n\n## planned\n{}\n\n## worked\n{}\n\n## complete\n{}\n",
+        message.trim(),
+        planned,
+        worked,
+        complete
+    );
+    fs::write("plan.md", body).map_err(|e| format!("failed to write plan.md: {}", e))?;
+    Ok("plan.md updated".to_string())
 }
 
 fn auto_retry_max() -> usize {

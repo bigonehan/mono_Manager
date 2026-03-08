@@ -7,8 +7,8 @@ export type Project = {
   path: string;
   description: string;
   selected: boolean;
-  project_type: "story" | "movie" | "code" | "mono";
-  state?: "init" | "basic" | "work" | "wait" | "review" | "run" | "build";
+  project_type: "code" | "mono";
+  state?: "init" | "basic" | "work" | "wait" | "review" | "run" | "build" | "complete";
   current_job?: string;
 };
 
@@ -18,7 +18,7 @@ export type Detail = {
   description: string;
   path: string;
   memo: string;
-  project_type: "story" | "movie" | "code" | "mono";
+  project_type: "code" | "mono";
   spec: string;
   goal: string;
   rules: string[];
@@ -28,9 +28,10 @@ export type Detail = {
   planned: string[];
   plannedDisplay: string[];
   generated: string[];
-  state: "init" | "basic" | "work" | "wait" | "review" | "run" | "build";
+  state: "init" | "basic" | "work" | "wait" | "review" | "run" | "build" | "complete";
   current_job?: string;
   hasDraftsYaml: boolean;
+  hasInputMd: boolean;
   dev_server_url?: string;
   draftsYamlRaw?: string;
   inputMdRaw?: string;

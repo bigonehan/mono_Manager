@@ -12,7 +12,7 @@ export type ProjectRecord = {
   created_at: string;
   updated_at: string;
   selected: boolean;
-  project_type: "story" | "movie" | "code" | "mono";
+  project_type: "code" | "mono";
   state?: ProjectState;
   current_job?: string;
 };
@@ -48,8 +48,8 @@ type PlanDoc = {
   };
 };
 
-export type ProjectState = "init" | "basic" | "work" | "wait" | "review" | "run" | "build";
-export type ProfileType = "code" | "mono" | "write" | "video";
+export type ProjectState = "init" | "basic" | "work" | "wait" | "review" | "run" | "build" | "complete";
+export type ProfileType = "code" | "mono";
 
 const runtimeLogsByProject = new Map<string, string[]>();
 const runProcessesByProject = new Map<string, ChildProcess>();
@@ -74,7 +74,7 @@ export type ProjectDetail = {
   description: string;
   path: string;
   memo: string;
-  project_type: "story" | "movie" | "code" | "mono";
+  project_type: "code" | "mono";
   spec: string;
   goal: string;
   rules: string[];
@@ -87,6 +87,7 @@ export type ProjectDetail = {
   state: ProjectState;
   current_job?: string;
   hasDraftsYaml: boolean;
+  hasInputMd: boolean;
   dev_server_url?: string;
   draftsYamlRaw?: string;
   inputMdRaw?: string;
@@ -149,14 +150,14 @@ function randomId(length = 4): string {
 }
 
 function normalizeProjectType(raw: unknown): ProjectRecord["project_type"] {
-  if (raw === "story" || raw === "movie" || raw === "mono") {
+  if (raw === "mono") {
     return raw;
   }
   return "code";
 }
 
 function normalizeProfileType(raw: unknown): ProfileType {
-  if (raw === "mono" || raw === "write" || raw === "video") {
+  if (raw === "mono") {
     return raw;
   }
   return "code";
@@ -164,8 +165,6 @@ function normalizeProfileType(raw: unknown): ProfileType {
 
 function profileTypeFromProjectType(projectType: ProjectRecord["project_type"]): ProfileType {
   if (projectType === "mono") return "mono";
-  if (projectType === "story") return "write";
-  if (projectType === "movie") return "video";
   return "code";
 }
 
@@ -303,9 +302,26 @@ export function loadRegistry(): ProjectRegistry {
       created_at: String(project.created_at ?? nowUnix()),
       updated_at: String(project.updated_at ?? nowUnix()),
       selected: Boolean(project.selected),
-      project_type: normalizeProjectType(project.project_type)
+      project_type: normalizeProjectType(project.project_type),
+      state: normalizeProjectState(project.state)
     }))
   };
+}
+
+function normalizeProjectState(raw: unknown): ProjectState | undefined {
+  if (
+    raw === "init" ||
+    raw === "basic" ||
+    raw === "work" ||
+    raw === "wait" ||
+    raw === "review" ||
+    raw === "run" ||
+    raw === "build" ||
+    raw === "complete"
+  ) {
+    return raw;
+  }
+  return undefined;
 }
 
 export function saveRegistry(registry: ProjectRegistry): void {
@@ -1016,6 +1032,9 @@ function resolveProjectState(project: ProjectRecord): ProjectState {
   if (runProcessesByProject.has(project.id)) {
     return "run";
   }
+  if (project.state === "complete") {
+    return "complete";
+  }
   const pmdPath = projectMdPath(project.path);
   if (!fs.existsSync(pmdPath)) {
     return "init";
@@ -1460,6 +1479,7 @@ export function loadProjectDetail(id: string): ProjectDetail {
   const parsed = readProjectMdAttributes(fs.readFileSync(projectMdPath(project.path), "utf8"));
   const drafts = loadDraftsList(project.path);
   const hasDraftsYaml = fs.existsSync(draftsYamlPath(project.path));
+  const hasInputMd = fs.existsSync(path.join(project.path, "input.md"));
   const planned = Array.isArray(drafts.planned) ? drafts.planned : [];
   const plannedItems = Array.isArray(drafts.planned_items) ? drafts.planned_items : [];
   const memo = fs.existsSync(memoPath(project.path)) ? fs.readFileSync(memoPath(project.path), "utf8") : "";
@@ -1490,6 +1510,7 @@ export function loadProjectDetail(id: string): ProjectDetail {
     state: resolveProjectState(project),
     current_job: buildCurrentJobByProject.get(project.id) || "",
     hasDraftsYaml,
+    hasInputMd,
     dev_server_url: runProcessesByProject.has(project.id) ? runUrlsByProject.get(project.id) : undefined
     ,
     draftsYamlRaw: draftItems.raw,
@@ -1659,6 +1680,20 @@ function finalizeCompletedDrafts(id: string): string {
 
 export function runOrcAction(id: string, action: string, payload?: string): string {
   const detail = loadProjectDetail(id);
+  const projectDraftsPath = draftsYamlPath(detail.path);
+  const projectInputPath = path.join(detail.path, "input.md");
+  if (action === "add_draft" && !fs.existsSync(projectDraftsPath)) {
+    throw new Error("add_draft blocked: drafts.yaml not found");
+  }
+  if (action === "check_code" && !fs.existsSync(projectDraftsPath)) {
+    throw new Error("check_code blocked: drafts.yaml not found");
+  }
+  if (action === "impl_draft" && !fs.existsSync(projectDraftsPath)) {
+    throw new Error("impl_draft blocked: drafts.yaml not found");
+  }
+  if (action === "create_draft" && !fs.existsSync(projectInputPath)) {
+    throw new Error("create_draft blocked: input.md not found");
+  }
   const argsMap: Record<string, string[]> = {
     create_draft: ["create_code_draft"],
     add_draft: payload?.trim().length ? ["add_code_draft", "-m", payload] : ["add_code_draft", "-a"],
@@ -1722,9 +1757,35 @@ export async function applyFormAddInput(
 export function saveRawInputMd(id: string, raw: string): ProjectDetail {
   const detail = loadProjectDetail(id);
   const inputPath = path.join(detail.path, "input.md");
+  if (!fs.existsSync(inputPath)) {
+    throw new Error("input.md not found: create or generate input.md first");
+  }
   const body = raw.trimEnd();
   fs.writeFileSync(inputPath, body.length > 0 ? `${body}\n` : "", "utf8");
   return loadProjectDetail(id);
+}
+
+export function deleteDraftPaneFile(
+  id: string,
+  target: "input" | "drafts"
+): { detail: ProjectDetail; output: string } {
+  const detail = loadProjectDetail(id);
+  if (target === "input") {
+    const inputPath = path.join(detail.path, "input.md");
+    if (!fs.existsSync(inputPath)) {
+      return { detail: loadProjectDetail(id), output: "input.md already missing" };
+    }
+    fs.rmSync(inputPath, { force: true });
+    appendRuntimeLog(id, "[drafts-pane] input.md deleted");
+    return { detail: loadProjectDetail(id), output: "input.md deleted" };
+  }
+  const file = draftsYamlPath(detail.path);
+  if (!fs.existsSync(file)) {
+    return { detail: loadProjectDetail(id), output: "drafts.yaml already missing" };
+  }
+  fs.rmSync(file, { force: true });
+  appendRuntimeLog(id, "[drafts-pane] drafts.yaml deleted");
+  return { detail: loadProjectDetail(id), output: "drafts.yaml deleted" };
 }
 
 export async function applyRawInputMd(id: string, raw: string): Promise<{ detail: ProjectDetail; stages: string[] }> {
@@ -1770,7 +1831,7 @@ export function runAutoFromMessage(id: string, message: string): { detail: Proje
   if (!prompt) {
     throw new Error("message is required");
   }
-  const command = resolveOrcCommandArgs(["auto", prompt]);
+  const command = resolveOrcCommandArgs(["auto_add_function", prompt]);
   appendRuntimeLog(id, `[auto] start: ${detail.name}`);
   const result = spawnSync(command.bin, command.args, {
     cwd: detail.path,
@@ -1782,9 +1843,22 @@ export function runAutoFromMessage(id: string, message: string): { detail: Proje
     appendRuntimeLog(id, `[auto] failed: ${stderr || `status=${String(result.status)}`}`);
     throw new Error(stderr || `auto failed: status=${String(result.status)}`);
   }
+  setProjectState(id, "complete");
   const output = stdout || "auto completed";
   appendRuntimeLog(id, `[auto] ${output}`);
   return { detail: loadProjectDetail(id), output };
+}
+
+function setProjectState(id: string, nextState: ProjectState): void {
+  const registry = loadRegistry();
+  const index = registry.projects.findIndex((project) => project.id === id);
+  if (index < 0) return;
+  registry.projects[index] = {
+    ...registry.projects[index],
+    state: nextState,
+    updated_at: nowUnix()
+  };
+  saveRegistry(registry);
 }
 
 async function runInputMdSyncWorkflow(id: string, projectPath: string): Promise<string[]> {

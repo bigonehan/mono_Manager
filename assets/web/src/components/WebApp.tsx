@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Clapperboard,
   Code2,
   CornerUpLeft,
   FilePlus2,
@@ -15,7 +14,6 @@ import {
   Menu,
   LayoutGrid,
   List,
-  NotebookPen,
   Pencil,
   Plus,
   RefreshCw,
@@ -46,11 +44,12 @@ type DraftModalAction = "add_draft" | "impl_draft" | "check_code";
 type BrowseTarget = "create" | "load";
 type BrowseEntry = { name: string; path: string; hasProjectMeta: boolean };
 type ProjectItemViewMode = "card" | "minimal";
-type ProfileType = "code" | "mono" | "write" | "video";
+type ProfileType = "code" | "mono";
 type DraftFormField = { key: string; value: string };
 type TemplateAssetFile = { name: string; path: string; content: string };
 
 function stateLabel(state?: Project["state"]): string {
+  if (state === "complete") return "complete";
   if (state === "build") return "build";
   if (state === "run") return "run";
   if (state === "review") return "review";
@@ -61,6 +60,7 @@ function stateLabel(state?: Project["state"]): string {
 }
 
 function stateClass(state?: Project["state"]): string {
+  if (state === "complete") return "border-emerald-600/80 bg-emerald-200 text-emerald-900";
   if (state === "build") return "border-amber-500/70 bg-amber-100 text-amber-800";
   if (state === "run") return "border-emerald-500/50 bg-emerald-500/10 text-emerald-700";
   if (state === "review") return "border-emerald-500/70 bg-emerald-100 text-emerald-800";
@@ -72,21 +72,15 @@ function stateClass(state?: Project["state"]): string {
 
 function projectTypeLabel(type?: Project["project_type"]): string {
   if (type === "mono") return "monorepo";
-  if (type === "movie") return "video";
-  if (type === "story") return "write";
   return "code";
 }
 
 function profileTypeFromProjectType(type?: Project["project_type"]): ProfileType {
   if (type === "mono") return "mono";
-  if (type === "movie") return "video";
-  if (type === "story") return "write";
   return "code";
 }
 
 function ProjectTypeIcon({ type }: { type: Project["project_type"] }) {
-  if (type === "story") return <NotebookPen className="h-5 w-5 text-muted-foreground" />;
-  if (type === "movie") return <Clapperboard className="h-5 w-5 text-muted-foreground" />;
   if (type === "mono") return <Shapes className="h-5 w-5 text-muted-foreground" />;
   return <Code2 className="h-5 w-5 text-muted-foreground" />;
 }
@@ -203,8 +197,6 @@ export default function WebApp() {
   const lastSavedMemoRef = useRef("");
   const codeSectionRef = useRef<HTMLDivElement | null>(null);
   const monorepoSectionRef = useRef<HTMLDivElement | null>(null);
-  const videoSectionRef = useRef<HTMLDivElement | null>(null);
-  const writeSectionRef = useRef<HTMLDivElement | null>(null);
   const templateContentRef = useRef<HTMLDivElement | null>(null);
   const rawInputSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
@@ -271,10 +263,8 @@ export default function WebApp() {
   }, []);
   const groupedProjects = useMemo(
     () => ({
-      code: projects.filter((v) => v.project_type === "code"),
-      monorepo: projects.filter((v) => v.project_type === "mono"),
-      video: projects.filter((v) => v.project_type === "movie"),
-      write: projects.filter((v) => v.project_type === "story")
+      code: projects.filter((v) => v.project_type !== "mono"),
+      monorepo: projects.filter((v) => v.project_type === "mono")
     }),
     [projects]
   );
@@ -546,15 +536,8 @@ export default function WebApp() {
     setLoadOpen(true);
   }
 
-  function scrollToProjectSection(section: "code" | "monorepo" | "video" | "write") {
-    const ref =
-      section === "code"
-        ? codeSectionRef
-        : section === "monorepo"
-          ? monorepoSectionRef
-          : section === "video"
-            ? videoSectionRef
-            : writeSectionRef;
+  function scrollToProjectSection(section: "code" | "monorepo") {
+    const ref = section === "code" ? codeSectionRef : monorepoSectionRef;
     const run = () => ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     if (tab !== "project") {
       setTab("project");
@@ -818,6 +801,10 @@ export default function WebApp() {
 
   async function saveRawInputMd(nextRaw: string) {
     if (!detail) return;
+    if (!detail.hasInputMd) {
+      pushLog("raw input save blocked: input.md not found");
+      return;
+    }
     const res = await fetch(apiUrl("/api/input-md-raw"), {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1030,6 +1017,10 @@ export default function WebApp() {
 
   async function runAction(action: DraftModalAction): Promise<boolean> {
     if (!detail) return false;
+    if (action === "add_draft" && !detail.hasDraftsYaml) {
+      pushLog("add_draft blocked: drafts.yaml not found");
+      return false;
+    }
     const isImpl = action === "impl_draft";
     if (isImpl) setRunningImplDraft(true);
     try {
@@ -1057,6 +1048,10 @@ export default function WebApp() {
 
   async function runQuickAction(action: "check_code" | "retry_incomplete" | "finalize_complete") {
     if (!detail) return;
+    if (!detail.hasDraftsYaml) {
+      pushLog(`${action} blocked: drafts.yaml not found`);
+      return;
+    }
     const res = await fetch(apiUrl("/api/run"), {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1074,6 +1069,32 @@ export default function WebApp() {
     pushLog(String(data.output ?? `${action} completed`));
     await loadProjects();
     await loadDetail(detail.id);
+  }
+
+  async function removeDraftPaneFile(target: "input" | "drafts") {
+    if (!detail) return;
+    const targetLabel = target === "input" ? "input.md" : "drafts.yaml";
+    const answer = window.prompt(`${targetLabel} 파일을 삭제합니다. 진행하려면 y 를 입력하세요. (y/n)`, "n");
+    if (!answer || answer.trim().toLowerCase() !== "y") {
+      pushLog(`${targetLabel} delete cancelled`);
+      return;
+    }
+    const res = await fetch(apiUrl("/api/drafts-pane-file-delete"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: detail.id, target })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      pushLog(`delete failed: ${String(data.error ?? "unknown error")}`);
+      return;
+    }
+    pushLog(String(data.output ?? `${targetLabel} deleted`));
+    setDetail(data.detail);
+    setFormRawInput(String(data.detail?.inputMdRaw ?? ""));
+    if (target === "drafts") {
+      setSelectedDraftYamlItem(null);
+    }
   }
 
   async function generateInputMdWithAi() {
@@ -1449,12 +1470,6 @@ export default function WebApp() {
           <button className="text-sm font-semibold text-muted-foreground hover:text-foreground" onClick={() => scrollToProjectSection("monorepo")}>
             monorepo
           </button>
-          <button className="text-sm font-semibold text-muted-foreground hover:text-foreground" onClick={() => scrollToProjectSection("video")}>
-            video
-          </button>
-          <button className="text-sm font-semibold text-muted-foreground hover:text-foreground" onClick={() => scrollToProjectSection("write")}>
-            write
-          </button>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -1626,92 +1641,6 @@ export default function WebApp() {
             </CardContent>
           </Card>
           </div>
-          <div ref={videoSectionRef}>
-          <Card className="project-container-pane rounded-2xl">
-            <CardHeader className="flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Clapperboard className="h-4 w-4" />
-                <span>Video</span>
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => openCreateFor("movie")} aria-label="create-video-project">
-                  <Plus className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => openLoadFor("movie")} aria-label="load-video-project">
-                  <FolderOpen className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => void openTemplateAssetsModal("video")} aria-label="open-video-template-assets">
-                  <Settings className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => void loadProjects()} aria-label="refresh-video-projects">
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-                {projectItemViewMode === "minimal" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setBulkDeleteMode((prev) => !prev);
-                      setBulkDeleteIds([]);
-                    }}
-                    aria-label="toggle-delete-mode-video"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className={projectItemsContainerClass}>
-                {groupedProjects.video.map((p) => renderProjectItemByMode(p))}
-              </div>
-              {groupedProjects.video.length === 0 && <div className="text-xs text-muted-foreground">no video projects</div>}
-            </CardContent>
-          </Card>
-          </div>
-          <div ref={writeSectionRef}>
-          <Card className="project-container-pane rounded-2xl">
-            <CardHeader className="flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <NotebookPen className="h-4 w-4" />
-                <span>Write</span>
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => openCreateFor("story")} aria-label="create-write-project">
-                  <Plus className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => openLoadFor("story")} aria-label="load-write-project">
-                  <FolderOpen className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => void openTemplateAssetsModal("write")} aria-label="open-write-template-assets">
-                  <Settings className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => void loadProjects()} aria-label="refresh-write-projects">
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-                {projectItemViewMode === "minimal" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setBulkDeleteMode((prev) => !prev);
-                      setBulkDeleteIds([]);
-                    }}
-                    aria-label="toggle-delete-mode-write"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className={projectItemsContainerClass}>
-                {groupedProjects.write.map((p) => renderProjectItemByMode(p))}
-              </div>
-              {groupedProjects.write.length === 0 && <div className="text-xs text-muted-foreground">no write projects</div>}
-            </CardContent>
-          </Card>
-          </div>
           </div>
           {projectItemViewMode === "minimal" && bulkDeleteMode && (
             <div className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2">
@@ -1789,7 +1718,7 @@ export default function WebApp() {
                   aria-label="auto_from_message"
                 >
                   <GraduationCap className="h-4 w-4" />
-                  <span>auto</span>
+                  <span className="hidden lg:inline">auto</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -1805,7 +1734,7 @@ export default function WebApp() {
                   aria-label="form_add_input"
                 >
                   <FilePlus2 className="h-4 w-4" />
-                  <span>add</span>
+                  <span className="hidden lg:inline">add</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -1818,7 +1747,7 @@ export default function WebApp() {
                   aria-label="modify_project_info"
                 >
                   <Pencil className="h-4 w-4" />
-                  <span>modify</span>
+                  <span className="hidden lg:inline">modify</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -1830,7 +1759,7 @@ export default function WebApp() {
                   aria-label="build_parallel"
                 >
                   {isBuildRunning ? <Ban className="h-4 w-4" /> : <Hammer className="h-4 w-4" />}
-                  <span>{isBuildRunning ? "stop" : "build"}</span>
+                  <span className="hidden lg:inline">{isBuildRunning ? "stop" : "build"}</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -1841,7 +1770,7 @@ export default function WebApp() {
                   aria-label="run_project_test"
                 >
                   {detail?.state === "run" ? <Ban className="h-4 w-4" /> : <FlaskConical className="h-4 w-4" />}
-                  <span>{detail?.state === "run" ? "stop" : "test"}</span>
+                  <span className="hidden lg:inline">{detail?.state === "run" ? "stop" : "test"}</span>
                 </Button>
                 </div>
               </div>
@@ -1989,6 +1918,17 @@ export default function WebApp() {
                       {tab.label}
                     </button>
                   ))}
+                  {(draftsViewMode === "input" || draftsViewMode === "drafts") && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void removeDraftPaneFile(draftsViewMode === "input" ? "input" : "drafts")}
+                      aria-label={draftsViewMode === "input" ? "delete-input-md" : "delete-drafts-yaml"}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               <Card className={`rounded-2xl border border-border lg:border-x lg:border-b lg:border-t-0 ${runningImplDraft ? "bg-amber-50" : "bg-white"}`}>
                 <CardContent className="pt-6">

@@ -17,7 +17,7 @@ export const POST: APIRoute = async ({ request }) => {
       description: String(body.description || "").trim(),
       projectPath: String(body.path || "").trim(),
       spec: String(body.spec || "").trim(),
-      projectType: String(body.project_type || "code").trim() as "story" | "movie" | "code" | "mono"
+      projectType: String(body.project_type || "code").trim() as "code" | "mono"
     });
     const detail = loadProjectDetail(project.id);
     return new Response(JSON.stringify({ project, detail }), {
