@@ -1,7 +1,8 @@
-import { Folder, ListChecks, Settings, ShieldAlert, Sparkles } from "lucide-react";
+import { Folder, Settings } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import type { DetailLayoutProps } from "@/layouts/detail/types";
 import { parseSpecTokens } from "@/layouts/detail/types";
+import { DetailTabsPane } from "@/layouts/detail/DetailTabsPane";
 
 const sectionLabelClass =
   "mt-8 mb-3 px-2 text-base font-bold uppercase tracking-wide text-foreground/80";
@@ -9,6 +10,7 @@ const paneShellClass = "rounded-2xl border border-border/70 bg-white";
 
 export function CodeDetailLayout({
   detail,
+  showProjectInfo = true,
   selectedPane,
   setSelectedPane,
   selectedDomain,
@@ -21,11 +23,12 @@ export function CodeDetailLayout({
 }: DetailLayoutProps) {
   return (
     <>
+      {showProjectInfo && (
       <div>
         <div
           data-testid="detail-pane-project"
           onClick={() => setSelectedPane("project_info")}
-          className="relative px-2 py-1 text-sm"
+          className="relative border-b border-border px-2 pb-5 pt-1 text-sm"
         >
           {selectedPane === "project_info" && (
             <button
@@ -69,9 +72,12 @@ export function CodeDetailLayout({
           </div>
         </div>
       </div>
+      )}
       <MemoPane memoDraft={memoDraft} updateMemo={updateMemo} flushMemo={flushMemo} memoSaving={memoSaving} />
-      <ThreePaneLists
-        detail={detail}
+      <DetailTabsPane
+        rules={detail?.rules ?? []}
+        constraints={detail?.constraints ?? []}
+        features={detail?.features ?? []}
         selectedPane={selectedPane}
         setSelectedPane={setSelectedPane}
         openEditor={openEditor}
@@ -82,98 +88,6 @@ export function CodeDetailLayout({
         setSelectedDomain={setSelectedDomain}
       />
     </>
-  );
-}
-
-type ListProps = DetailLayoutProps;
-
-function ThreePaneLists({ detail, selectedPane, setSelectedPane, openEditor }: ListProps) {
-  return (
-    <div>
-      <div className={sectionLabelClass}>detail</div>
-      <section className={`p-2 text-sm ${paneShellClass}`}>
-      <div className="grid gap-0 md:grid-cols-3 md:divide-x md:divide-border">
-      <section
-        data-testid="detail-pane-rules"
-        onClick={() => setSelectedPane("rules")}
-        className={`relative p-4 text-sm ${selectedPane === "rules" ? "bg-muted/15" : ""}`}
-      >
-        {selectedPane === "rules" && (
-          <button
-            data-testid="pane-edit-gear-rules"
-            className="absolute right-2 top-2 rounded p-1 text-muted-foreground hover:bg-muted"
-            onClick={(e) => {
-              e.stopPropagation();
-              openEditor();
-            }}
-            aria-label="edit-pane-rules"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
-        )}
-        <div className="mb-2 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-foreground">
-          <ListChecks className="h-3.5 w-3.5" />
-          <span>rules</span>
-        </div>
-        {(detail?.rules ?? []).map((v) => (
-          <div key={`rule-${v}`}>- {v}</div>
-        ))}
-      </section>
-      <section
-        data-testid="detail-pane-constraints"
-        onClick={() => setSelectedPane("constraints")}
-        className={`relative p-4 text-sm ${selectedPane === "constraints" ? "bg-muted/15" : ""}`}
-      >
-        {selectedPane === "constraints" && (
-          <button
-            data-testid="pane-edit-gear-constraints"
-            className="absolute right-2 top-2 rounded p-1 text-muted-foreground hover:bg-muted"
-            onClick={(e) => {
-              e.stopPropagation();
-              openEditor();
-            }}
-            aria-label="edit-pane-constraints"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
-        )}
-        <div className="mb-2 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-foreground">
-          <ShieldAlert className="h-3.5 w-3.5" />
-          <span>constraints</span>
-        </div>
-        {(detail?.constraints ?? []).map((v) => (
-          <div key={`constraint-${v}`}>- {v}</div>
-        ))}
-      </section>
-      <section
-        data-testid="detail-pane-features"
-        onClick={() => setSelectedPane("features")}
-        className={`relative p-4 text-sm ${selectedPane === "features" ? "bg-muted/15" : ""}`}
-      >
-        {selectedPane === "features" && (
-          <button
-            data-testid="pane-edit-gear-features"
-            className="absolute right-2 top-2 rounded p-1 text-muted-foreground hover:bg-muted"
-            onClick={(e) => {
-              e.stopPropagation();
-              openEditor();
-            }}
-            aria-label="edit-pane-features"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
-        )}
-        <div className="mb-2 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-foreground">
-          <Sparkles className="h-3.5 w-3.5" />
-          <span>features</span>
-        </div>
-        {(detail?.features ?? []).map((v) => (
-          <div key={`feature-${v}`}>- {v}</div>
-        ))}
-      </section>
-      </div>
-      </section>
-    </div>
   );
 }
 

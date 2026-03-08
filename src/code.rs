@@ -548,20 +548,18 @@ fn run_auto_retry_loop(mode: &str, message: Option<&str>, from_file: bool) -> Re
                 Ok(msg) => stage_log.push(msg),
                 Err(e) => stage_log.push(format!("add_code_draft failed: {}", e)),
             }
-        } else {
-            if let Some(msg) = message {
-                match run_code_subcommand_in_new_session("create_input_md", &[]) {
-                    Ok(out) => stage_log.push(out),
-                    Err(e) => stage_log.push(format!("create_input_md failed: {}", e)),
-                }
-                match run_code_subcommand_in_new_session("add_code_plan", &["-m", msg]) {
-                    Ok(out) => stage_log.push(out),
-                    Err(e) => stage_log.push(format!("add_code_plan failed: {}", e)),
-                }
-                match run_code_subcommand_in_new_session("add_code_draft", &["-m", msg]) {
-                    Ok(out) => stage_log.push(out),
-                    Err(e) => stage_log.push(format!("add_code_draft failed: {}", e)),
-                }
+        } else if let Some(msg) = message {
+            match run_code_subcommand_in_new_session("create_input_md", &[]) {
+                Ok(out) => stage_log.push(out),
+                Err(e) => stage_log.push(format!("create_input_md failed: {}", e)),
+            }
+            match run_code_subcommand_in_new_session("add_code_plan", &["-m", msg]) {
+                Ok(out) => stage_log.push(out),
+                Err(e) => stage_log.push(format!("add_code_plan failed: {}", e)),
+            }
+            match run_code_subcommand_in_new_session("add_code_draft", &["-m", msg]) {
+                Ok(out) => stage_log.push(out),
+                Err(e) => stage_log.push(format!("add_code_draft failed: {}", e)),
             }
         }
 
@@ -737,7 +735,6 @@ async fn impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<ImplRunRes
     for item in items {
         let permit_pool = semaphore.clone();
         let prompt_template = prompt_template.clone();
-        let llm_timeout_sec = llm_timeout_sec;
         handles.push(tokio::spawn(async move {
             let _permit = permit_pool
                 .acquire_owned()
@@ -1014,7 +1011,7 @@ fn build_input_md_auto() -> Result<String, String> {
         .map_err(|e| format!("failed to read {}: {}", plan_path.display(), e))?;
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("code")
+        .join("presets").join("code")
         .join("prompts")
         .join("build_input_md_auto.txt");
     let prompt_template = fs::read_to_string(&prompt_path).map_err(|e| {
@@ -1057,7 +1054,7 @@ fn build_input_md_auto() -> Result<String, String> {
     Ok("build_input_md_auto completed: input.md generated".to_string())
 }
 
-pub(crate) fn check_code_draft(auto_yes: bool) -> Result<String, String> {
+pub(crate) fn check_code_draft(_auto_yes: bool) -> Result<String, String> {
     ensure_default_scenario_file()?;
     validate_scenario_file()?;
     let reference_dir = ensure_project_reference_dir()?;
@@ -1073,7 +1070,7 @@ pub(crate) fn check_code_draft(auto_yes: bool) -> Result<String, String> {
         }
     }
     let drafts = load_drafts_doc()?;
-    let mut names: HashSet<String> = drafts.draft.iter().map(|v| v.name.clone()).collect();
+    let names: HashSet<String> = drafts.draft.iter().map(|v| v.name.clone()).collect();
     let mut list: Vec<String> = names.into_iter().collect();
     list.sort();
     let follow = crate::run_check_code_after_draft_changes(&list, "check_code_draft")?;
@@ -1134,7 +1131,7 @@ fn infer_from_message(msg: &str) -> (String, String, String) {
 fn infer_spec_with_llm(message: &str, workspace_hint: Option<&str>) -> Option<String> {
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("code")
+        .join("presets").join("code")
         .join("prompts")
         .join("infer_code_spec.txt");
     let template = fs::read_to_string(&prompt_path).ok().unwrap_or_else(|| {
@@ -1219,7 +1216,7 @@ struct DraftItemInferOut {
 fn infer_draft_fields_with_llm(project_md: &str, name: &str, domain: &str, item_type: &str) -> DraftFieldsInferOut {
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("code")
+        .join("presets").join("code")
         .join("prompts")
         .join("infer_draft_fields.txt");
     let prompt_template = fs::read_to_string(&prompt_path)
@@ -1250,7 +1247,7 @@ fn infer_draft_item_with_llm(
         .unwrap_or_default();
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("code")
+        .join("presets").join("code")
         .join("prompts")
         .join("infer_draft_item.txt");
     let prompt_template = fs::read_to_string(&prompt_path)
@@ -1371,7 +1368,7 @@ fn normalize_constraints_format(raw_constraints: Vec<String>) -> Vec<String> {
 fn infer_project_detail_with_llm(project_md: &str) -> Result<String, String> {
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("code")
+        .join("presets").join("code")
         .join("prompts")
         .join("add_detail_project_code.txt");
     let template = fs::read_to_string(&prompt_path)
@@ -1390,7 +1387,7 @@ fn infer_project_detail_with_llm(project_md: &str) -> Result<String, String> {
 fn infer_domain_block_with_llm(project_md: &str) -> Result<String, String> {
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("code")
+        .join("presets").join("code")
         .join("prompts")
         .join("create_domain.txt");
     let template = fs::read_to_string(&prompt_path)
@@ -1411,7 +1408,7 @@ fn infer_domain_block_with_llm(project_md: &str) -> Result<String, String> {
 fn infer_plan_doc_with_llm(project_md: &str) -> Result<CodePlanDoc, String> {
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("code")
+        .join("presets").join("code")
         .join("prompts")
         .join("infer_plan_yaml.txt");
     let template = fs::read_to_string(&prompt_path)
@@ -2030,6 +2027,14 @@ name : sample
 }
 
 fn sync_plan_doc(doc: &mut CodePlanDoc) {
+    if let Ok(project_md) = fs::read_to_string(crate::PROJECT_MD_PATH) {
+        for domain in extract_domains_from_project_md(&project_md) {
+            if !doc.domains.iter().any(|v| v == &domain) {
+                doc.domains.push(domain);
+            }
+        }
+    }
+    dedup_vec(&mut doc.domains);
     dedup_vec(&mut doc.drafts.complete);
     dedup_vec(&mut doc.drafts.worked);
     dedup_vec(&mut doc.drafts.planned);
@@ -2081,7 +2086,11 @@ fn change_state_plan(
 fn infer_plan_items_with_llm() -> Result<Vec<String>, String> {
     let md = fs::read_to_string(crate::PROJECT_MD_PATH)
         .map_err(|e| format!("failed to read {}: {}", crate::PROJECT_MD_PATH, e))?;
-    let prompt_path = Path::new("assets").join("code").join("prompts").join("add_code_plan.txt");
+    let prompt_path = Path::new("assets")
+        .join("presets")
+        .join("code")
+        .join("prompts")
+        .join("add_code_plan.txt");
     let prompt_template = fs::read_to_string(&prompt_path).unwrap_or_else(|_| {
         "project.md를 읽고 planned 후보를 YAML로 출력해.\nplanned:\n  - item".to_string()
     });
@@ -2307,6 +2316,7 @@ fn extract_plain_list_under_header(markdown: &str, header: &str) -> Vec<String> 
 fn read_code_template(file_name: &str) -> Result<String, String> {
     let path = crate::source_root()
         .join("assets")
+        .join("presets")
         .join("code")
         .join("templates")
         .join(file_name);
@@ -2367,7 +2377,7 @@ fn render_check_report_from_template(
     issues: &[String],
 ) -> Result<String, String> {
     let template = read_code_template("report.md")?;
-    let implementation_lines = vec![
+    let implementation_lines = [
         format!("- targets: {}", targets.join(", ")),
         format!("- check_followup: {}", follow),
         format!("- test: {}", test_result),

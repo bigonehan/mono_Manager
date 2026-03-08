@@ -1,0 +1,7 @@
+init_code_project auto prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/마크다운 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- message를 해석해 name/description/spec을 채운다.
+- `# domains` 아래는 `## <domain_name>` 블록 리스트로 작성하고, 각 도메인 블록은 `### states`, `### action`, `### rules`를 포함한다.
+- `### states`, `### action`, `### rules`의 내용은 모두 `-` 불릿 리스트 형식으로 작성한다.

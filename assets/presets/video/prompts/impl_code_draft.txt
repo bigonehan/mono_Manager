@@ -1,0 +1,8 @@
+impl_code_draft prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/YAML 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- `./.project/drafts.yaml`의 draft 항목과 `./.project/plan.yaml`의 `drafts.planned/worked/complete` 상태 전이를 기준으로 병렬 구현한다.
+- 입력으로 전달된 draft_item의 `scope` 파일을 실제로 수정/생성한다.
+- `scope`가 `app/page.tsx`, `store/calc.ts`, `lib/calc.ts`를 포함하면 React + Zustand 계산기 흐름(UI 입력 -> store action -> 계산 로직 -> UI 반영)을 연결한다.
+- 제약 검사 결과는 마지막 줄에 반드시 `constraints: ok` 또는 `constraints: fail` 중 하나로 출력한다.

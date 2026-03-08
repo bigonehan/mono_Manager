@@ -12,3 +12,8 @@
 - 2026-03-07: UI 스타일 변경 요청 시 `current.png`를 기준으로 project info 시각톤을 맞추고, 모든 pane 컨테이너에 rounded border를 강제 적용한다.
 - 2026-03-07: project 탭은 grid 카드 + 생성 모달 구조를 기본으로 하며, 카드에 type 라벨/상태 태그/폴더 아이콘/큰 제목을 표시하고 `project_type(story|movie|code|mono)` 필드를 기본 `code`로 유지한다.
 - 2026-03-07: web navbar는 좌측에 현재 선택 프로젝트 표시, 우측에 project/detail 탭 버튼을 두고, 카드형 border 대신 하단 underline(border-b)만 사용한다.
+- 2026-03-07: `current.png` 요청은 검색 없이 `/mnt/c/Users/tende/Pictures/Screenshots/current.png`를 먼저 연다. 해당 경로 미존재 시 그 경로 부재만 즉시 보고하고 대체 경로를 요청한다.
+- 2026-03-07: 사용자가 개선사항에 `전부`, `모두`, `전체`를 명시하면 부분 개선 보고를 금지하고, 경고/실패가 남지 않을 때까지 연속으로 수정-검증을 반복한 뒤 최종 결과만 보고한다.
+- 2026-03-08: draft 타입 스키마가 변경되면 web UI의 `edit_{type}_drafts` 모달(`edit_code_drafts`, `edit_mono_drafts`, `edit_video_drafts`, `edit_write_drafts`)도 같은 턴에서 함께 갱신한다.
+- 2026-03-08: templates asset 모달은 좌측 `PROMPTS/TEMPLATES` 폴더 섹션(접기/펼치기) + 우측 파일 내용 패널 구조를 유지하고, 파일 저장 시 `{수정 파일 경로} 수정 반영 후 관련 항목 전체 갱신` LLM 요청을 자동 실행한다.
+- 2026-03-08: detail pane의 add/build 흐름은 `form_add_input` 모달 기반으로 유지한다. add 확인 시 `input.md`를 생성하고 `orc add_code_plan -f` + `orc add_code_draft -f`를 실행해 `plan.yaml`/`drafts.yaml`를 갱신하며, build는 병렬 실행 상태(`build`)와 `current_job`을 project 카드에 반영한다.

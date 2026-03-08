@@ -1,0 +1,8 @@
+create_domain prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/마크다운 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- project.md #info를 근거로 domains를 생성한다.
+- 필요 시 create_domain/build_domain skill을 사용한다.
+- 파일 경로는 반드시 `./.project/project.md`만 사용한다.
+- 위 단일 경로 외 다른 경로를 생성/수정/참조하지 않는다.

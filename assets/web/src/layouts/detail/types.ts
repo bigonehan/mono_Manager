@@ -4,6 +4,7 @@ export type DetailLayoutType = "code" | "write" | "mono" | "movie";
 
 export type DetailLayoutProps = {
   detail: Detail | null;
+  showProjectInfo?: boolean;
   selectedPane: DetailPane;
   setSelectedPane: (pane: DetailPane) => void;
   selectedDomain: string;

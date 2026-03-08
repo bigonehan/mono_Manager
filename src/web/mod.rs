@@ -1,5 +1,5 @@
 use std::net::TcpStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -31,7 +31,7 @@ fn resolve_web_dir() -> Result<PathBuf, String> {
     Ok(cwd.join("assets").join("web"))
 }
 
-fn ensure_web_assets_exist(web_dir: &PathBuf) -> Result<(), String> {
+fn ensure_web_assets_exist(web_dir: &Path) -> Result<(), String> {
     let package_json = web_dir.join("package.json");
     if package_json.exists() {
         return Ok(());

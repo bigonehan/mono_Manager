@@ -5,9 +5,12 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::Mutex;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
@@ -16,21 +19,18 @@ use tower_http::cors::{Any, CorsLayer};
 #[derive(Clone)]
 struct AppState {
     repo_root: PathBuf,
+    runtime_logs: Arc<Mutex<HashMap<String, Vec<String>>>>,
+    running_dev: Arc<Mutex<HashSet<String>>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 enum ProjectType {
     Story,
     Movie,
+    #[default]
     Code,
     Mono,
-}
-
-impl Default for ProjectType {
-    fn default() -> Self {
-        Self::Code
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,13 +57,14 @@ struct ProjectRegistry {
     projects: Vec<ProjectRecord>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum ProjectState {
     Init,
     Basic,
     Work,
     Wait,
+    Run,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +95,8 @@ struct ProjectDetail {
     state: ProjectState,
     #[serde(rename = "hasDraftsYaml")]
     has_drafts_yaml: bool,
+    #[serde(rename = "draftsYamlRaw")]
+    drafts_yaml_raw: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -209,6 +212,16 @@ struct RunRequest {
 }
 
 #[derive(Debug, Deserialize)]
+struct RunDevRequest {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RuntimeLogQuery {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct BrowseQuery {
     #[serde(default)]
     path: String,
@@ -230,9 +243,15 @@ struct MonorepoPackageEntry {
     kind: String,
 }
 
+type SyncMonorepoProjectsResult = (String, Vec<String>, Vec<MonorepoPackageEntry>, usize, usize);
+
 pub(crate) async fn serve_web_api(addr: &str) -> Result<String, String> {
     let repo_root = std::env::current_dir().map_err(|e| format!("failed to get cwd: {}", e))?;
-    let state = Arc::new(AppState { repo_root });
+    let state = Arc::new(AppState {
+        repo_root,
+        runtime_logs: Arc::new(Mutex::new(HashMap::new())),
+        running_dev: Arc::new(Mutex::new(HashSet::new())),
+    });
     let router = Router::new()
         .route("/api/projects", get(get_projects).post(post_projects))
         .route("/api/project-load", post(post_project_load))
@@ -245,6 +264,8 @@ pub(crate) async fn serve_web_api(addr: &str) -> Result<String, String> {
         .route("/api/project-lists", post(post_project_lists))
         .route("/api/project-memo", post(post_project_memo))
         .route("/api/run", post(post_run))
+        .route("/api/run-dev", post(post_run_dev))
+        .route("/api/runtime-log", get(get_runtime_log))
         .route("/api/tui-map", get(get_tui_map))
         .layer(
             CorsLayer::new()
@@ -404,6 +425,26 @@ async fn post_project_memo(
 async fn post_run(State(state): State<Arc<AppState>>, Json(body): Json<RunRequest>) -> impl IntoResponse {
     match run_orc_action(&state.repo_root, &body.id, &body.action, &body.payload).await {
         Ok(output) => ok_json(json!({ "output": output })),
+        Err(e) => err_json(e),
+    }
+}
+
+async fn post_run_dev(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<RunDevRequest>,
+) -> impl IntoResponse {
+    match start_bun_dev(state, &body.id).await {
+        Ok(output) => ok_json(json!({ "output": output })),
+        Err(e) => err_json(e),
+    }
+}
+
+async fn get_runtime_log(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<RuntimeLogQuery>,
+) -> impl IntoResponse {
+    match read_runtime_logs(&state, &query.id) {
+        Ok(logs) => ok_json(json!({ "logs": logs })),
         Err(e) => err_json(e),
     }
 }
@@ -671,9 +712,7 @@ fn monorepo_domain_details(root: &Path) -> Vec<DomainDetail> {
         .collect()
 }
 
-fn sync_monorepo_projects(
-    repo_root: &Path,
-) -> Result<(String, Vec<String>, Vec<MonorepoPackageEntry>, usize, usize), String> {
+fn sync_monorepo_projects(repo_root: &Path) -> Result<SyncMonorepoProjectsResult, String> {
     let root = monorepo_root_path();
     let domains = collect_monorepo_domains(&root);
     let package_rows = collect_monorepo_packages(&root);
@@ -752,11 +791,6 @@ fn ensure_project_files(project: &ProjectRecord) -> Result<(), String> {
             project.name, project.description
         );
         fs::write(&pmd, raw).map_err(|e| format!("failed to write {}: {}", pmd.display(), e))?;
-    }
-    let dlist = drafts_list_path(&project_path);
-    if !dlist.exists() {
-        let raw = serde_yaml::to_string(&DraftsListDoc::default()).map_err(|e| format!("yaml encode error: {}", e))?;
-        fs::write(&dlist, raw).map_err(|e| format!("failed to write {}: {}", dlist.display(), e))?;
     }
     let memo = memo_path(&project_path);
     if !memo.exists() {
@@ -982,6 +1016,7 @@ fn load_project_detail(repo_root: &Path, id: &str) -> Result<ProjectDetail, Stri
                 .unwrap_or_else(|| key.clone())
         })
         .collect::<Vec<_>>();
+    let drafts_yaml_raw = load_drafts_yaml_raw(&project_path);
     Ok(ProjectDetail {
         id: project.id.clone(),
         name: if parsed.name.is_empty() {
@@ -1008,6 +1043,7 @@ fn load_project_detail(repo_root: &Path, id: &str) -> Result<ProjectDetail, Stri
         generated: collect_generated(&project_path),
         state: resolve_project_state(&project),
         has_drafts_yaml: drafts_yaml_path(&project_path).exists(),
+        drafts_yaml_raw,
     })
 }
 
@@ -1076,9 +1112,6 @@ fn save_project_lists(
             domains: current.domains.clone(),
         },
     )?;
-    let mut drafts = load_drafts_list(&project_path)?;
-    drafts.features = features;
-    save_drafts_list(&project_path, &drafts)?;
     load_project_detail(repo_root, id)
 }
 
@@ -1131,7 +1164,51 @@ fn load_drafts_doc(project_path: &Path) -> DraftsDoc {
         .unwrap_or_default()
 }
 
+fn load_drafts_yaml_raw(project_path: &Path) -> String {
+    let path = drafts_yaml_path(project_path);
+    if !path.exists() {
+        return String::new();
+    }
+    fs::read_to_string(&path).unwrap_or_default()
+}
+
+fn push_runtime_log(state: &Arc<AppState>, id: &str, line: String) {
+    if let Ok(mut map) = state.runtime_logs.lock() {
+        let entry = map.entry(id.to_string()).or_default();
+        entry.push(line);
+        if entry.len() > 500 {
+            let overflow = entry.len().saturating_sub(500);
+            if overflow > 0 {
+                entry.drain(0..overflow);
+            }
+        }
+    }
+}
+
+fn read_runtime_logs(state: &Arc<AppState>, id: &str) -> Result<Vec<String>, String> {
+    let map = state
+        .runtime_logs
+        .lock()
+        .map_err(|_| "failed to lock runtime logs".to_string())?;
+    Ok(map.get(id).cloned().unwrap_or_default().into_iter().rev().collect())
+}
+
+fn set_project_state(repo_root: &Path, id: &str, state: ProjectState) -> Result<(), String> {
+    let mut registry = load_registry(repo_root)?;
+    let project = registry
+        .projects
+        .iter_mut()
+        .find(|p| p.id == id)
+        .ok_or_else(|| format!("project not found: {}", id))?;
+    project.state = Some(state);
+    project.updated_at = now_unix();
+    save_registry(repo_root, &registry)
+}
+
 fn resolve_project_state(project: &ProjectRecord) -> ProjectState {
+    if project.state == Some(ProjectState::Run) {
+        return ProjectState::Run;
+    }
     let project_path = Path::new(&project.path);
     if !project_md_path(project_path).exists() {
         return ProjectState::Init;
@@ -1147,6 +1224,67 @@ fn resolve_project_state(project: &ProjectRecord) -> ProjectState {
         return ProjectState::Init;
     }
     ProjectState::Basic
+}
+
+async fn start_bun_dev(state: Arc<AppState>, id: &str) -> Result<String, String> {
+    let detail = load_project_detail(&state.repo_root, id)?;
+    {
+        let mut running = state
+            .running_dev
+            .lock()
+            .map_err(|_| "failed to lock running set".to_string())?;
+        if running.contains(id) {
+            return Ok(format!("bun run dev already running: {}", detail.name));
+        }
+        running.insert(id.to_string());
+    }
+    set_project_state(&state.repo_root, id, ProjectState::Run)?;
+    push_runtime_log(&state, id, format!("[run-dev] start: {} ({})", detail.name, detail.path));
+
+    let mut cmd = Command::new("bun");
+    cmd.arg("run")
+        .arg("dev")
+        .current_dir(&detail.path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to spawn bun run dev: {}", e))?;
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let id_stdout = id.to_string();
+    let id_stderr = id.to_string();
+    let state_stdout = state.clone();
+    let state_stderr = state.clone();
+    if let Some(out) = stdout {
+        std::thread::spawn(move || {
+            let reader = BufReader::new(out);
+            for line in reader.lines().map_while(Result::ok) {
+                push_runtime_log(&state_stdout, &id_stdout, line);
+            }
+        });
+    }
+    if let Some(err) = stderr {
+        std::thread::spawn(move || {
+            let reader = BufReader::new(err);
+            for line in reader.lines().map_while(Result::ok) {
+                push_runtime_log(&state_stderr, &id_stderr, line);
+            }
+        });
+    }
+    let state_wait = state.clone();
+    let id_wait = id.to_string();
+    std::thread::spawn(move || {
+        let line = match child.wait() {
+            Ok(status) => format!("[run-dev] exited: {}", status),
+            Err(e) => format!("[run-dev] wait failed: {}", e),
+        };
+        push_runtime_log(&state_wait, &id_wait, line);
+        if let Ok(mut running) = state_wait.running_dev.lock() {
+            running.remove(&id_wait);
+        }
+    });
+    Ok(format!("bun run dev started: {}", detail.name))
 }
 
 fn is_bootstrap_completed(project_path: &Path) -> bool {
@@ -1236,7 +1374,7 @@ fn parse_project_md(raw: &str) -> ParsedProjectMd {
                 let mut parts = heading.splitn(2, ['|', ':']);
                 let name = parts.next().unwrap_or("").trim();
                 let description = parts.next().unwrap_or("").trim();
-                if !name.is_empty() && name.to_ascii_lowercase() != "name" {
+                if !name.is_empty() && !name.eq_ignore_ascii_case("name") {
                     out.domains.push(DomainDetail {
                         name: name.to_string(),
                         description: description.to_string(),

@@ -200,3 +200,65 @@
 ### 검증
 - `npm run test:e2e`
 - `cargo test -q`
+
+## 2026-03-08 타입별 draft modal + 템플릿 뷰어
+### 문제
+- add draft 모달이 단일 payload 입력만 제공하고 프로젝트 타입별 스키마를 반영하지 못한다.
+- `assets/presets/code` 외 타입별 prompt/template 자산이 없어 mono/video/write 확장이 어렵다.
+- project 페이지에서 현재 타입이 사용하는 prompt/yaml/md 템플릿을 바로 확인할 수 없다.
+
+### 해결책
+- `assets/presets/mono`, `assets/presets/write`, `assets/presets/video`를 생성하고 `assets/presets/code`의 `prompts`, `templates`를 복사한다.
+- 각 타입 템플릿에 `templates/draft.yaml` 파일을 두고(초기에는 code 기반), 서버에서 타입별 draft form 스키마를 읽어 반환하는 API를 추가한다.
+- add draft 클릭 시 `edit_{type}_drafts` 모달을 열고, API 기반 필드 폼으로 payload를 생성해 실행한다.
+- project pane 헤더의 refresh 옆에 gear 버튼을 추가하고, 클릭 시 현재 타입의 prompt/template 파일 목록+내용을 보여주는 모달을 제공한다.
+
+### 검증
+- `npm --prefix assets/web run test:e2e`
+- `rg` 호출 경로 점검: add draft 버튼 -> type modal -> `/api/draft-form` -> payload -> `/api/run`
+- `rg` 자산 점검: `assets/{code,mono,write,video}/{prompts,templates}` 존재
+
+## 2026-03-08 템플릿 자산 모달 고도화(폴드/편집/LLM 갱신)
+### 문제
+- templates asset 모달이 파일 리스트 접기/펼치기 동작이 없고, 선택 시 내용 패널 스크롤 초기화가 되지 않는다.
+- 우측 패널에서 파일을 수정할 수 없고, 수정 후 연쇄 갱신(LLM 요청) 경로가 없다.
+
+### 해결책
+- 좌측 `PROMPTS`, `TEMPLATES` 섹션 헤더에 폴더 아이콘 + 접기/펼치기 토글을 추가한다.
+- 항목 선택 시 우측 패널 스크롤을 top으로 초기화한다.
+- 우측 파일명 오른쪽에 연필 아이콘을 추가해 편집 모드 전환, 저장 시 API로 파일 반영한다.
+- 저장 API에서 파일 쓰기 후 LLM(`codex exec`)에 `{현재 수정한 파일 위치}을 수정했으니 소스코드를 보고 관련된 모든 항목을 갱신해달라` 메시지를 보내 후속 갱신을 수행한다.
+
+### 검증
+- `npm --prefix assets/web run test:e2e`
+- `rg` 호출 경로 점검: modal select -> scrollTop reset -> edit save -> `/api/profile-asset-update` -> LLM 호출
+
+## 2026-03-08 run_dev_server 함수 분리
+### 문제
+- run dev 실행/관리 로직이 `runProjectDev` 내부에 집중되어 유지보수성이 떨어진다.
+
+### 해결책
+- `run_dev_server` 함수를 추가해 실행 명령 결정/프로세스 spawn/로그 수집/URL 감지/종료 이벤트 처리 책임을 분리한다.
+- `runProjectDev`는 상태 토글 및 포트 할당 후 `run_dev_server` 호출만 수행한다.
+
+### 검증
+- `npm --prefix assets/web run test:e2e`
+- `rg -n "run_dev_server|runProjectDev" assets/web/src/server/orc.ts`로 호출 경로 확인
+
+## 2026-03-08 form_add_input + build 병렬 상태 연동
+### 문제
+- add 버튼이 단일 payload 입력만 처리해 `title/rule/step` 다중 입력 스택과 `input.md` 생성 흐름을 지원하지 않는다.
+- drafts pane에서 `input.md` 항목 리스트와 `drafts.yaml` 상세를 분리해 볼 수 없다.
+- build 버튼이 병렬 실행 경로와 상태(`build`), `current_job` 실시간 표시, 완료 알람을 제공하지 않는다.
+
+### 해결책
+- detail add 버튼을 `form_add_input` 모달로 변경하고 `title/rule/step` 입력을 카드 스택으로 누적한다.
+- 확인 시 프로젝트 경로에 `input.md`를 `# title` + `- rule > step` 형식으로 저장하고 서버에서 `orc add_code_plan -f`, `orc add_code_draft -f`를 실행한다.
+- drafts pane을 2열로 구성해 좌측은 `input.md`의 `#` 항목 리스트, 우측은 선택 항목에 대응하는 `drafts.yaml` draft_item 상세를 표시한다.
+- build 버튼은 서버의 병렬 실행 함수(`run_parallel`)를 비동기로 호출하고 project 상태를 `build`로 표기(노란 배지), `current_job`을 실시간으로 프로젝트 카드 description 아래에 노출한다.
+- build 완료 시 우하단 토스트 알람을 표시한다.
+
+### 검증
+- `npm --prefix assets/web run test:e2e`
+- `rg` 경로 점검: add -> form_add_input -> input.md 저장 -> add_code_plan/add_code_draft -> drafts pane 반영
+- `rg` 경로 점검: build -> run_parallel -> state=build/current_job -> 완료 toast
