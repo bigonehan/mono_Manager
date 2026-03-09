@@ -682,16 +682,12 @@ fn resolve_draft_template_path() -> Result<PathBuf, String> {
             .join("presets").join("code")
             .join("templates")
             .join("drafts.yaml"),
-        manifest_root.join("assets").join("templates").join("drafts.yaml"),
         root.join("assets").join("presets").join("code").join("templates").join("drafts.yaml"),
         PathBuf::from("assets")
+            .join("presets")
             .join("code")
             .join("templates")
             .join("drafts.yaml"),
-        root.join("assets").join("templates").join("drafts.yaml"),
-        PathBuf::from("assets").join("templates").join("drafts.yaml"),
-        root.join("src").join("assets").join("templates").join("drafts.yaml"),
-        PathBuf::from("src").join("assets").join("templates").join("drafts.yaml"),
     ];
     for candidate in candidates {
         if candidate.exists() {

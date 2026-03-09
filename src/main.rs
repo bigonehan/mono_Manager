@@ -232,6 +232,41 @@ pub(crate) fn default_model_bin() -> String {
         .unwrap_or_else(|| "codex".to_string())
 }
 
+pub(crate) fn run_rc_forward(tail: &[String]) -> Result<String, String> {
+    let mut args = Vec::with_capacity(tail.len() + 1);
+    args.push("clit".to_string());
+    args.extend(tail.iter().cloned());
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("crates")
+        .join("rc")
+        .join("Cargo.toml");
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--manifest-path",
+            &manifest.display().to_string(),
+            "--",
+        ])
+        .args(&args)
+        .output()
+        .map_err(|e| format!("failed to execute integrated rc: {}", e))?;
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if stdout.is_empty() {
+            Ok("rc command completed".to_string())
+        } else {
+            Ok(stdout)
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            Err(format!("rc command failed (exit={:?})", output.status.code()))
+        } else {
+            Err(stderr)
+        }
+    }
+}
+
 fn read_one_line(prompt: &str) -> Result<String, String> {
     print!("{}", prompt);
     io::stdout()
@@ -1473,8 +1508,6 @@ fn resolve_draft_yaml_template_path() -> Option<PathBuf> {
     let candidates = [
         root.join("assets").join("presets").join("code").join("templates").join("drafts.yaml"),
         PathBuf::from("assets").join("presets").join("code").join("templates").join("drafts.yaml"),
-        root.join("assets").join("templates").join("drafts.yaml"),
-        PathBuf::from("assets").join("templates").join("drafts.yaml"),
     ];
     candidates.into_iter().find(|p| p.exists())
 }
@@ -2917,13 +2950,10 @@ fn resolve_project_template_path() -> Result<PathBuf, String> {
     let candidates = [
         root.join("assets").join("presets").join("code").join("templates").join("project.md"),
         PathBuf::from("assets")
+            .join("presets")
             .join("code")
             .join("templates")
             .join("project.md"),
-        root.join("assets").join("templates").join("project.md"),
-        PathBuf::from("assets").join("templates").join("project.md"),
-        root.join("src").join("assets").join("templates").join("project.md"),
-        PathBuf::from("src").join("assets").join("templates").join("project.md"),
     ];
     for candidate in candidates {
         if candidate.exists() {

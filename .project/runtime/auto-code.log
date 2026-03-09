@@ -24,3 +24,8 @@
 [1772650937] session | new session start: add_code_plan -f
 [1772650937] session | new session completed: add_code_plan
 [1772650937] session | new session start: add_code_draft -f
+[1773034253] project-create | non-empty workspace: load project.md
+[1773043875] auto-file | auto -f flow start
+[1773043875] session | new session start: init_code_project 
+[1773047806] auto-file | auto -f flow start
+[1773047807] session | worker pane start: init_code_project 

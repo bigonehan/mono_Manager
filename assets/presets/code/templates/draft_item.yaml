@@ -11,3 +11,4 @@
   tasks: [] # 구현해야 할 실제 작업 항목
   constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷)
   check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 

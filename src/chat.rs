@@ -111,6 +111,14 @@ fn quote_sh(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
+fn normalize_exec_prompt(prompt: &str) -> String {
+    if prompt.contains("쳐아서") {
+        prompt.replace("쳐아서", "찾아서")
+    } else {
+        prompt.to_string()
+    }
+}
+
 fn run_llm_via_tmux(
     dir: &Path,
     llm_bin: &str,
@@ -120,6 +128,7 @@ fn run_llm_via_tmux(
     add_dangerous_flag: bool,
     timeout_label: &str,
 ) -> Result<LlmExecResult, String> {
+    let prompt = normalize_exec_prompt(prompt);
     let runtime = dir.join(".project").join("runtime");
     fs::create_dir_all(&runtime)
         .map_err(|e| format!("failed to create runtime dir {}: {}", runtime.display(), e))?;
@@ -130,7 +139,7 @@ fn run_llm_via_tmux(
     let stdout_path = runtime.join(format!("tmux-llm-{}.stdout.log", token));
     let stderr_path = runtime.join(format!("tmux-llm-{}.stderr.log", token));
     let code_path = runtime.join(format!("tmux-llm-{}.code", token));
-    fs::write(&prompt_path, prompt)
+    fs::write(&prompt_path, prompt.as_str())
         .map_err(|e| format!("failed to write {}: {}", prompt_path.display(), e))?;
 
     let mut flags = Vec::new();
@@ -168,17 +177,18 @@ printf \"%s\" \"$status\" > {code}\n",
     let script_cmd = format!("bash {}", quote_sh(&script_path.display().to_string()));
     let pane_id = crate::tmux::split_window_run(&script_cmd)
         .map_err(|e| format!("{} (tmux split/run failed: {})", timeout_label, e))?;
-    let _ = crate::tmux::rename_pane(&pane_id, "llm-debug");
+    let worker = crate::tmux::register_worker_pane(&pane_id);
+    let _ = crate::tmux::rename_pane(&worker.pane_id, &format!("llm-{}", worker.short_id()));
 
     let started = Instant::now();
     while !code_path.exists() {
         if started.elapsed() >= Duration::from_secs(timeout_sec) {
-            let _ = crate::tmux::kill_pane(&pane_id);
+            let _ = crate::tmux::kill_worker_pane(&worker);
             return Err(format!("{} timed out after {}s", timeout_label, timeout_sec));
         }
         thread::sleep(Duration::from_millis(200));
     }
-    let _ = crate::tmux::kill_pane(&pane_id);
+    let _ = crate::tmux::kill_worker_pane(&worker);
 
     let code_raw = fs::read_to_string(&code_path)
         .map_err(|e| format!("failed to read {}: {}", code_path.display(), e))?;
@@ -197,7 +207,8 @@ pub(crate) fn run_codex_exec_capture_with_timeout(
     timeout_sec: u64,
 ) -> Result<String, String> {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    append_chat_log(&cwd, "LLM_PROMPT", prompt);
+    let prompt = normalize_exec_prompt(prompt);
+    append_chat_log(&cwd, "LLM_PROMPT", &prompt);
     let model_bin = crate::default_model_bin();
     let dangerous = crate::model_supports_dangerous_flag(&model_bin);
     let total_attempts = llm_retry_count();
@@ -206,8 +217,8 @@ pub(crate) fn run_codex_exec_capture_with_timeout(
         if should_use_tmux_for_llm() {
             match run_llm_via_tmux(
                 &cwd,
-                &model_bin,
-                prompt,
+                    &model_bin,
+                    &prompt,
                 timeout_sec,
                 false,
                 dangerous,
@@ -230,7 +241,7 @@ pub(crate) fn run_codex_exec_capture_with_timeout(
             if dangerous {
                 command.arg(CODEX_DANGEROUS_FLAG);
             }
-            command.arg(prompt);
+            command.arg(&prompt);
             match run_command_with_timeout(
                 command,
                 timeout_sec,
@@ -272,7 +283,8 @@ pub(crate) fn run_codex_exec_capture_in_dir_with_timeout(
     prompt: &str,
     timeout_sec: u64,
 ) -> Result<String, String> {
-    append_chat_log(dir, "LLM_PROMPT", prompt);
+    let prompt = normalize_exec_prompt(prompt);
+    append_chat_log(dir, "LLM_PROMPT", &prompt);
     let model_bin = crate::default_model_bin();
     let dangerous = crate::model_supports_dangerous_flag(&model_bin);
     let total_attempts = llm_retry_count();
@@ -282,7 +294,7 @@ pub(crate) fn run_codex_exec_capture_in_dir_with_timeout(
             match run_llm_via_tmux(
                 dir,
                 &model_bin,
-                prompt,
+                &prompt,
                 timeout_sec,
                 false,
                 dangerous,
@@ -305,7 +317,7 @@ pub(crate) fn run_codex_exec_capture_in_dir_with_timeout(
             if dangerous {
                 command.arg(CODEX_DANGEROUS_FLAG);
             }
-            command.arg(prompt);
+            command.arg(&prompt);
             match run_command_with_timeout(
                 command,
                 timeout_sec,
@@ -336,7 +348,8 @@ pub(crate) fn run_codex_exec_capture_in_dir_with_timeout(
 
 pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, String> {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    append_chat_log(&cwd, "LLM_PROMPT", prompt);
+    let prompt = normalize_exec_prompt(prompt);
+    append_chat_log(&cwd, "LLM_PROMPT", &prompt);
     let timeout_sec = codex_exec_timeout_sec().max(30);
     let use_dangerous = crate::model_supports_dangerous_flag(llm);
     let total_attempts = llm_retry_count();
@@ -346,7 +359,7 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
             match run_llm_via_tmux(
                 &cwd,
                 llm,
-                prompt,
+                &prompt,
                 timeout_sec,
                 true,
                 use_dangerous,
@@ -360,7 +373,7 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
                     match run_llm_via_tmux(
                         &cwd,
                         llm,
-                        prompt,
+                        &prompt,
                         timeout_sec,
                         false,
                         use_dangerous,
@@ -391,7 +404,7 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
             if use_dangerous {
                 command.arg(CODEX_DANGEROUS_FLAG);
             }
-            command.arg(prompt);
+            command.arg(&prompt);
             match run_command_with_timeout(
                 command,
                 timeout_sec,
@@ -410,7 +423,7 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
                         if use_dangerous {
                             retry_command.arg(CODEX_DANGEROUS_FLAG);
                         }
-                        retry_command.arg(prompt);
+                        retry_command.arg(&prompt);
                         match run_command_with_timeout(
                             retry_command,
                             timeout_sec,

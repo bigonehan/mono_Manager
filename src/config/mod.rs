@@ -21,6 +21,7 @@ pub struct AiConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     pub profile: Option<String>,
+    pub shell: Option<String>,
     pub max_parallel: Option<usize>,
     pub timeout_sec: Option<u64>,
     pub max_read_time: Option<u64>,
@@ -90,6 +91,14 @@ impl AppConfig {
             .map(str::trim)
             .filter(|v| !v.is_empty())
             .unwrap_or("code")
+    }
+
+    pub fn shell_name(&self) -> &str {
+        self.shell
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .unwrap_or("fish")
     }
 
 }

@@ -26,6 +26,7 @@ pub fn print_usage(program: &str) {
     println!("  {program} [profile] <command> [args...]");
     let mut commands = [
         "help | -h | --help",
+        "clit <args...>  (forward to rc CLI)",
         "init_code_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-a <message>]",
         "init_code_plan [-a]",
         "add_code_plan [-f] [-m <message>] [-a]",
@@ -42,7 +43,7 @@ pub fn print_usage(program: &str) {
         "serve-web-api [--addr <host:port>]",
         "auto <message> | auto -f",
         "auto_add_function <message>",
-        "send-tmux <pane_id> <msg...> [enter|raw]",
+        "send-tmux <pane_id> <msg...> [enter|enter-exit|raw|display]",
         "chat -n <name> [--background] [-m <message>] [-i <receiver_id>] [--data <data>]",
         "chat-wait -n <name> -a <true|false> [-c <count>]",
     ];
@@ -176,11 +177,14 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         }
         "send-tmux" => {
             if tail.len() < 2 {
-                return Err("send-tmux requires <pane_id> <msg...> [enter|raw]".to_string());
+                return Err(
+                    "send-tmux requires <pane_id> <msg...> [enter|enter-exit|raw|display]"
+                        .to_string(),
+                );
             }
             let pane_id = &tail[0];
             let (msg_slice, option) = match tail.last().map(String::as_str) {
-                Some("enter" | "raw") if tail.len() >= 3 => {
+                Some("enter" | "enter-exit" | "raw" | "display") if tail.len() >= 3 => {
                     (&tail[1..tail.len() - 1], tail[tail.len() - 1].as_str())
                 }
                 _ => (&tail[1..], "enter"),
@@ -205,6 +209,12 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                 return Err("chat-wait requires -n <name> -a <true|false> (optional: -c <count>)".to_string());
             }
             super::chat_wait_command(tail).await
+        }
+        "clit" => {
+            if tail.is_empty() {
+                return Err("clit requires rc arguments (example: clit test -p <path> -m <mode>)".to_string());
+            }
+            super::run_rc_forward(tail)
         }
         _ => Err(format!("unknown command: {}", command)),
     }

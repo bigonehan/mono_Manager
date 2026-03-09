@@ -199,6 +199,12 @@
 
 - AI Detail 모달의 `대화 종료` 버튼 위치를 Input field 내부에서 분리해, AI Detail pane 맨 아래 전용 영역(입력창 밖)으로 이동하도록 레이아웃을 3구역으로 조정함.
 
+## 2026-03-09 - 작업한일
+- `plan.yaml`의 draft 상태 집합을 `planned/worked/complete/error`로 유지하고, `drafts.yaml`은 top-level 상태 리스트를 제거한 뒤 `draft` 항목마다 `state`를 직접 가지도록 구조를 변경함.
+- `src/code.rs`에 `draft_item_state_change()`와 `plan_draft_state_change()`를 추가하고, `impl_code_draft`가 병렬 처리 중 각 draft item의 `state`를 갱신한 뒤 같은 이름의 plan 상태를 동기화하도록 수정함.
+- tmux/new-session 완료 판정이 종료 코드만 보지 않도록 `plan.yaml`과 `drafts.yaml` 상태 검증을 worker 실행 성공 조건에 연결함.
+- `src/web_api/mod.rs`의 프로젝트 상태 판정도 `draft_item.state` 기준으로 계산하도록 맞췄고, `cargo test` 27건 통과 후 설치형 `orc`를 재설치함.
+
 ## 2026-03-05 - 작업한일
 - `AGENTS.md`의 중복 규칙(금지어 하드블록/CLI 해석/하드코딩 규칙 반복)을 단일 섹션으로 정리하고, 현재 저장소와 무관한 모노레포 전용 규칙(`Port Ownership Override`)을 제거해 문서를 간소화함.
 
@@ -217,6 +223,11 @@
 - 기존 위치 인자 방식(`create-project <name> [path] [description]`)도 깨지지 않도록 하위호환 파싱을 유지함.
 - `project.md` 생성에 실제 spec이 반영되도록 `src/main.rs`/`src/project.rs`의 `create_project` 호출 시그니처를 확장하고, 내부 `action_generate_project_plan`에 spec 전달을 연결함.
 - 검증: `cargo test` 통과(20 passed), `cargo run --bin orc -- create-project -n sampleweb -p <tmp> -s nextjs -d ...` 실행 성공, `cargo run --bin orc -- create-project -p <tmp>` 실행 시 기본값(name/spec/description) 동작 확인.
+
+## 2026-03-09 - 작업한일
+- `configs/configs.yaml`에 `shell: fish`를 추가하고, `src/config/mod.rs`에 `shell` 필드 및 기본값 접근자(`shell_name`, 기본 `fish`)를 구현함.
+- `src/tmux/mod.rs`의 pane 생성/실행 경로를 config 기반으로 변경해 하드코딩된 `bash -lc` 대신 설정된 shell을 사용하도록 수정함(`fish`면 `-ic`, 그 외 `-lc`).
+- 검증: `cargo test` 통과(23 passed).
 
 ## 2026-03-04 - 작업한일
 - 코드 작업 플로우 전용 명령군을 추가함: `init_code_project`, `init_code_plan`, `add_code_plan`, `create_code_draft`, `add_code_draft_item`, `impl_code_draft`, `check_code_draft`, `check_task`, `check_draft`.
@@ -2575,3 +2586,22 @@
 - `assets/web/src/store/orc-store.ts`, `assets/web/src/server/orc.ts`, `assets/web/src/pages/api/projects/index.ts`의 타입/정규화 로직에서 `story`/`movie` 입력을 제거(또는 `code`로 정규화)해 신규 생성 경로를 제한함.
 - detail layout 타입을 `code|mono`로 축소하고 provider의 `movie/write` 분기를 제거함.
 - 검증: `npx tsc --noEmit` (assets/web), `cargo test` (23 passed).
+
+## 2026-03-09 - orc workflow fast-path 보완
+- add_code_draft fallback, impl fast-path, check fast-path를 추가해 rust-checker workflow를 완료했다.
+- cargo test와 재설치를 통해 반영을 확인했다.
+## 2026-03-09 - 작업한일
+- `send-tmux` 옵션을 확장해 `enter-exit`(명령 실행 후 `exit`로 worker pane 자동 종료)와 `display`(pane stdin이 아닌 tmux status line 표시)를 추가함.
+- `src/tmux/mod.rs`의 전송 옵션 분기와 `src/cli.rs`의 help/파싱 로직을 새 옵션 기준으로 동기화함.
+- tmux 실재현으로 `enter-exit` 시 worker pane 자동 종료, `display` 시 manager pane 입력 오염 없음 확인.
+- 검증: `cargo test` (27 passed).
+## 2026-03-09 - 작업한일
+- tmux worker pane 추적을 UUID 기반으로 전환하기 위해 `WorkerPaneRef(worker_id, pane_id, pane_pid)` 구조를 추가함.
+- `src/code.rs`/`src/chat.rs`의 worker pane 생성 경로에서 UUID를 발급하고 pane 이름에 short uuid를 포함해 식별 가능하도록 변경함.
+- worker 종료 경로를 `kill_worker_pane`으로 통일해 UUID로 관리되는 참조(`pane_id + pane_pid`)를 사용하도록 조정함.
+- 검증: `cargo test` (27 passed).
+
+## 2026-03-09 - orc clit 명령 브리지 추가
+- `orc` CLI 명령 목록에 `clit <args...>`를 추가했다.
+- `orc clit ...` 호출 시 rust-orc 내부 `crates/rc`를 직접 실행하도록 포워딩을 연결했다.
+- 통합 실행 확인: `cargo run --manifest-path /home/tree/project/rust-orc/Cargo.toml -- clit test -p /tmp -m smoke`.

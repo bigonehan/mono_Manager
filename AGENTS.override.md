@@ -17,3 +17,4 @@
 - 2026-03-08: draft 타입 스키마가 변경되면 web UI의 `edit_{type}_drafts` 모달(`edit_code_drafts`, `edit_mono_drafts`, `edit_video_drafts`, `edit_write_drafts`)도 같은 턴에서 함께 갱신한다.
 - 2026-03-08: templates asset 모달은 좌측 `PROMPTS/TEMPLATES` 폴더 섹션(접기/펼치기) + 우측 파일 내용 패널 구조를 유지하고, 파일 저장 시 `{수정 파일 경로} 수정 반영 후 관련 항목 전체 갱신` LLM 요청을 자동 실행한다.
 - 2026-03-08: detail pane의 add/build 흐름은 `form_add_input` 모달 기반으로 유지한다. add 확인 시 `input.md`를 생성하고 `orc add_code_plan -f` + `orc add_code_draft -f`를 실행해 `plan.yaml`/`drafts.yaml`를 갱신하며, build는 병렬 실행 상태(`build`)와 `current_job`을 project 카드에 반영한다.
+- 2026-03-09: tmux pane 명령 전송은 기본 셸을 `fish -ic`로 고정하고 `bash -lc`/`bash -ic` 래퍼 생성을 금지한다(사용자가 bash를 명시한 경우만 예외).

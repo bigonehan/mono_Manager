@@ -126,11 +126,35 @@ struct PlannedItem {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct DraftsDoc {
     #[serde(default)]
-    planned: Vec<String>,
+    draft: Vec<DraftStateItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct DraftStateItem {
     #[serde(default)]
-    worked: Vec<String>,
-    #[serde(default)]
-    complete: Vec<String>,
+    name: String,
+    #[serde(default = "default_draft_state")]
+    state: String,
+}
+
+fn default_draft_state() -> String {
+    "planned".to_string()
+}
+
+fn draft_state_counts(doc: &DraftsDoc) -> (usize, usize, usize, usize) {
+    let mut planned = 0usize;
+    let mut worked = 0usize;
+    let mut complete = 0usize;
+    let mut error = 0usize;
+    for item in &doc.draft {
+        match item.state.trim().to_ascii_lowercase().as_str() {
+            "worked" => worked += 1,
+            "complete" => complete += 1,
+            "error" => error += 1,
+            _ => planned += 1,
+        }
+    }
+    (planned, worked, complete, error)
 }
 
 #[derive(Debug, Clone)]
@@ -1214,10 +1238,11 @@ fn resolve_project_state(project: &ProjectRecord) -> ProjectState {
         return ProjectState::Init;
     }
     let drafts = load_drafts_doc(project_path);
-    if !drafts.planned.is_empty() || !drafts.worked.is_empty() {
+    let (planned, worked, complete, _error) = draft_state_counts(&drafts);
+    if planned > 0 || worked > 0 {
         return ProjectState::Work;
     }
-    if !drafts.complete.is_empty() && drafts.planned.is_empty() && drafts.worked.is_empty() {
+    if complete > 0 && planned == 0 && worked == 0 {
         return ProjectState::Wait;
     }
     if !is_bootstrap_completed(project_path) {
