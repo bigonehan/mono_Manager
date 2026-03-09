@@ -1,7 +1,7 @@
 # info
-name : rust-orc
-description : hello world 출력
-spec : next js
+name : project_type_add_symbol_create_symbol_project_md
+description : project type add 상세페이지에 symbol 버튼(전구 아이콘) 추가, create_symbol 프롬프트 기반 상징 리스트 생성/선택, Project.md 반영
+spec : astro, react, typescript, zustand
 path : /home/tree/project/rust-orc
 
 # features
@@ -30,6 +30,7 @@ path : /home/tree/project/rust-orc
 - cli_enter
 - cli_chat
 - cli_chat_wait
+- cli_clit
 # rules
 - 프로젝트 내부의 공통 규칙
 

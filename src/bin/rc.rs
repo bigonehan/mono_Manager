@@ -1,4 +1,6 @@
+#[path = "rc/browser.rs"]
 mod browser;
+#[path = "rc/config.rs"]
 mod config;
 
 use anyhow::{Context, Result, bail};
@@ -534,6 +536,7 @@ fn build_plan(
 ) -> Result<String> {
     let prompt_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("assets")
+        .join("rc")
         .join("prompts")
         .join("build_plan.txt");
     let prompt_template = fs::read_to_string(&prompt_path)

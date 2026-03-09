@@ -1,4 +1,4 @@
-use crate::{append_failure_log, build_task_prompt, check_and_improve_drafts_before_parallel, collect_parallel_feature_tasks, default_model_bin, initialize_parallel_workspace_if_empty, load_app_config, move_finished_features_to_clear, preflight_parallel_build, print_parallel_modal, promote_planned_to_features, read_project_info, resolve_task_template_path, write_parallel_feedback, model_supports_dangerous_flag, config, ui};
+use crate::{append_failure_log, build_task_prompt, check_and_improve_drafts_before_parallel, collect_parallel_feature_tasks, default_model_bin, initialize_parallel_workspace_if_empty, load_app_config, model_supports_dangerous_flag, move_finished_features_to_clear, preflight_parallel_build, print_parallel_modal, promote_planned_to_features, read_project_info, resolve_task_template_path, run_parallel_clit_check, write_parallel_feedback, config, ui};
 use std::collections::HashSet;
 use std::env;
 use std::fs;
@@ -250,10 +250,11 @@ pub async fn run_parallel_build_code() -> Result<String, String> {
     let finished_list: Vec<String> = finished.into_iter().collect();
     promote_planned_to_features(&finished_list)?;
     let move_msg = move_finished_features_to_clear(&finished_list)?;
+    let clit_msg = run_parallel_clit_check(&finished_list, failed)?;
     let feedback_msg = write_parallel_feedback(&finished_list, failed, &move_msg)?;
     Ok(format!(
-        "run_parallel_build_code finished: success={}, failed={} | {} | {}",
-        success, failed, move_msg, feedback_msg
+        "run_parallel_build_code finished: success={}, failed={} | {} | {} | {}",
+        success, failed, move_msg, clit_msg, feedback_msg
     ))
 }
 

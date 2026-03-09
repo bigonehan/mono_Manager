@@ -30,5 +30,7 @@ drafts:
   - cli_enter
   - cli_chat
   - cli_chat_wait
+  - project_type_add_symbol_create_symbol_project_md
   worked: []
   complete: []
+  error: []

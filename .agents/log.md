@@ -1,3 +1,9 @@
+## 2026-03-09 - 작업한일
+- `orc-cli-workflow` 스킬에 병렬 build 완료 직후 `orc clit test -p . -m "<build 완료 기능 요약>"`를 실행해 루트 `feedback.md`를 남기는 검증 단계를 추가함.
+- manager-worker 순서, 완료 조건, 실패 처리 예시를 같은 규칙에 맞게 갱신해 병렬 구현 완료 후 `clit test` 기반 점검이 빠지지 않도록 정리함.
+- `run_parallel_build_code()` 완료 경로에 `run_parallel_clit_check()`를 추가해 병렬 build 종료 직후 실제 `orc clit test -p . -m ...`가 실행되고 루트 `feedback.md` 생성 여부를 검증하도록 반영함.
+- 병렬 점검 mode 문자열 생성 함수를 분리하고 관련 테스트를 추가해 완료 feature 목록과 실패 개수가 `clit test` 입력에 반영되도록 고정함.
+
 ## 2026-02-21 - 작업한일
 - `.project/project.md`의 `features`에 UI 상호작용 기능(3-패널 포커스/활성 상태 전환, esc 2회 정책)을 추가하고 개수를 6개로 갱신함.
 

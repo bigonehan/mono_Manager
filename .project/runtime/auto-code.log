@@ -29,3 +29,6 @@
 [1773043875] session | new session start: init_code_project 
 [1773047806] auto-file | auto -f flow start
 [1773047807] session | worker pane start: init_code_project 
+[1773070014] project-create | non-empty workspace: load project.md
+[1773070441] input-md | build_input_md_auto completed: input.md generated
+[1773071028] project-create | non-empty workspace: load project.md

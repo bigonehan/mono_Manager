@@ -1,40 +1,18 @@
-# ORC Web UI 요구사항 (TUI 기능 매핑)
+# symbol
+- project type add 상세페이지 상단 액션 영역에 전구 아이콘 symbol 버튼을 추가한다.
+- 버튼은 선택된 add 프로젝트가 있을 때만 노출하고 기존 상세 동선과 충돌하지 않는다.
+> 상세페이지 헤더에 symbol 버튼 위치와 노출 조건을 정한다.
+> 버튼 클릭 시 상징 생성 및 선택 흐름으로 진입시킨다.
 
-## 목표
-- `orc open-ui -w`로 웹 UI를 실행한다.
-- 웹 UI는 TUI의 핵심 기능을 동일한 실행 경로로 제공한다.
+# create_symbol
+- 선택된 프로젝트 정보를 create_symbol 프롬프트 입력으로 사용해 상징 후보 리스트를 생성한다.
+- 생성된 상징 후보는 add 프로젝트 문맥에 맞는 상징 항목으로 정리한다.
+> 현재 프로젝트 정보와 필요한 문맥을 수집한다.
+> create_symbol 프롬프트 결과를 상징 후보 리스트로 변환한다.
 
-## TUI 기능 추출 결과
-- 프로젝트 관리
-  - 프로젝트 목록 조회
-  - 프로젝트 생성(`name/description/spec/path`)
-  - 프로젝트 수정(`name/description/path`)
-  - 프로젝트 삭제
-- 상세/문서 편집
-  - `project.md`의 `name/description/spec/goal` 표시
-  - `rules`/`constraints` 편집
-  - `drafts_list.yaml`의 `features` 편집
-  - `planned/planned_items` 표시
-  - 생성된 feature draft 디렉터리 표시
-- 실행 액션
-  - `create_code_draft` 실행
-  - `add_code_draft` 실행(요청 입력 기반)
-  - `impl_code_draft` 실행
-  - `check_code_draft -a` 실행
-  - `check_draft` 실행
+# project_md
+- 확정된 상징은 project.md에 반영되어 문서 기반 상태와 UI 상태가 일치해야 한다.
+- 저장 이후 상세페이지는 최신 project.md 값을 다시 읽어 symbol 정보를 표시해야 한다.
+> 선택한 상징을 project.md 규칙에 맞게 기록한다.
+> 저장 완료 후 프로젝트 상세 정보를 다시 불러와 화면을 갱신한다.
 
-## 웹 구현 요구
-- assets 폴더 하위에 웹 소스를 분리해 관리한다.
-- 기술 스택: Astro + Vite + shadcn 스타일 컴포넌트(React)
-- API route를 통해 파일/CLI 액션을 수행한다.
-- 최소 화면 구성
-  - 좌측: 프로젝트 목록/생성/수정/삭제
-  - 우측: 상세 정보 + rules/constraints/features/planned/generated + 실행 버튼
-  - 하단: 실행 로그
-
-## 검증
-- Playwright E2E로 아래를 확인한다.
-  - 홈 로드
-  - 프로젝트 생성 후 목록에 반영
-  - 프로젝트 선택 후 상세 패널 표시
-  - 실행 버튼 호출 시 로그 업데이트

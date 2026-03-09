@@ -8,8 +8,14 @@ autobins = false
 name = "orc"
 path = "src/main.rs"
 
+[[bin]]
+name = "rc"
+path = "src/bin/rc.rs"
+
 [dependencies]
+anyhow = "1.0"
 axum = "0.8"
+clap = { version = "4.5", features = ["derive"] }
 ratatui = "0.29"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -18,3 +24,6 @@ tokio = { version = "1.48", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors"] }
 unicode-width = "0.2"
 uuid = { version = "1.18", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3.14"

@@ -236,15 +236,14 @@ pub(crate) fn run_rc_forward(tail: &[String]) -> Result<String, String> {
     let mut args = Vec::with_capacity(tail.len() + 1);
     args.push("clit".to_string());
     args.extend(tail.iter().cloned());
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("crates")
-        .join("rc")
-        .join("Cargo.toml");
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
     let output = Command::new("cargo")
         .args([
             "run",
             "--manifest-path",
             &manifest.display().to_string(),
+            "--bin",
+            "rc",
             "--",
         ])
         .args(&args)
@@ -265,6 +264,46 @@ pub(crate) fn run_rc_forward(tail: &[String]) -> Result<String, String> {
             Err(stderr)
         }
     }
+}
+
+pub(crate) fn build_parallel_clit_mode(finished_items: &[String], failed_count: usize) -> String {
+    let feature_summary = if finished_items.is_empty() {
+        "none".to_string()
+    } else {
+        finished_items.join(", ")
+    };
+    format!(
+        "parallel build verification | features: {} | failed: {}",
+        feature_summary, failed_count
+    )
+}
+
+pub(crate) fn run_parallel_clit_check(
+    finished_items: &[String],
+    failed_count: usize,
+) -> Result<String, String> {
+    let args = vec![
+        "test".to_string(),
+        "-p".to_string(),
+        ".".to_string(),
+        "-m".to_string(),
+        build_parallel_clit_mode(finished_items, failed_count),
+    ];
+    let rc_msg = run_rc_forward(&args)?;
+    let feedback_path = Path::new("feedback.md");
+    if !feedback_path.exists() {
+        return Err("parallel clit test finished but feedback.md was not created".to_string());
+    }
+    let summary = rc_msg
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("rc command completed");
+    Ok(format!(
+        "parallel clit test completed: {} | {}",
+        summary,
+        feedback_path.display()
+    ))
 }
 
 fn read_one_line(prompt: &str) -> Result<String, String> {
@@ -3576,5 +3615,12 @@ name : sample
         assert!(err.contains("missing draft/task file"));
         env::set_current_dir(old_cwd).expect("restore cwd");
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn build_parallel_clit_mode_includes_finished_items_and_failures() {
+        let mode = build_parallel_clit_mode(&["api".to_string(), "ui".to_string()], 1);
+        assert!(mode.contains("api, ui"));
+        assert!(mode.contains("failed: 1"));
     }
 }
