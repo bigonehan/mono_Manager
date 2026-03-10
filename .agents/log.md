@@ -2663,3 +2663,8 @@
 - repo 루트의 중복 규칙 파일 `AGENTS.override`, `AGENTS.override.md`를 제거하고 repo 전용 규칙을 `AGENTS.md` 하나로 병합함.
 - 전역 사용자 규칙은 `/home/tree/ai/codex/AGENTS.override.md`, repo 전용 규칙은 `AGENTS.md`만 쓰도록 경계와 재발 방지 규칙을 명시함.
 - 검증: `eza -la /home/tree/project/rust-orc | rg "AGENTS"`, `rg -n "AGENTS\\.override\\*|AGENTS\\.override|AGENTS\\.override\\.md" /home/tree/ai/skills /home/tree/ai/codex /home/tree/project/rust-orc`, `cargo test`.
+
+## 2026-03-10 - 작업한일
+- `/home/tree/ai/codex/AGENTS.override.md` 안의 중복 규칙을 통합해 금지어 출력 게이트, `current.png` 고정 경로 규칙, ORC 개선 로그 규칙을 각각 단일 섹션으로 정리함.
+- `/home/tree/ai/skills/orc-cli-workflow/SKILL.md` 안의 반복 문구를 공통 bullet로 합치고, `#개선필요` 설명 중복을 제거함.
+- 검증: 중복 섹션명 제거 확인, `orc-cli-workflow` 중복 문구 0회 확인, `cargo test`.
