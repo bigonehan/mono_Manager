@@ -2,10 +2,10 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
-mod config;
-mod code;
-mod cli;
 mod chat;
+mod cli;
+mod code;
+mod config;
 mod draft;
 mod parallel;
 mod plan;
@@ -17,6 +17,7 @@ mod ui;
 mod web;
 mod web_api;
 
+pub(crate) use draft::{DraftDoc, DraftsListDoc, PlannedItem};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::env;
@@ -29,7 +30,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-pub(crate) use draft::{DraftDoc, DraftsListDoc, PlannedItem};
 
 const REGISTRY_PATH: &str = "configs/project.yaml";
 const EXEC_LOG_PATH: &str = ".project/log.md";
@@ -37,6 +37,11 @@ const PROJECT_MD_PATH: &str = ".project/project.md";
 const PRIMARY_DRAFTS_LIST_FILE: &str = "drafts_list.yaml";
 pub(crate) const INPUT_MD_PATH: &str = "input.md";
 const FEATURE_NAME_SKILL_PATH: &str = "/home/tree/ai/skills/rule-naming/SKILL.md";
+const CHECK_PROCESS_MD_PATH: &str = ".project/check-process.md";
+const PROJECT_FEEDBACK_MD_PATH: &str = ".project/feedback.md";
+const PROJECT_SCREENSHOT_DIR_PATH: &str = ".project/screenshot";
+const TASK_SESSION_MARKER_PATH: &str = ".project/.task-session-key";
+const TASK_SESSION_KEY_ENV: &str = "ORC_TASK_SESSION_KEY";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ProjectRecord {
@@ -154,14 +159,239 @@ fn now_unix() -> String {
     secs.to_string()
 }
 
+pub(crate) fn binary_context_summary() -> String {
+    let source_root = source_root();
+    let exe = env::current_exe().ok();
+    let exe_path = exe
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "(unresolved)".to_string());
+    let modified = exe
+        .as_ref()
+        .and_then(|path| fs::metadata(path).ok())
+        .and_then(|meta| meta.modified().ok())
+        .and_then(|ts| ts.duration_since(UNIX_EPOCH).ok())
+        .map(|v| v.as_secs().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    let origin = exe
+        .as_ref()
+        .map(|path| {
+            if path.starts_with(&source_root) {
+                "source-tree"
+            } else {
+                "installed-or-external"
+            }
+        })
+        .unwrap_or("unresolved");
+    format!(
+        "version={} origin={} exe={} source_root={} modified_at={}",
+        env!("CARGO_PKG_VERSION"),
+        origin,
+        exe_path,
+        source_root.display(),
+        modified
+    )
+}
+
+pub(crate) fn check_process_path() -> PathBuf {
+    PathBuf::from(CHECK_PROCESS_MD_PATH)
+}
+
+pub(crate) fn project_feedback_path() -> PathBuf {
+    PathBuf::from(PROJECT_FEEDBACK_MD_PATH)
+}
+
+pub(crate) fn project_screenshot_dir_path() -> PathBuf {
+    PathBuf::from(PROJECT_SCREENSHOT_DIR_PATH)
+}
+
+fn workflow_command_starts_new_task(command: &str) -> bool {
+    matches!(
+        command,
+        "init_code_project"
+            | "init_code_plan"
+            | "add_code_plan"
+            | "create_input_md"
+            | "create_code_draft"
+            | "add_code_draft"
+            | "add_code_draft_item"
+            | "impl_code_draft"
+            | "check_code_draft"
+            | "check_task"
+            | "test"
+            | "clit"
+            | "auto"
+            | "auto_add_function"
+    )
+}
+
+fn ensure_task_session_key(command: &str) -> Option<String> {
+    if !workflow_command_starts_new_task(command) {
+        return None;
+    }
+    let existing = env::var(TASK_SESSION_KEY_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if let Some(value) = existing {
+        return Some(value);
+    }
+    let generated = format!(
+        "{}-{}-{}",
+        command,
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    );
+    env::set_var(TASK_SESSION_KEY_ENV, &generated);
+    Some(generated)
+}
+
+fn prepare_task_workspace(command: &str) -> Result<(), String> {
+    let session_key = ensure_task_session_key(command);
+    if !workflow_command_starts_new_task(command) || !Path::new(".project").exists() {
+        return Ok(());
+    }
+
+    let marker_path = Path::new(TASK_SESSION_MARKER_PATH);
+    if let Some(expected) = session_key.as_deref() {
+        let current = fs::read_to_string(marker_path)
+            .ok()
+            .map(|raw| raw.trim().to_string())
+            .filter(|raw| !raw.is_empty());
+        if current.as_deref() == Some(expected) {
+            return Ok(());
+        }
+    }
+
+    let check_process = check_process_path();
+    if check_process.exists() {
+        fs::remove_file(&check_process)
+            .map_err(|e| format!("failed to remove {}: {}", check_process.display(), e))?;
+    }
+    let project_feedback = project_feedback_path();
+    if project_feedback.exists() {
+        fs::remove_file(&project_feedback)
+            .map_err(|e| format!("failed to remove {}: {}", project_feedback.display(), e))?;
+    }
+    let screenshot_dir = project_screenshot_dir_path();
+    if screenshot_dir.exists() {
+        fs::remove_dir_all(&screenshot_dir)
+            .map_err(|e| format!("failed to remove {}: {}", screenshot_dir.display(), e))?;
+    }
+    fs::create_dir_all(&screenshot_dir)
+        .map_err(|e| format!("failed to create {}: {}", screenshot_dir.display(), e))?;
+
+    if let Some(session) = session_key {
+        fs::write(marker_path, format!("{}\n", session))
+            .map_err(|e| format!("failed to write {}: {}", marker_path.display(), e))?;
+    }
+    Ok(())
+}
+
+fn normalize_process_detail(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn load_or_init_process_doc(path: &Path) -> Result<Vec<String>, String> {
+    if !path.exists() {
+        return Ok(vec![
+            "# process".to_string(),
+            "".to_string(),
+            "# retry".to_string(),
+            "".to_string(),
+        ]);
+    }
+    let raw = fs::read_to_string(path)
+        .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+    let mut lines: Vec<String> = raw.lines().map(|line| line.to_string()).collect();
+    if !lines
+        .iter()
+        .any(|line| line.trim().eq_ignore_ascii_case("# process"))
+    {
+        lines.extend(["# process".to_string(), "".to_string()]);
+    }
+    if !lines
+        .iter()
+        .any(|line| line.trim().eq_ignore_ascii_case("# retry"))
+    {
+        lines.extend(["# retry".to_string(), "".to_string()]);
+    }
+    Ok(lines)
+}
+
+fn append_process_section_entry(
+    path: &Path,
+    header: &str,
+    entry_lines: &[String],
+) -> Result<(), String> {
+    let mut lines = load_or_init_process_doc(path)?;
+    let start = lines
+        .iter()
+        .position(|line| line.trim().eq_ignore_ascii_case(header))
+        .ok_or_else(|| format!("missing section header: {}", header))?;
+    let mut end = start + 1;
+    while end < lines.len() && !lines[end].trim_start().starts_with("# ") {
+        end += 1;
+    }
+    let mut block: Vec<String> = Vec::new();
+    if end > start + 1 && !lines[end - 1].trim().is_empty() {
+        block.push(String::new());
+    }
+    block.extend(entry_lines.iter().cloned());
+    block.push(String::new());
+    lines.splice(end..end, block);
+    let mut body = lines.join("\n");
+    if !body.ends_with('\n') {
+        body.push('\n');
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
+    }
+    fs::write(path, body).map_err(|e| format!("failed to write {}: {}", path.display(), e))
+}
+
+pub(crate) fn append_check_process_status(stage: &str, detail: &str) -> Result<(), String> {
+    let path = check_process_path();
+    append_process_section_entry(
+        &path,
+        "# process",
+        &[
+            format!("## status-{}", now_unix()),
+            format!("- stage: {}", normalize_process_detail(stage)),
+            format!("- detail: {}", normalize_process_detail(detail)),
+        ],
+    )
+}
+
+pub(crate) fn append_check_process_retry(
+    mode: &str,
+    input: &str,
+    detail: &str,
+) -> Result<(), String> {
+    let path = check_process_path();
+    append_process_section_entry(
+        &path,
+        "# retry",
+        &[
+            format!("## retry-{}", now_unix()),
+            format!("- mode: {}", normalize_process_detail(mode)),
+            format!("- input: {}", normalize_process_detail(input)),
+            format!("- detail: {}", normalize_process_detail(detail)),
+        ],
+    )
+}
+
 fn primary_drafts_list_path(project_root: &Path) -> PathBuf {
     project_root.join(".project").join(PRIMARY_DRAFTS_LIST_FILE)
 }
 
 fn resolve_drafts_list_path(project_root: &Path) -> Result<PathBuf, String> {
     let meta = project_root.join(".project");
-    fs::create_dir_all(&meta)
-        .map_err(|e| format!("failed to create {}: {}", meta.display(), e))?;
+    fs::create_dir_all(&meta).map_err(|e| format!("failed to create {}: {}", meta.display(), e))?;
     Ok(primary_drafts_list_path(project_root))
 }
 
@@ -183,9 +413,7 @@ fn generate_project_id(existing: &HashSet<String>) -> String {
     for _ in 0..512 {
         let mut out = String::with_capacity(4);
         for _ in 0..4 {
-            seed = seed
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1);
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
             let idx = (seed as usize) % ALNUM.len();
             out.push(ALNUM[idx] as char);
         }
@@ -201,7 +429,13 @@ pub(crate) fn normalize_registry(registry: &mut ProjectRegistry) -> bool {
     let mut ids: HashSet<String> = registry
         .projects
         .iter()
-        .filter_map(|p| if p.id.is_empty() { None } else { Some(p.id.clone()) })
+        .filter_map(|p| {
+            if p.id.is_empty() {
+                None
+            } else {
+                Some(p.id.clone())
+            }
+        })
         .collect();
     for project in &mut registry.projects {
         if project.id.is_empty() {
@@ -259,7 +493,10 @@ pub(crate) fn run_rc_forward(tail: &[String]) -> Result<String, String> {
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if stderr.is_empty() {
-            Err(format!("rc command failed (exit={:?})", output.status.code()))
+            Err(format!(
+                "rc command failed (exit={:?})",
+                output.status.code()
+            ))
         } else {
             Err(stderr)
         }
@@ -290,9 +527,11 @@ pub(crate) fn run_parallel_clit_check(
         build_parallel_clit_mode(finished_items, failed_count),
     ];
     let rc_msg = run_rc_forward(&args)?;
-    let feedback_path = Path::new("feedback.md");
+    let feedback_path = project_feedback_path();
     if !feedback_path.exists() {
-        return Err("parallel clit test finished but feedback.md was not created".to_string());
+        return Err(
+            "parallel clit test finished but .project/feedback.md was not created".to_string(),
+        );
     }
     let summary = rc_msg
         .lines()
@@ -390,10 +629,22 @@ pub(crate) fn extract_markdown_block(raw: &str) -> String {
 }
 
 fn validate_project_md_format(project_md: &str) -> Result<(), String> {
-    let required_headers = ["# info", "# features", "# rules", "# constraints", "# domains"];
+    let required_headers = [
+        "# info",
+        "# features",
+        "# rules",
+        "# constraints",
+        "# domains",
+    ];
     for header in required_headers {
-        if !project_md.lines().any(|line| line.trim().eq_ignore_ascii_case(header)) {
-            return Err(format!("project.md format invalid: missing header `{}`", header));
+        if !project_md
+            .lines()
+            .any(|line| line.trim().eq_ignore_ascii_case(header))
+        {
+            return Err(format!(
+                "project.md format invalid: missing header `{}`",
+                header
+            ));
         }
     }
     for banned in ["- 제안 도메인:", "- 근거:", "- 책임:"] {
@@ -406,7 +657,9 @@ fn validate_project_md_format(project_md: &str) -> Result<(), String> {
     }
     let domain_names = extract_project_md_domain_names(project_md);
     if domain_names.is_empty() {
-        return Err("project.md format invalid: missing `# domains -> ## <name>` block".to_string());
+        return Err(
+            "project.md format invalid: missing `# domains -> ## <name>` block".to_string(),
+        );
     }
     for required in ["### states", "### action", "### rules"] {
         if !project_md
@@ -424,9 +677,18 @@ fn validate_project_md_format(project_md: &str) -> Result<(), String> {
 
 fn normalize_project_md_min_sections(project_md: &str) -> String {
     let mut out = project_md.trim().to_string();
-    let required_headers = ["# info", "# features", "# rules", "# constraints", "# domains"];
+    let required_headers = [
+        "# info",
+        "# features",
+        "# rules",
+        "# constraints",
+        "# domains",
+    ];
     for header in required_headers {
-        if !out.lines().any(|line| line.trim().eq_ignore_ascii_case(header)) {
+        if !out
+            .lines()
+            .any(|line| line.trim().eq_ignore_ascii_case(header))
+        {
             out.push_str(&format!("\n\n{}\n- TBD\n", header));
         }
     }
@@ -548,7 +810,13 @@ fn upsert_project(
     let mut updated = registry.projects.clone();
     let existing_ids: HashSet<String> = updated
         .iter()
-        .filter_map(|p| if p.id.is_empty() { None } else { Some(p.id.clone()) })
+        .filter_map(|p| {
+            if p.id.is_empty() {
+                None
+            } else {
+                Some(p.id.clone())
+            }
+        })
         .collect();
     if let Some(existing) = updated.iter_mut().find(|p| p.name == name) {
         existing.path = path.display().to_string();
@@ -637,7 +905,12 @@ fn extract_project_md_list_by_header(project_md: &str, header: &str) -> Vec<Stri
         let body = if trimmed.starts_with("- ") {
             trimmed.trim_start_matches("- ").trim().to_string()
         } else if let Some((_, right)) = trimmed.split_once(". ") {
-            if trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+            if trimmed
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+            {
                 right.trim().to_string()
             } else {
                 continue;
@@ -658,10 +931,7 @@ fn extract_project_md_list_by_header(project_md: &str, header: &str) -> Vec<Stri
             .trim();
         if key.starts_with("func_")
             && key.len() == 13
-            && key
-                .chars()
-                .skip(5)
-                .all(|ch| ch.is_ascii_hexdigit())
+            && key.chars().skip(5).all(|ch| ch.is_ascii_hexdigit())
             && body.contains(':')
         {
             if let Some((_, right)) = body.split_once(':') {
@@ -995,8 +1265,7 @@ planned_items:\n\
 3) 불필요한 설명문 금지\n\
 현재 가능한 도메인 목록:\n{}\n\
 입력:\n{}",
-        domains_text,
-        bullet
+        domains_text, bullet
     );
     let Ok(raw) = run_codex_exec_capture(&prompt) else {
         return Vec::new();
@@ -1040,12 +1309,7 @@ fn dedup_str_vec(items: &mut Vec<String>) {
     *items = out;
 }
 
-fn run_command_in_dir(
-    dir: &Path,
-    cmd: &str,
-    args: &[&str],
-    what: &str,
-) -> Result<String, String> {
+fn run_command_in_dir(dir: &Path, cmd: &str, args: &[&str], what: &str) -> Result<String, String> {
     let output = Command::new(cmd)
         .current_dir(dir)
         .args(args)
@@ -1177,10 +1441,11 @@ fn append_feature_to_project_md(feature_name: &str, display_name: &str) -> Resul
         .collect();
 
     let feature_label = format!("{} : {}", feature_name, display_name.trim());
-    if lines
-        .iter()
-        .any(|line| line.trim_start_matches("- ").trim().starts_with(feature_name))
-    {
+    if lines.iter().any(|line| {
+        line.trim_start_matches("- ")
+            .trim()
+            .starts_with(feature_name)
+    }) {
         return Ok(());
     }
 
@@ -1213,10 +1478,28 @@ fn resolve_build_funciton_prompt_path() -> Result<PathBuf, String> {
     let root = source_root();
     let file_name = "build-funciton.txt";
     let candidates = [
-        root.join("assets").join("presets").join("code").join("prompts").join(file_name),
-        PathBuf::from("assets").join("presets").join("code").join("prompts").join(file_name),
-        root.join("src").join("assets").join("presets").join("code").join("prompts").join(file_name),
-        PathBuf::from("src").join("assets").join("presets").join("code").join("prompts").join(file_name),
+        root.join("assets")
+            .join("presets")
+            .join("code")
+            .join("prompts")
+            .join(file_name),
+        PathBuf::from("assets")
+            .join("presets")
+            .join("code")
+            .join("prompts")
+            .join(file_name),
+        root.join("src")
+            .join("assets")
+            .join("presets")
+            .join("code")
+            .join("prompts")
+            .join(file_name),
+        PathBuf::from("src")
+            .join("assets")
+            .join("presets")
+            .join("code")
+            .join("prompts")
+            .join(file_name),
     ];
     for candidate in candidates {
         if candidate.exists() {
@@ -1454,13 +1737,20 @@ fn generate_project_plan(input: &ProjectPlanInput<'_>) -> Result<String, String>
     ))
 }
 
-
 fn is_auto_verifiable_rule(rule: &str) -> bool {
     let s = rule.trim();
     if s.is_empty() {
         return false;
     }
-    let ops = ["==", "!=", ">=", "<=", " matches ", " contains ", " exists("];
+    let ops = [
+        "==",
+        "!=",
+        ">=",
+        "<=",
+        " matches ",
+        " contains ",
+        " exists(",
+    ];
     ops.iter().any(|op| s.contains(op))
         || (s.contains(':') && (s.contains("must") || s.contains("should") || s.contains("check")))
 }
@@ -1545,8 +1835,16 @@ fn validate_draft_doc(doc: &DraftDoc) -> Vec<String> {
 fn resolve_draft_yaml_template_path() -> Option<PathBuf> {
     let root = source_root();
     let candidates = [
-        root.join("assets").join("presets").join("code").join("templates").join("drafts.yaml"),
-        PathBuf::from("assets").join("presets").join("code").join("templates").join("drafts.yaml"),
+        root.join("assets")
+            .join("presets")
+            .join("code")
+            .join("templates")
+            .join("drafts.yaml"),
+        PathBuf::from("assets")
+            .join("presets")
+            .join("code")
+            .join("templates")
+            .join("drafts.yaml"),
     ];
     candidates.into_iter().find(|p| p.exists())
 }
@@ -1578,8 +1876,13 @@ current:\n{}",
     );
     let output = run_codex_exec_capture(&prompt)?;
     let fixed = extract_yaml_block(&output);
-    let _: DraftDoc = serde_yaml::from_str(&fixed)
-        .map_err(|e| format!("llm fixed draft parse failed {}: {}", draft_path.display(), e))?;
+    let _: DraftDoc = serde_yaml::from_str(&fixed).map_err(|e| {
+        format!(
+            "llm fixed draft parse failed {}: {}",
+            draft_path.display(),
+            e
+        )
+    })?;
     Ok(fixed)
 }
 
@@ -1605,7 +1908,9 @@ pub(crate) fn check_and_improve_drafts_before_parallel() -> Result<String, Strin
         let draft_path = [dir.join("drafts.yaml"), dir.join("drafts.yaml")]
             .into_iter()
             .find(|p| p.exists());
-        let Some(draft_path) = draft_path else { continue };
+        let Some(draft_path) = draft_path else {
+            continue;
+        };
         checked += 1;
         let raw = fs::read_to_string(&draft_path)
             .map_err(|e| format!("failed to read {}: {}", draft_path.display(), e))?;
@@ -1630,7 +1935,10 @@ pub(crate) fn check_and_improve_drafts_before_parallel() -> Result<String, Strin
             .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
         fixed += 1;
     }
-    Ok(format!("check-draft done: checked={}, fixed={}", checked, fixed))
+    Ok(format!(
+        "check-draft done: checked={}, fixed={}",
+        checked, fixed
+    ))
 }
 
 pub(crate) fn load_app_config() -> Option<config::AppConfig> {
@@ -1638,7 +1946,10 @@ pub(crate) fn load_app_config() -> Option<config::AppConfig> {
     let candidates = [
         root.join("configs").join("configs.yaml"),
         root.join("assets").join("config").join("config.yaml"),
-        root.join("src").join("assets").join("config").join("config.yaml"),
+        root.join("src")
+            .join("assets")
+            .join("config")
+            .join("config.yaml"),
     ];
     for candidate in candidates {
         if let Ok(conf) = config::AppConfig::load_from_path(&candidate) {
@@ -1699,10 +2010,7 @@ fn acquire_chat_room_lock(name: &str) -> Result<ChatRoomLockGuard, String> {
                 return Ok(ChatRoomLockGuard { lock_path });
             }
             Err(e) if e.kind() == ErrorKind::AlreadyExists => {
-                let elapsed = started
-                    .elapsed()
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
+                let elapsed = started.elapsed().map(|d| d.as_secs()).unwrap_or(0);
                 if elapsed >= 15 {
                     return Err(format!("chat room lock timeout: {}", lock_path.display()));
                 }
@@ -1771,7 +2079,8 @@ fn load_chat_sessions(path: &Path) -> Result<ChatSessionDoc, String> {
     if !path.exists() {
         return Ok(ChatSessionDoc::default());
     }
-    let raw = fs::read_to_string(path).map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+    let raw = fs::read_to_string(path)
+        .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
     if raw.trim().is_empty() {
         return Ok(ChatSessionDoc::default());
     }
@@ -1783,7 +2092,8 @@ fn save_chat_sessions(path: &Path, doc: &ChatSessionDoc) -> Result<(), String> {
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
     }
-    let raw = serde_yaml::to_string(doc).map_err(|e| format!("chat sessions yaml encode error: {}", e))?;
+    let raw = serde_yaml::to_string(doc)
+        .map_err(|e| format!("chat sessions yaml encode error: {}", e))?;
     fs::write(path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
 }
 
@@ -1940,13 +2250,14 @@ fn load_chat_room(path: &Path) -> Result<ChatRoomDoc, String> {
         save_chat_room(path, &default_doc)?;
         return Ok(default_doc);
     }
-    let raw = fs::read_to_string(path).map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+    let raw = fs::read_to_string(path)
+        .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
     if raw.trim().is_empty() {
         save_chat_room(path, &default_doc)?;
         return Ok(default_doc);
     }
-    let mut doc: ChatRoomDoc =
-        serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse {}: {}", path.display(), e))?;
+    let mut doc: ChatRoomDoc = serde_yaml::from_str(&raw)
+        .map_err(|e| format!("failed to parse {}: {}", path.display(), e))?;
     if doc.room_name.trim().is_empty() {
         doc.room_name = room_name;
         save_chat_room(path, &doc)?;
@@ -1959,7 +2270,8 @@ fn save_chat_room(path: &Path, doc: &ChatRoomDoc) -> Result<(), String> {
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
     }
-    let raw = serde_yaml::to_string(doc).map_err(|e| format!("chat room yaml encode error: {}", e))?;
+    let raw =
+        serde_yaml::to_string(doc).map_err(|e| format!("chat room yaml encode error: {}", e))?;
     fs::write(path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
 }
 
@@ -1974,7 +2286,10 @@ fn print_chat_messages(room_name: &str, messages: &[ChatMessage]) {
     }
 }
 
-fn chat_new_messages(messages: &[ChatMessage], last_read_message_id: Option<&str>) -> Vec<ChatMessage> {
+fn chat_new_messages(
+    messages: &[ChatMessage],
+    last_read_message_id: Option<&str>,
+) -> Vec<ChatMessage> {
     if messages.is_empty() {
         return Vec::new();
     }
@@ -1997,7 +2312,8 @@ fn chat_send(parsed: &ChatCliArgs) -> Result<String, String> {
             role: "user".to_string(),
         });
     }
-    let mut used_ids: HashSet<String> = room.messages.iter().map(|m| m.message_id.clone()).collect();
+    let mut used_ids: HashSet<String> =
+        room.messages.iter().map(|m| m.message_id.clone()).collect();
     let mut message_id = generate_chat_id_8();
     while used_ids.contains(&message_id) {
         message_id = generate_chat_id_8();
@@ -2075,7 +2391,11 @@ fn spawn_chat_background(name: &str) -> Result<String, String> {
     ))
 }
 
-fn chat_watch_loop(name: &str, path: &Path, mut last_read_message_id: Option<String>) -> Result<(), String> {
+fn chat_watch_loop(
+    name: &str,
+    path: &Path,
+    mut last_read_message_id: Option<String>,
+) -> Result<(), String> {
     let max_read_time = chat_max_read_time_sec();
     loop {
         thread::sleep(Duration::from_secs(max_read_time));
@@ -2119,7 +2439,10 @@ pub(crate) async fn chat_command(args: &[String]) -> Result<String, String> {
         chat_watch_loop(&parsed.name, &path, last_read_message_id.clone())?;
     }
 
-    println!("chat mode active: room={}, sender_id={}", parsed.name, llm_id);
+    println!(
+        "chat mode active: room={}, sender_id={}",
+        parsed.name, llm_id
+    );
     println!("exit: Ctrl+D");
     print_chat_messages(&parsed.name, &room.messages);
 
@@ -2149,7 +2472,10 @@ pub(crate) async fn chat_command(args: &[String]) -> Result<String, String> {
         }
     }
 
-    Ok(format!("chat closed: room={} sender_id={}", parsed.name, llm_id))
+    Ok(format!(
+        "chat closed: room={} sender_id={}",
+        parsed.name, llm_id
+    ))
 }
 
 pub(crate) async fn chat_wait_command(args: &[String]) -> Result<String, String> {
@@ -2313,7 +2639,11 @@ fn read_spec_checkpoint_context() -> Result<Option<(String, PathBuf, String)>, S
     if primary.exists() {
         let body = fs::read_to_string(&primary)
             .map_err(|e| format!("failed to read {}: {}", primary.display(), e))?;
-        sections.push(format!("# {} (primary)\n{}", primary.display(), body.trim()));
+        sections.push(format!(
+            "# {} (primary)\n{}",
+            primary.display(),
+            body.trim()
+        ));
     }
     let combined = sections.join("\n\n");
     Ok(Some((spec, primary, combined)))
@@ -2335,7 +2665,10 @@ fn ensure_spec_checkpoint_file(path: &Path, spec: &str) -> Result<(), String> {
     fs::write(path, header).map_err(|e| format!("failed to write {}: {}", path.display(), e))
 }
 
-pub(crate) fn append_spec_checkpoint_issues(trigger: &str, issues: &[String]) -> Result<(), String> {
+pub(crate) fn append_spec_checkpoint_issues(
+    trigger: &str,
+    issues: &[String],
+) -> Result<(), String> {
     if issues.is_empty() {
         return Ok(());
     }
@@ -2387,11 +2720,17 @@ fn normalize_draft_task_step_yaml(raw_yaml: &str) -> Result<String, String> {
                 for (k, val) in map {
                     let key = match k {
                         serde_yaml::Value::String(s) => s.clone(),
-                        other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+                        other => serde_yaml::to_string(other)
+                            .unwrap_or_default()
+                            .trim()
+                            .to_string(),
                     };
                     let value = match val {
                         serde_yaml::Value::String(s) => s.clone(),
-                        other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+                        other => serde_yaml::to_string(other)
+                            .unwrap_or_default()
+                            .trim()
+                            .to_string(),
                     };
                     if !key.is_empty() && !value.is_empty() {
                         parts.push(format!("{}: {}", key, value));
@@ -2399,7 +2738,10 @@ fn normalize_draft_task_step_yaml(raw_yaml: &str) -> Result<String, String> {
                 }
                 parts.join(" | ")
             }
-            other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+            other => serde_yaml::to_string(other)
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
         }
     }
 
@@ -2409,7 +2751,9 @@ fn normalize_draft_task_step_yaml(raw_yaml: &str) -> Result<String, String> {
         .find("\ntask:")
         .map(|idx| idx + 1)
         .or_else(|| raw_yaml.find("task:"));
-    let tail = task_start.map(|idx| raw_yaml[idx..].to_string()).unwrap_or_default();
+    let tail = task_start
+        .map(|idx| raw_yaml[idx..].to_string())
+        .unwrap_or_default();
     let candidates = [raw_yaml.to_string(), block, tail];
     let mut parsed_root: Option<serde_yaml::Value> = None;
     for candidate in candidates {
@@ -2431,8 +2775,12 @@ fn normalize_draft_task_step_yaml(raw_yaml: &str) -> Result<String, String> {
         parsed
     } else {
         let repaired = repair_draft_yaml_with_llm(raw_yaml)?;
-        serde_yaml::from_str::<serde_yaml::Value>(&repaired)
-            .map_err(|e| format!("generated draft yaml invalid: {} | repair: {}", parse_error, e))?
+        serde_yaml::from_str::<serde_yaml::Value>(&repaired).map_err(|e| {
+            format!(
+                "generated draft yaml invalid: {} | repair: {}",
+                parse_error, e
+            )
+        })?
     };
     let serde_yaml::Value::Mapping(root_map) = &mut root else {
         return Ok(raw_yaml.to_string());
@@ -2640,7 +2988,9 @@ pub(crate) fn add_feature_to_planned(feature_name: &str) -> Result<(), String> {
 
 fn add_feature_to_planned_doc(doc: &mut DraftsListDoc, feature_name: &str) -> bool {
     let mut changed = false;
-    if !doc.features.iter().any(|v| v == feature_name) && !doc.planned.iter().any(|v| v == feature_name) {
+    if !doc.features.iter().any(|v| v == feature_name)
+        && !doc.planned.iter().any(|v| v == feature_name)
+    {
         doc.planned.push(feature_name.to_string());
         changed = true;
     }
@@ -2720,7 +3070,10 @@ fn markdown_section_bounds(lines: &[String], header: &str) -> Option<(usize, usi
     Some((start, end))
 }
 
-fn promote_project_md_plan_to_features(project_root: &Path, items: &[String]) -> Result<bool, String> {
+fn promote_project_md_plan_to_features(
+    project_root: &Path,
+    items: &[String],
+) -> Result<bool, String> {
     if items.is_empty() {
         return Ok(false);
     }
@@ -2807,8 +3160,14 @@ pub(crate) fn move_finished_features_to_clear(items: &[String]) -> Result<String
             fs::remove_dir_all(&dst)
                 .map_err(|e| format!("failed to remove {}: {}", dst.display(), e))?;
         }
-        fs::rename(&src, &dst)
-            .map_err(|e| format!("failed to move {} -> {}: {}", src.display(), dst.display(), e))?;
+        fs::rename(&src, &dst).map_err(|e| {
+            format!(
+                "failed to move {} -> {}: {}",
+                src.display(),
+                dst.display(),
+                e
+            )
+        })?;
         moved += 1;
     }
     Ok(format!("move-finished completed: moved={}", moved))
@@ -2828,6 +3187,13 @@ fn check_code_timeout_sec() -> u64 {
         .max(30)
 }
 
+fn parallel_feedback_timeout_sec() -> u64 {
+    load_app_config()
+        .as_ref()
+        .map_or(300, config::AppConfig::default_timeout_sec)
+        .max(300)
+}
+
 fn append_check_code_runtime_log(stage: &str, detail: &str) {
     let runtime = Path::new(".project").join("reference");
     if fs::create_dir_all(&runtime).is_err() {
@@ -2837,6 +3203,7 @@ fn append_check_code_runtime_log(stage: &str, detail: &str) {
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(file, "[{}] {} | {}", now_unix(), stage, detail);
     }
+    let _ = append_check_process_status(&format!("check-code/{}", stage), detail);
 }
 
 fn collect_draft_constraints_checklist(feature_names: &[String]) -> Result<Vec<String>, String> {
@@ -2863,7 +3230,9 @@ fn collect_draft_constraints_checklist(feature_names: &[String]) -> Result<Vec<S
         if !feature_set.contains(name) {
             continue;
         }
-        let constraints = item.get("constraints").and_then(serde_yaml::Value::as_sequence);
+        let constraints = item
+            .get("constraints")
+            .and_then(serde_yaml::Value::as_sequence);
         match constraints {
             Some(values) if !values.is_empty() => {
                 for value in values {
@@ -2890,10 +3259,7 @@ pub(crate) fn run_check_code_after_draft_changes(
     }
     let mut target_lines = Vec::new();
     for name in feature_names {
-        target_lines.push(format!(
-            "- {}: .project/drafts.yaml",
-            name
-        ));
+        target_lines.push(format!("- {}: .project/drafts.yaml", name));
     }
     let constraints_checklist = collect_draft_constraints_checklist(feature_names)?;
     let checkpoint_context = read_spec_checkpoint_context()?;
@@ -2987,7 +3353,11 @@ pub(crate) fn registry_path() -> PathBuf {
 fn resolve_project_template_path() -> Result<PathBuf, String> {
     let root = source_root();
     let candidates = [
-        root.join("assets").join("presets").join("code").join("templates").join("project.md"),
+        root.join("assets")
+            .join("presets")
+            .join("code")
+            .join("templates")
+            .join("project.md"),
         PathBuf::from("assets")
             .join("presets")
             .join("code")
@@ -3013,16 +3383,26 @@ pub(crate) fn resolve_project_md_prompt_path(auto_mode: bool) -> Result<PathBuf,
         "project-md-init.txt"
     };
     let candidates = [
-        root.join("assets").join("presets").join("code").join("prompts").join(file_name),
-        PathBuf::from("assets").join("presets").join("code").join("prompts").join(file_name),
+        root.join("assets")
+            .join("presets")
+            .join("code")
+            .join("prompts")
+            .join(file_name),
+        PathBuf::from("assets")
+            .join("presets")
+            .join("code")
+            .join("prompts")
+            .join(file_name),
         root.join("src")
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join(file_name),
         PathBuf::from("src")
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join(file_name),
     ];
@@ -3041,19 +3421,25 @@ pub(crate) fn resolve_project_md_prompt_path(auto_mode: bool) -> Result<PathBuf,
 pub(crate) fn resolve_task_template_path() -> Result<PathBuf, String> {
     let root = source_root();
     let candidates = [
-        root.join("assets").join("presets").join("code").join("prompts").join("tasks.txt"),
+        root.join("assets")
+            .join("presets")
+            .join("code")
+            .join("prompts")
+            .join("tasks.txt"),
         PathBuf::from("assets")
             .join("code")
             .join("prompts")
             .join("tasks.txt"),
         root.join("src")
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join("tasks.txt"),
         PathBuf::from("src")
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join("tasks.txt"),
     ];
@@ -3072,16 +3458,26 @@ pub(crate) fn resolve_parallel_feedback_prompt_path() -> Result<PathBuf, String>
     let root = source_root();
     let file_name = "parallel-feedback.txt";
     let candidates = [
-        root.join("assets").join("presets").join("code").join("prompts").join(file_name),
-        PathBuf::from("assets").join("presets").join("code").join("prompts").join(file_name),
+        root.join("assets")
+            .join("presets")
+            .join("code")
+            .join("prompts")
+            .join(file_name),
+        PathBuf::from("assets")
+            .join("presets")
+            .join("code")
+            .join("prompts")
+            .join(file_name),
         root.join("src")
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join(file_name),
         PathBuf::from("src")
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join(file_name),
     ];
@@ -3139,16 +3535,17 @@ pub(crate) fn write_parallel_feedback(
         .replace("{{finished_items}}", &finished_text)
         .replace("{{failed_count}}", &failed_count.to_string())
         .replace("{{move_msg}}", move_msg);
-    let raw = run_codex_exec_capture_with_timeout(&prompt, 120)?;
+    let raw = run_codex_exec_capture_with_timeout(&prompt, parallel_feedback_timeout_sec())?;
     let feedback_md = raw.trim().to_string();
     validate_parallel_feedback_markdown(&feedback_md)?;
-    let out_path = Path::new(".project").join("feedback.md");
+    let out_path = project_feedback_path();
     fs::write(&out_path, feedback_md + "\n")
         .map_err(|e| format!("failed to write {}: {}", out_path.display(), e))?;
-    Ok(format!(
-        "parallel feedback saved: {}",
-        out_path.display()
-    ))
+    let _ = append_check_process_status(
+        "parallel-feedback",
+        &format!("final feedback saved | {}", out_path.display()),
+    );
+    Ok(format!("parallel feedback saved: {}", out_path.display()))
 }
 
 fn is_directory_empty(path: &Path) -> Result<bool, String> {
@@ -3157,7 +3554,9 @@ fn is_directory_empty(path: &Path) -> Result<bool, String> {
     Ok(entries.next().is_none())
 }
 
-pub(crate) fn initialize_parallel_workspace_if_empty(path: &Path) -> Result<Option<String>, String> {
+pub(crate) fn initialize_parallel_workspace_if_empty(
+    path: &Path,
+) -> Result<Option<String>, String> {
     if !is_directory_empty(path)? {
         return Ok(None);
     }
@@ -3292,6 +3691,35 @@ async fn main() {
         cli::print_usage(program);
         return;
     }
+    let command_idx = if args.len() >= 3 && profile::is_known_profile_name(args[1].as_str()) {
+        2
+    } else {
+        1
+    };
+    let command = args.get(command_idx).cloned().unwrap_or_default();
+    if let Err(err) = prepare_task_workspace(&command) {
+        eprintln!("{}", err);
+        std::process::exit(1);
+    }
+    let arg_tail = if args.len() > command_idx + 1 {
+        args[(command_idx + 1)..].join(" ")
+    } else {
+        String::new()
+    };
+    let start_status = format!(
+        "[orc-start] command={} args={} {}",
+        command,
+        if arg_tail.is_empty() {
+            "(none)"
+        } else {
+            &arg_tail
+        },
+        binary_context_summary()
+    );
+    eprintln!("{}", start_status);
+    if Path::new(".project").exists() {
+        let _ = append_check_process_status("binary", &start_status);
+    }
 
     match cli::execute_cli(&args).await {
         Ok(output) => println!("{}", output),
@@ -3367,7 +3795,9 @@ mod tests {
     fn feature_key_like_rejects_fileish_path_style_names() {
         assert!(is_feature_key_like("render_cube"));
         assert!(!is_feature_key_like("src_features_game_start_handlers_ts"));
-        assert!(!is_feature_key_like("easing_src_features_game_start_transition_ts"));
+        assert!(!is_feature_key_like(
+            "easing_src_features_game_start_transition_ts"
+        ));
     }
 
     #[test]
@@ -3488,8 +3918,7 @@ mod tests {
             sync_initialized: true,
             ..Default::default()
         };
-        save_drafts_list(&meta.join("drafts_list.yaml"), &stale)
-            .expect("write stale drafts_list");
+        save_drafts_list(&meta.join("drafts_list.yaml"), &stale).expect("write stale drafts_list");
 
         let changed =
             sync_project_tasks_list_from_project_md(&project_dir).expect("sync tasks_list");
@@ -3505,7 +3934,9 @@ mod tests {
         fs::create_dir_all(meta.join("feature").join("alpha_feature"))
             .expect("create generated feature dir");
         fs::write(
-            meta.join("feature").join("alpha_feature").join("drafts.yaml"),
+            meta.join("feature")
+                .join("alpha_feature")
+                .join("drafts.yaml"),
             "task:\n- name: alpha\n",
         )
         .expect("write generated task");
@@ -3569,11 +4000,9 @@ name : sample
 "#;
         fs::write(meta.join("project.md"), md).expect("write project.md");
 
-        let changed = promote_project_md_plan_to_features(
-            &project_dir,
-            &["alpha_feature".to_string()],
-        )
-        .expect("promote project.md");
+        let changed =
+            promote_project_md_plan_to_features(&project_dir, &["alpha_feature".to_string()])
+                .expect("promote project.md");
         assert!(changed);
 
         let updated = fs::read_to_string(meta.join("project.md")).expect("read project.md");
@@ -3610,8 +4039,9 @@ name : sample
         };
         save_drafts_list(&tasks_path, &doc).expect("save drafts_list");
         env::set_current_dir(&root).expect("enter temp root");
-        let err = preflight_parallel_build(Path::new(".project").join("drafts_list.yaml").as_path())
-            .expect_err("should fail");
+        let err =
+            preflight_parallel_build(Path::new(".project").join("drafts_list.yaml").as_path())
+                .expect_err("should fail");
         assert!(err.contains("missing draft/task file"));
         env::set_current_dir(old_cwd).expect("restore cwd");
         let _ = fs::remove_dir_all(root);

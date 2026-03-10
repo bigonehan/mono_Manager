@@ -34,8 +34,8 @@
 - When path validation fails, report the broken stage explicitly and fix wiring before finalizing.
 
 ## Failure Retry Rule
-- If a run fails or a problem is detected, append the failure cause and retry strategy to `feedback.md` immediately.
-- After updating `feedback.md`, apply a concrete fix and rerun the same execution path.
+- If a run fails or a problem is detected, append the failure cause and retry strategy to `.project/feedback.md` immediately.
+- After updating `.project/feedback.md`, apply a concrete fix and rerun the same execution path.
 - Continue this loop until the target path no longer reports the same blocking failure.
 
 ## YAML/MD Format Enforcement Rule
@@ -142,13 +142,13 @@
   1) 문제 제시 + 해결책 + 검증 기준 설정후 `plan.md` 생성 
   2) 해결책 시도
   3) 검증 실행
-  4) 실패 시  `feedback.md` 생성후 이를 바탕으로 `plan.md`문제를 재설계 
+  4) 실패 시  `.project/feedback.md` 생성후 이를 바탕으로 `plan.md`문제를 재설계 
   5) 재 정비된 plan.md 문서를 바탕으로 처음부터 전체 재시작
-- On failure, write/update `feedback.md` and append retry reason to `plan.md` before restarting.
+- On failure, write/update `.project/feedback.md` and append retry reason to `plan.md` before restarting.
 - Do not stop at intermediate logs only; continue until pass or max retry reached.
 
 ## Rule-First Enforcement (Highest Priority)
-- On any new user behavioral instruction, update `AGENTS.override.md` first before running commands or editing source.
+- On any new user behavioral instruction, update `/home/tree/ai/codex/AGENTS.override.md` first before running commands or editing source.
 - If execution already started, stop running process first, write rule, then resume work.
 - This rule has higher priority than implementation speed.
 
@@ -157,12 +157,12 @@
   1) write/update `plan.md`
   2) remove and recreate `/home/tree/temp`
   3) run `orc auto` for requested app
-  4) if failed, write `/home/tree/temp/feedback.md` with 문제/미해결점
+  4) if failed, write `/home/tree/temp/.project/feedback.md` with 문제/미해결점
   5) reflect feedback into next plan and restart from step 1
 - Keep looping until verification passes or hard technical blocker is confirmed.
 
 ## Feedback->Plan Merge Rule (Highest Priority)
-- After any failure, write/update `feedback.md` first with `문제` and `미해결점`.
+- After any failure, write/update `.project/feedback.md` first with `문제` and `미해결점`.
 - Then update `plan.md` by merging prior plan + new feedback deltas.
 - The updated `plan.md` must include:
   - new/changed problem statements
@@ -194,6 +194,25 @@
 - 최종 산출물(`.project/drafts.yaml` item)에는 템플릿 주석/예시/placeholder를 포함하지 않는다.
 - `draft_item` 관련 프롬프트는 "주석 읽기 -> 값 채우기 -> 주석 제거" 순서를 명시해야 한다.
 - 2026-03-05: `if)` 가상 시나리오 출력은 줄 단위 `a -> b` 포맷만 사용한다. 각 단계는 반드시 다음 줄에 분리해서 작성한다.
-- 2026-03-05: 사용자가 `~~~을 만들어줘` 형태로 요청하면 매니저 pane이 워커 pane을 단계별로 열고(`tmux split-window`), `orc send-tmux`로 `auto -> plan -> drafts -> impl -> check_draft`를 순차 위임/완료 회수/재시도 판단하는 흐름을 우선 적용한다.
+- 2026-03-05: 사용자가 `~~~을 만들어줘` 형태로 요청하면 매니저 pane이 워커 pane을 단계별로 열고(`tmux split-window`), `orc send-tmux`로 `auto -> plan -> drafts -> impl -> check_code_draft -a`를 순차 위임/완료 회수/재시도 판단하는 흐름을 우선 적용한다.
 - 2026-03-05: 트리거 문구는 `~~~을 만들어줘`, `~~~을 추가해줘`, `~을 읽고 처리해줘` 3가지를 동일 계열로 인식한다. 단, `읽고 처리해줘`는 기존 `input.md`를 읽는 명령 경로(`add_code_plan -f`, `add_code_draft -f`)를 사용하고 `create_input_md`를 호출하지 않는다.
 - 2026-03-08: draft 타입 스키마 변경 시 web UI `edit_{type}_drafts` 모달(`edit_code_drafts`, `edit_mono_drafts`, `edit_video_drafts`, `edit_write_drafts`)을 동일 변경에서 함께 갱신한다.
+- 2026-03-06: profile 레이어 리팩토링 작업 시 별도 브랜치에서 진행한다.
+- 2026-03-06: profile 종속 범위는 prompt/template 로딩(project.md, plan.yaml, drafts.yaml, parallel run) 및 해당 호출 프롬프트로 한정한다.
+- 2026-03-06: 공통 인터페이스는 project/plan/draft/feedback 흐름을 우선 제공하고, 기본 구현체는 code profile로 유지한다.
+- 2026-03-07: 모든 작업 완료 시 `nf -m "<task-name> complete"` 실행을 강제한다. 별도 요청이 없어도 필수로 실행하며 `notify.fish` 직접 호출은 금지한다.
+- 2026-03-07: 사용자가 `/temp` 검증 루프를 요청하면 `/home/tree/temp`를 삭제/재생성 후 `orc auto`를 실행하고, 실패 시 `/home/tree/temp/todo.md`와 `/home/tree/temp/.project/feedback.md`를 작성한 뒤 plan 갱신 후 재시도한다.
+- 2026-03-07: 사용자가 web UI 확장(`open-ui -w`, assets 기반 frontend, playwright 검증 루프)을 요청한 경우, TUI 기능 목록을 먼저 추출해 `input.md`에 반영한 뒤 구현/검증을 반복한다.
+- 2026-03-07: web UI는 `project`/`detail` 탭 분리 구조를 유지하고, detail 편집은 pane 선택 시 우상단 gear 아이콘으로 진입하는 읽기전용 기본 화면으로 제공한다.
+- 2026-03-07: web UI 상태는 로컬 useState보다 `zustand` 스토어를 우선 사용해 탭/선택/편집/로그를 중앙 관리한다.
+- 2026-03-07: project pane의 선택 item 우상단에 수정/삭제 아이콘 버튼(SVG)을 노출하고, 해당 item 단위 edit/delete 동작을 제공한다.
+- 2026-03-07: UI 스타일 변경 요청 시 `current.png`를 기준으로 project info 시각톤을 맞추고, 모든 pane 컨테이너에 rounded border를 강제 적용한다.
+- 2026-03-07: project 탭은 grid 카드 + 생성 모달 구조를 기본으로 하며, 카드에 type 라벨/상태 태그/폴더 아이콘/큰 제목을 표시하고 `project_type(story|movie|code|mono)` 필드를 기본 `code`로 유지한다.
+- 2026-03-07: web navbar는 좌측에 현재 선택 프로젝트 표시, 우측에 project/detail 탭 버튼을 두고, 카드형 border 대신 하단 underline(border-b)만 사용한다.
+- 2026-03-07: `current.png` 요청은 검색 없이 `/mnt/c/Users/tende/Pictures/Screenshots/current.png`를 먼저 연다. 해당 경로 미존재 시 그 경로 부재만 즉시 보고하고 대체 경로를 요청한다.
+- 2026-03-07: 사용자가 개선사항에 `전부`, `모두`, `전체`를 명시하면 부분 개선 보고를 금지하고, 경고/실패가 남지 않을 때까지 연속으로 수정-검증을 반복한 뒤 최종 결과만 보고한다.
+- 2026-03-08: templates asset 모달은 좌측 `PROMPTS/TEMPLATES` 폴더 섹션(접기/펼치기) + 우측 파일 내용 패널 구조를 유지하고, 파일 저장 시 `{수정 파일 경로} 수정 반영 후 관련 항목 전체 갱신` LLM 요청을 자동 실행한다.
+- 2026-03-08: detail pane의 add/build 흐름은 `form_add_input` 모달 기반으로 유지한다. add 확인 시 `input.md`를 생성하고 `orc add_code_plan -f` + `orc add_code_draft -f`를 실행해 `plan.yaml`/`drafts.yaml`를 갱신하며, build는 병렬 실행 상태(`build`)와 `current_job`을 project 카드에 반영한다.
+- 2026-03-09: tmux pane 명령 전송은 기본 셸을 `fish -ic`로 고정하고 `bash -lc`/`bash -ic` 래퍼 생성을 금지한다(사용자가 bash를 명시한 경우만 예외).
+- 2026-03-10: repo 루트의 규칙 파일은 `AGENTS.md` 하나로 유지한다. `/home/tree/project/rust-orc` 아래에 `AGENTS.override` 또는 `AGENTS.override.md`를 새로 만들거나 심볼릭 링크로 생성하지 않는다.
+- 2026-03-10: repo 전용 규칙 추가는 `AGENTS.md`에 직접 병합하고, 전역 사용자 동작 규칙만 `/home/tree/ai/codex/AGENTS.override.md`에 기록한다.

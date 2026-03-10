@@ -18,7 +18,10 @@ pub struct WorkerPaneRef {
 
 impl WorkerPaneRef {
     pub fn short_id(&self) -> &str {
-        self.worker_id.split('-').next().unwrap_or(self.worker_id.as_str())
+        self.worker_id
+            .split('-')
+            .next()
+            .unwrap_or(self.worker_id.as_str())
     }
 }
 
@@ -178,7 +181,11 @@ pub fn tsend(pane_id: &str, msg: &str, option: &str) -> Result<String, String> {
         "enter-exit" => SendOption::EnterExit,
         "raw" => SendOption::Raw,
         "enter" => SendOption::Enter,
-        _ => return Err("tsend option must be `enter`, `enter-exit`, `raw`, or `display`".to_string()),
+        _ => {
+            return Err(
+                "tsend option must be `enter`, `enter-exit`, `raw`, or `display`".to_string(),
+            )
+        }
     };
     send_keys(pane_id, msg, send_option)?;
     Ok(format!(

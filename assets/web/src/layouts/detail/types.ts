@@ -10,6 +10,7 @@ export type DetailLayoutProps = {
   selectedDomain: string;
   setSelectedDomain: (domain: string) => void;
   openEditor: () => void;
+  actionsDisabled: boolean;
   memoDraft: string;
   updateMemo: (value: string) => void;
   flushMemo: () => void;

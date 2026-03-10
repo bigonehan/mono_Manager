@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
@@ -6,7 +7,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -73,7 +73,7 @@ pub(crate) struct DraftsListDoc {
     #[serde(default)]
     pub(crate) flows: Vec<String>,
     #[serde(default)]
-        pub(crate) features: Vec<String>,
+    pub(crate) features: Vec<String>,
     #[serde(default)]
     pub(crate) planned: Vec<String>,
     #[serde(default)]
@@ -262,10 +262,7 @@ fn generate_valid_draft_yaml(
                 "초기 검증 실패로 1회 자동 보정 후 재검증합니다.",
             );
             parse_and_validate_draft_yaml(&repaired_yaml).map_err(|repair_reason| {
-                format!(
-                    "{} | repair failed: {}",
-                    first_reason, repair_reason
-                )
+                format!("{} | repair failed: {}", first_reason, repair_reason)
             })?;
             Ok(repaired_yaml)
         }
@@ -346,7 +343,10 @@ fn second_pass_check(
                 ));
             }
             if !seen.insert(trimmed.to_string()) {
-                return Err(format!("duplicated scope `{}` in task `{}`", trimmed, task.name));
+                return Err(format!(
+                    "duplicated scope `{}` in task `{}`",
+                    trimmed, task.name
+                ));
             }
         }
     }
@@ -415,9 +415,11 @@ pub(crate) fn draft_create() -> Result<String, String> {
                 next_failures.push((feature, e.clone()));
                 if !retry_on_fail {
                     crate::sync_draft_state_doc(project_root, &mut doc);
-                    let _ =
-                        crate::save_drafts_list_primary(project_root, &doc);
-                    return Err(format!("create_code_draft failed at `{}`: {}", next_failures[0].0, e));
+                    let _ = crate::save_drafts_list_primary(project_root, &doc);
+                    return Err(format!(
+                        "create_code_draft failed at `{}`: {}",
+                        next_failures[0].0, e
+                    ));
                 }
             } else {
                 generated.push((feature, result.unwrap_or_default()));

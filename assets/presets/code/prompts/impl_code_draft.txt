@@ -5,4 +5,6 @@ impl_code_draft prompt
 - `./.project/drafts.yaml`의 draft 항목과 `./.project/plan.yaml`의 `drafts.planned/worked/complete` 상태 전이를 기준으로 병렬 구현한다.
 - 입력으로 전달된 draft_item의 `scope` 파일을 실제로 수정/생성한다.
 - `scope`가 `app/page.tsx`, `store/calc.ts`, `lib/calc.ts`를 포함하면 React + Zustand 계산기 흐름(UI 입력 -> store action -> 계산 로직 -> UI 반영)을 연결한다.
+- draft_item이 에피소드/스토리/본문처럼 글을 생성하는 작업이면 최종 본문은 약 1500자, 허용 범위는 1300~1700자로 맞춘다.
+- draft_item의 `constraints`나 `rule`에 길이 목표가 있으면 구현 결과가 그 길이 목표를 직접 만족하도록 조정한다.
 - 제약 검사 결과는 마지막 줄에 반드시 `constraints: ok` 또는 `constraints: fail` 중 하나로 출력한다.

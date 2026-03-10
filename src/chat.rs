@@ -8,6 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const CODEX_DANGEROUS_FLAG: &str = "--dangerously-bypass-approvals-and-sandbox";
+const LONG_WAIT_REPORT_SEC: u64 = 60;
 
 fn append_chat_log(project_root: &Path, role: &str, message: &str) {
     let debug_enabled = crate::load_app_config()
@@ -31,6 +32,32 @@ fn append_chat_log(project_root: &Path, role: &str, message: &str) {
     }
 }
 
+fn trim_wait_detail(detail: &str) -> String {
+    let normalized = detail.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.len() <= 160 {
+        return normalized;
+    }
+    format!("{}...", &normalized[..157])
+}
+
+fn read_last_non_empty_line(path: &Path) -> Option<String> {
+    let raw = fs::read_to_string(path).ok()?;
+    raw.lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(trim_wait_detail)
+}
+
+fn emit_owner_wait_status(project_root: &Path, owner_pane: Option<&str>, role: &str, status: &str) {
+    eprintln!("{}", status);
+    append_chat_log(project_root, role, status);
+    let _ = crate::append_check_process_status(role, status);
+    if let Some(pane_id) = owner_pane {
+        let _ = crate::tmux::display_message(pane_id, status);
+    }
+}
+
 fn codex_exec_timeout_sec() -> u64 {
     crate::load_app_config()
         .as_ref()
@@ -42,12 +69,15 @@ fn run_command_with_timeout(
     mut command: Command,
     timeout_sec: u64,
     timeout_label: &str,
+    project_root: &Path,
+    wait_reason: &str,
 ) -> Result<Output, String> {
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = command
         .spawn()
         .map_err(|e| format!("failed to spawn {}: {}", timeout_label, e))?;
     let started = Instant::now();
+    let mut next_report_sec = LONG_WAIT_REPORT_SEC;
     loop {
         match child
             .try_wait()
@@ -59,6 +89,15 @@ fn run_command_with_timeout(
                     .map_err(|e| format!("failed to collect output for {}: {}", timeout_label, e));
             }
             None => {
+                let elapsed_sec = started.elapsed().as_secs();
+                if elapsed_sec >= next_report_sec {
+                    let status = format!(
+                        "[orc-status] {} | elapsed={}s | {}",
+                        timeout_label, elapsed_sec, wait_reason
+                    );
+                    emit_owner_wait_status(project_root, None, "LLM_WAIT", &status);
+                    next_report_sec += LONG_WAIT_REPORT_SEC;
+                }
                 if started.elapsed() >= Duration::from_secs(timeout_sec) {
                     let _ = child.kill();
                     let _ = child.wait();
@@ -87,7 +126,10 @@ fn should_use_tmux_for_llm() -> bool {
     let debug_enabled = crate::load_app_config()
         .as_ref()
         .is_none_or(crate::config::AppConfig::debug_enabled);
-    debug_enabled && env::var("TMUX").map(|v| !v.trim().is_empty()).unwrap_or(false)
+    debug_enabled
+        && env::var("TMUX")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false)
 }
 
 fn env_flag_true(name: &str) -> bool {
@@ -181,10 +223,27 @@ printf \"%s\" \"$status\" > {code}\n",
     let _ = crate::tmux::rename_pane(&worker.pane_id, &format!("llm-{}", worker.short_id()));
 
     let started = Instant::now();
+    let parent_pane = crate::tmux::current_pane_id().ok();
+    let mut next_report_sec = LONG_WAIT_REPORT_SEC;
     while !code_path.exists() {
+        let elapsed_sec = started.elapsed().as_secs();
+        if elapsed_sec >= next_report_sec {
+            let latest = read_last_non_empty_line(&stderr_path)
+                .or_else(|| read_last_non_empty_line(&stdout_path))
+                .unwrap_or_else(|| "tmux worker still waiting for llm response".to_string());
+            let status = format!(
+                "[orc-status] {} | elapsed={}s | {}",
+                timeout_label, elapsed_sec, latest
+            );
+            emit_owner_wait_status(dir, parent_pane.as_deref(), "LLM_WAIT", &status);
+            next_report_sec += LONG_WAIT_REPORT_SEC;
+        }
         if started.elapsed() >= Duration::from_secs(timeout_sec) {
             let _ = crate::tmux::kill_worker_pane(&worker);
-            return Err(format!("{} timed out after {}s", timeout_label, timeout_sec));
+            return Err(format!(
+                "{} timed out after {}s",
+                timeout_label, timeout_sec
+            ));
         }
         thread::sleep(Duration::from_millis(200));
     }
@@ -217,8 +276,8 @@ pub(crate) fn run_codex_exec_capture_with_timeout(
         if should_use_tmux_for_llm() {
             match run_llm_via_tmux(
                 &cwd,
-                    &model_bin,
-                    &prompt,
+                &model_bin,
+                &prompt,
                 timeout_sec,
                 false,
                 dangerous,
@@ -246,6 +305,8 @@ pub(crate) fn run_codex_exec_capture_with_timeout(
                 command,
                 timeout_sec,
                 &format!("{} exec", model_bin),
+                &cwd,
+                "waiting for llm response",
             ) {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -263,7 +324,10 @@ pub(crate) fn run_codex_exec_capture_with_timeout(
         append_chat_log(
             &cwd,
             "LLM_RETRY",
-            &format!("attempt {}/{} failed: {}", attempt, total_attempts, last_error),
+            &format!(
+                "attempt {}/{} failed: {}",
+                attempt, total_attempts, last_error
+            ),
         );
     }
     append_chat_log(&cwd, "LLM_ERROR", &last_error);
@@ -322,6 +386,8 @@ pub(crate) fn run_codex_exec_capture_in_dir_with_timeout(
                 command,
                 timeout_sec,
                 &format!("{} exec in {}", model_bin, dir.display()),
+                dir,
+                "waiting for llm response",
             ) {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -339,7 +405,10 @@ pub(crate) fn run_codex_exec_capture_in_dir_with_timeout(
         append_chat_log(
             dir,
             "LLM_RETRY",
-            &format!("attempt {}/{} failed: {}", attempt, total_attempts, last_error),
+            &format!(
+                "attempt {}/{} failed: {}",
+                attempt, total_attempts, last_error
+            ),
         );
     }
     append_chat_log(dir, "LLM_ERROR", &last_error);
@@ -409,6 +478,8 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
                 command,
                 timeout_sec,
                 &format!("{} exec -y", llm),
+                &cwd,
+                "waiting for llm response",
             ) {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -428,6 +499,8 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
                             retry_command,
                             timeout_sec,
                             &format!("{} exec", llm),
+                            &cwd,
+                            "waiting for llm response",
                         ) {
                             Ok(retry) if retry.status.success() => {
                                 let stdout = String::from_utf8_lossy(&retry.stdout).to_string();
@@ -454,7 +527,10 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
         append_chat_log(
             &cwd,
             "LLM_RETRY",
-            &format!("attempt {}/{} failed: {}", attempt, total_attempts, last_error),
+            &format!(
+                "attempt {}/{} failed: {}",
+                attempt, total_attempts, last_error
+            ),
         );
     }
     append_chat_log(&cwd, "LLM_ERROR", &last_error);

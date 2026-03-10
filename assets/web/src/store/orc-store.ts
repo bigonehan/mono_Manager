@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export type ProjectState = "wait" | "work" | "complete" | "auto";
+
 export type Project = {
   id: string;
   name: string;
@@ -8,8 +10,10 @@ export type Project = {
   description: string;
   selected: boolean;
   project_type: "code" | "mono";
-  state?: "init" | "basic" | "work" | "wait" | "review" | "run" | "build" | "complete";
+  state?: ProjectState;
   current_job?: string;
+  is_dev_running?: boolean;
+  is_build_running?: boolean;
 };
 
 export type Detail = {
@@ -28,8 +32,10 @@ export type Detail = {
   planned: string[];
   plannedDisplay: string[];
   generated: string[];
-  state: "init" | "basic" | "work" | "wait" | "review" | "run" | "build" | "complete";
+  state: ProjectState;
   current_job?: string;
+  is_dev_running?: boolean;
+  is_build_running?: boolean;
   hasDraftsYaml: boolean;
   hasInputMd: boolean;
   dev_server_url?: string;
@@ -42,6 +48,20 @@ export type Detail = {
     name: string;
     status: "work" | "wait" | "complete";
     draft: Record<string, unknown>;
+  }>;
+  checkSubject?: string;
+  checkSteps?: Array<{
+    subject: string;
+    text: string;
+    source: string;
+  }>;
+  feedbackMdRaw?: string;
+  hasFeedbackMd?: boolean;
+  screenshots?: Array<{
+    name: string;
+    path: string;
+    url: string;
+    modifiedAt: string;
   }>;
 };
 
@@ -73,6 +93,7 @@ type OrcStore = {
   editConstraints: string;
   editFeatures: string;
   activeRunProjectIds: string[];
+  activeAutoProjectIds: string[];
 
   setTab: (v: AppTab) => void;
   setProjects: (v: Project[] | ((prev: Project[]) => Project[])) => void;
@@ -100,6 +121,7 @@ type OrcStore = {
   setEditConstraints: (v: string) => void;
   setEditFeatures: (v: string) => void;
   setActiveRunProjectIds: (v: string[] | ((prev: string[]) => string[])) => void;
+  setActiveAutoProjectIds: (v: string[] | ((prev: string[]) => string[])) => void;
 };
 
 export const useOrcStore = create<OrcStore>()(
@@ -129,6 +151,7 @@ export const useOrcStore = create<OrcStore>()(
       editConstraints: "",
       editFeatures: "",
       activeRunProjectIds: [],
+      activeAutoProjectIds: [],
 
       setTab: (v) => set({ tab: v }),
       setProjects: (v) =>
@@ -165,12 +188,18 @@ export const useOrcStore = create<OrcStore>()(
         set((state) => ({
           activeRunProjectIds:
             typeof v === "function" ? (v as (prev: string[]) => string[])(state.activeRunProjectIds) : v
+        })),
+      setActiveAutoProjectIds: (v) =>
+        set((state) => ({
+          activeAutoProjectIds:
+            typeof v === "function" ? (v as (prev: string[]) => string[])(state.activeAutoProjectIds) : v
         }))
     }),
     {
       name: "orc-web-store",
       partialize: (state) => ({
-        activeRunProjectIds: state.activeRunProjectIds
+        activeRunProjectIds: state.activeRunProjectIds,
+        activeAutoProjectIds: state.activeAutoProjectIds
       })
     }
   )

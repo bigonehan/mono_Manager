@@ -15,6 +15,17 @@ const DRAFT_ITEM_LLM_TIMEOUT_SEC: u64 = 10;
 const IMPL_DRAFT_LLM_TIMEOUT_SEC: u64 = 240;
 const AUTO_RETRY_MAX: usize = 0;
 const AUTO_RETRY_SLEEP_SEC: u64 = 2;
+const LONG_WAIT_REPORT_SEC: u64 = 60;
+
+fn manual_web_check_mode_enabled() -> bool {
+    match env::var("ORC_WEB_MANUAL_CHECK") {
+        Ok(value) => matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => false,
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct CodePlanDrafts {
@@ -178,7 +189,10 @@ pub(crate) fn init_code_project(args: &[String]) -> Result<String, String> {
     if opts.auto {
         debug_log_auto_stage("bootstrap", "bootstrap_code_project completed");
     }
-    result = format!("{} | {} | {} | {}", result, detail_msg, domain_msg, bootstrap_msg);
+    result = format!(
+        "{} | {} | {} | {}",
+        result, detail_msg, domain_msg, bootstrap_msg
+    );
     Ok(format!("mode={:?} | {}", MODE_LIST, result))
 }
 
@@ -213,8 +227,7 @@ pub(crate) fn detail_code_project() -> Result<String, String> {
     let raw = fs::read_to_string(path)
         .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
     let next = infer_project_detail_with_llm(&raw)?;
-    fs::write(path, next)
-        .map_err(|e| format!("failed to write {}: {}", path.display(), e))?;
+    fs::write(path, next).map_err(|e| format!("failed to write {}: {}", path.display(), e))?;
     Ok("detail_code_project completed".to_string())
 }
 
@@ -331,7 +344,10 @@ pub(crate) fn add_code_plan(args: &[String]) -> Result<String, String> {
     }
     sync_plan_doc(&mut doc);
     save_plan_doc(&doc)?;
-    let mut out = format!("add_code_plan completed: planned={}", doc.drafts.planned.len());
+    let mut out = format!(
+        "add_code_plan completed: planned={}",
+        doc.drafts.planned.len()
+    );
     if auto {
         return Ok(out);
     }
@@ -347,6 +363,7 @@ pub(crate) fn create_code_draft() -> Result<String, String> {
 }
 
 pub(crate) fn create_input_md() -> Result<String, String> {
+    append_check_process_status("create_input_md", "start");
     build_input_md_auto()
 }
 
@@ -371,22 +388,47 @@ pub(crate) fn add_code_draft(args: &[String]) -> Result<String, String> {
         use_file = true;
         let build_msg = build_input_md_auto()?;
         debug_log_auto_stage("input-md", &build_msg);
+        append_check_process_status(
+            "add_code_draft",
+            &format!("auto input generated | {}", build_msg),
+        );
     }
 
+    append_check_process_status(
+        "add_code_draft",
+        &format!(
+            "start | mode={}{}",
+            if use_file { "file" } else { "llm" },
+            if message.is_some() { " | message" } else { "" }
+        ),
+    );
     ensure_drafts_yaml_initialized()?;
+    append_check_process_status("add_code_draft", "drafts.yaml initialized");
     let mut plan = load_plan_doc()?;
     sync_plan_doc(&mut plan);
     let mut drafts = load_drafts_doc()?;
     let mut plan_items = plan.drafts.planned.clone();
+    append_check_process_status(
+        "add_code_draft",
+        &format!(
+            "plan/drafts loaded | planned={} draft_items={}",
+            plan_items.len(),
+            drafts.draft.len()
+        ),
+    );
 
+    append_check_process_status("add_code_draft", "read project.md for draft inference");
     let project_md = fs::read_to_string(crate::PROJECT_MD_PATH)
         .map_err(|e| format!("failed to read {}: {}", crate::PROJECT_MD_PATH, e))?;
+    append_check_process_status("add_code_draft", "read plan.yaml for draft inference");
     let plan_yaml_raw = {
         let path = plan_yaml_path()?;
-        fs::read_to_string(&path).map_err(|e| format!("failed to read {}: {}", path.display(), e))?
+        fs::read_to_string(&path)
+            .map_err(|e| format!("failed to read {}: {}", path.display(), e))?
     };
 
     let input_objects = if use_file {
+        append_check_process_status("add_code_draft", "parse input.md objects");
         parse_input_md_objects(Path::new(crate::INPUT_MD_PATH))?
     } else {
         Vec::new()
@@ -404,19 +446,24 @@ pub(crate) fn add_code_draft(args: &[String]) -> Result<String, String> {
         }
         sync_plan_doc(&mut plan);
         save_plan_doc(&plan)?;
+        append_check_process_status(
+            "add_code_draft",
+            &format!(
+                "plan synced from input.md | planned={}",
+                plan.drafts.planned.len()
+            ),
+        );
     }
 
     for name in &plan_items {
         if drafts.draft.iter().any(|v| v.name == *name) {
             continue;
         }
-        let from_input = input_objects.iter().find(|v| normalize_feature_key(&v.name) == *name);
-        let inferred = infer_draft_item_with_llm(
-            &project_md,
-            &plan_yaml_raw,
-            name,
-            from_input,
-        );
+        append_check_process_status("add_code_draft", &format!("infer draft item | {}", name));
+        let from_input = input_objects
+            .iter()
+            .find(|v| normalize_feature_key(&v.name) == *name);
+        let inferred = infer_draft_item_with_llm(&project_md, &plan_yaml_raw, name, from_input);
         drafts.draft.push(DraftItemDoc {
             state: default_draft_item_state(),
             ..inferred
@@ -427,12 +474,11 @@ pub(crate) fn add_code_draft(args: &[String]) -> Result<String, String> {
     if let Some(msg) = message {
         let name = normalize_feature_key(&msg);
         if !name.is_empty() && !drafts.draft.iter().any(|v| v.name == name) {
-            let inferred = infer_draft_item_with_llm(
-                &project_md,
-                &plan_yaml_raw,
-                &name,
-                None,
+            append_check_process_status(
+                "add_code_draft",
+                &format!("infer message draft item | {}", name),
             );
+            let inferred = infer_draft_item_with_llm(&project_md, &plan_yaml_raw, &name, None);
             drafts.draft.push(DraftItemDoc {
                 state: default_draft_item_state(),
                 ..inferred
@@ -445,12 +491,18 @@ pub(crate) fn add_code_draft(args: &[String]) -> Result<String, String> {
     sync_plan_with_draft_items(&mut plan, &drafts);
     save_plan_doc(&plan)?;
     save_drafts_doc(&drafts)?;
+    append_check_process_status(
+        "add_code_draft",
+        &format!("artifacts saved | draft_items={}", drafts.draft.len()),
+    );
     debug_log_auto_stage(
         "draft-yaml",
         &format!("drafts.yaml generated: draft={}", drafts.draft.len()),
     );
+    append_check_process_status("add_code_draft", "run check_code_draft");
     let check = check_code_draft(false)?;
     debug_log_auto_stage("draft-yaml", "drafts.yaml checked");
+    append_check_process_status("add_code_draft", "completed");
     let out = format!(
         "add_code_draft completed: draft={} | {}",
         drafts.draft.len(),
@@ -475,7 +527,10 @@ pub(crate) fn auto_code_message(message: &str) -> Result<String, String> {
         }
         Err(err) => {
             write_feedback_md("auto_code_message failed", &err)?;
-            Err(format!("auto flow failed; check feedback.md: {}", err))
+            Err(format!(
+                "auto flow failed; check .project/check-process.md: {}",
+                err
+            ))
         }
     }
 }
@@ -502,17 +557,13 @@ pub(crate) fn auto_add_function_message(message: &str) -> Result<String, String>
     let improve_out = crate::run_codex_exec_capture_with_timeout(&improve_prompt, 600)
         .map(|v| v.trim().to_string())
         .unwrap_or_else(|e| format!("improve stage skipped: {}", e));
-    let post_retry_out = run_auto_retry_loop("auto_add_function-post-improve", Some(trimmed), false)?;
+    let post_retry_out =
+        run_auto_retry_loop("auto_add_function-post-improve", Some(trimmed), false)?;
     let final_check = check_code_draft(true)?;
     debug_log_auto_stage("auto-add", "auto_add_function flow completed");
     Ok(format!(
         "auto_add_function completed: {} | {} | {} | improve={} | {} | {}",
-        init_out,
-        retry_out,
-        plan_md_out,
-        improve_out,
-        post_retry_out,
-        final_check
+        init_out, retry_out, plan_md_out, improve_out, post_retry_out, final_check
     ))
 }
 
@@ -607,7 +658,11 @@ fn drafts_state_counts() -> Result<(usize, usize, usize, usize), String> {
     Ok((
         drafts.draft.iter().filter(|v| v.state == "planned").count(),
         drafts.draft.iter().filter(|v| v.state == "worked").count(),
-        drafts.draft.iter().filter(|v| v.state == "complete").count(),
+        drafts
+            .draft
+            .iter()
+            .filter(|v| v.state == "complete")
+            .count(),
         drafts.draft.iter().filter(|v| v.state == "error").count(),
     ))
 }
@@ -633,13 +688,27 @@ fn drafts_resolved() -> bool {
     }
 }
 
-fn run_auto_retry_loop(mode: &str, message: Option<&str>, from_file: bool) -> Result<String, String> {
+fn run_auto_retry_loop(
+    mode: &str,
+    message: Option<&str>,
+    from_file: bool,
+) -> Result<String, String> {
     let max_retry = auto_retry_max();
     let sleep_sec = auto_retry_sleep_sec();
     let mut attempt: usize = 0;
 
     loop {
         attempt += 1;
+        let retry_input = if from_file {
+            crate::INPUT_MD_PATH.to_string()
+        } else {
+            message.unwrap_or("(empty)").to_string()
+        };
+        append_check_process_retry(
+            mode,
+            &retry_input,
+            &format!("attempt={} from_file={}", attempt, from_file),
+        );
         if max_retry > 0 && attempt > max_retry {
             let detail = format!(
                 "{} unresolved after {} attempt(s) | {}",
@@ -721,6 +790,7 @@ fn run_auto_retry_loop(mode: &str, message: Option<&str>, from_file: bool) -> Re
             stage_log.join(" | "),
             state
         );
+        append_check_process_status(mode, &detail);
         let _ = write_feedback_md("auto retry unresolved", &detail);
         if sleep_sec > 0 {
             thread::sleep(Duration::from_secs(sleep_sec));
@@ -756,9 +826,24 @@ pub(crate) async fn impl_code_draft() -> Result<String, String> {
     save_plan_doc(&plan)?;
     save_drafts_doc(&drafts)?;
 
-    if let Some(fast_path) = try_complete_impl_from_existing_project(&mut plan, &mut drafts, &planned_names)? {
+    if let Some(fast_path) =
+        try_complete_impl_from_existing_project(&mut plan, &mut drafts, &planned_names)?
+    {
+        if manual_web_check_mode_enabled() {
+            append_check_process_status(
+                "impl_code_draft",
+                "manual web check pending after fast-path implementation",
+            );
+            return Ok(format!(
+                "impl_code_draft completed | {} | manual rc check pending",
+                fast_path
+            ));
+        }
         let check = check_code_draft(true)?;
-        return Ok(format!("impl_code_draft completed | {} | {}", fast_path, check));
+        return Ok(format!(
+            "impl_code_draft completed | {} | {}",
+            fast_path, check
+        ));
     }
 
     let worked_items: Vec<DraftItemDoc> = plan
@@ -786,7 +871,10 @@ pub(crate) async fn impl_code_draft() -> Result<String, String> {
             save_plan_doc(&plan)?;
             save_drafts_doc(&drafts)?;
             if run.failed.is_empty() {
-                format!("impl_code_draft parallel completed: {}", run.succeeded.join(", "))
+                format!(
+                    "impl_code_draft parallel completed: {}",
+                    run.succeeded.join(", ")
+                )
             } else {
                 let msg = format!(
                     "partial success: succeeded=[{}], failed=[{}]",
@@ -818,14 +906,31 @@ pub(crate) async fn impl_code_draft() -> Result<String, String> {
             let _ = save_drafts_doc(&drafts);
             write_feedback_md("impl_code_draft failed", &e)?;
             return Err(format!(
-                "impl_code_draft failed after sync; check feedback.md: {}",
+                "impl_code_draft failed after sync; check .project/check-process.md: {}",
                 e
             ));
         }
     };
 
+    if manual_web_check_mode_enabled() {
+        append_check_process_status(
+            "impl_code_draft",
+            "manual web check pending after parallel implementation",
+        );
+        return Ok(format!(
+            "impl_code_draft completed | {} | manual rc check pending",
+            run_msg
+        ));
+    }
     let check = check_code_draft(true)?;
-    Ok(format!("impl_code_draft completed | {} | {}", run_msg, check))
+    append_check_process_status(
+        "impl_code_draft",
+        &format!("artifact verification completed | {}", check),
+    );
+    Ok(format!(
+        "impl_code_draft completed | {} | {}",
+        run_msg, check
+    ))
 }
 
 fn try_complete_impl_from_existing_project(
@@ -871,8 +976,9 @@ async fn impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<ImplRunRes
         .join("code")
         .join("prompts")
         .join("impl_code_draft.txt");
-    let prompt_template = fs::read_to_string(&prompt_path)
-        .unwrap_or_else(|_| "impl_code_draft prompt\n- draft_item을 구현하고 제약 만족 여부를 보고한다.".to_string());
+    let prompt_template = fs::read_to_string(&prompt_path).unwrap_or_else(|_| {
+        "impl_code_draft prompt\n- draft_item을 구현하고 제약 만족 여부를 보고한다.".to_string()
+    });
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
     let llm_timeout_sec = impl_draft_llm_timeout_sec();
     let mut handles = Vec::new();
@@ -928,22 +1034,7 @@ async fn impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<ImplRunRes
 }
 
 fn write_feedback_md(summary: &str, detail: &str) -> Result<(), String> {
-    let mut body = fs::read_to_string("feedback.md").unwrap_or_else(|_| "# feedback\n".to_string());
-    if !body.starts_with("# feedback") {
-        body = format!("# feedback\n\n{}", body);
-    }
-    if !body.ends_with('\n') {
-        body.push('\n');
-    }
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|v| v.as_secs())
-        .unwrap_or(0);
-    body.push_str(&format!(
-        "\n## entry-{}\n- status: failed\n- summary: {}\n- detail: {}\n",
-        ts, summary, detail
-    ));
-    fs::write("feedback.md", body).map_err(|e| format!("failed to write feedback.md: {}", e))
+    crate::append_check_process_status(summary, detail)
 }
 
 fn run_impl_code_draft_via_cli() -> Result<String, String> {
@@ -955,6 +1046,7 @@ fn run_code_subcommand_in_new_session(command: &str, args: &[&str]) -> Result<St
         return run_code_subcommand_via_tmux_pane(command, args);
     }
     let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
+    emit_command_start_status(None, "session", command, args);
     let before = capture_workflow_evidence().ok();
     debug_log_auto_stage(
         "session",
@@ -965,6 +1057,9 @@ fn run_code_subcommand_in_new_session(command: &str, args: &[&str]) -> Result<St
     for arg in args {
         cmd.arg(arg);
     }
+    if let Ok(task_session) = env::var("ORC_TASK_SESSION_KEY") {
+        cmd.env("ORC_TASK_SESSION_KEY", task_session);
+    }
     let mut child = cmd
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -972,10 +1067,22 @@ fn run_code_subcommand_in_new_session(command: &str, args: &[&str]) -> Result<St
         .map_err(|e| format!("failed to execute {}: {}", command, e))?;
     let timeout_sec = code_subcommand_timeout_sec();
     let started = Instant::now();
+    let mut next_report_sec = LONG_WAIT_REPORT_SEC;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) => {
+                let elapsed_sec = started.elapsed().as_secs();
+                if elapsed_sec >= next_report_sec {
+                    report_long_wait_status(
+                        None,
+                        "session",
+                        command,
+                        elapsed_sec,
+                        "child process still running; waiting for command exit",
+                    );
+                    next_report_sec += LONG_WAIT_REPORT_SEC;
+                }
                 if started.elapsed() >= Duration::from_secs(timeout_sec) {
                     let _ = child.kill();
                     let _ = child.wait();
@@ -1009,11 +1116,7 @@ fn run_code_subcommand_in_new_session(command: &str, args: &[&str]) -> Result<St
             "session",
             &format!("new session failed: {} | code={:?}", command, status.code()),
         );
-        Err(format!(
-            "{} failed: code={:?}",
-            command,
-            status.code()
-        ))
+        Err(format!("{} failed: code={:?}", command, status.code()))
     }
 }
 
@@ -1036,6 +1139,75 @@ fn env_flag_true(name: &str) -> bool {
     }
 }
 
+fn trim_wait_detail(detail: &str) -> String {
+    let normalized = detail.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.len() <= 160 {
+        return normalized;
+    }
+    format!("{}...", &normalized[..157])
+}
+
+fn read_last_non_empty_line(path: &Path) -> Option<String> {
+    let raw = fs::read_to_string(path).ok()?;
+    raw.lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(trim_wait_detail)
+}
+
+fn report_long_wait_status(
+    parent_pane: Option<&str>,
+    scope: &str,
+    command: &str,
+    elapsed_sec: u64,
+    detail: &str,
+) {
+    let status = format!(
+        "[orc-status] scope={} command={} elapsed={}s detail={}",
+        scope,
+        command,
+        elapsed_sec,
+        trim_wait_detail(detail)
+    );
+    eprintln!("{}", status);
+    debug_log_auto_stage("wait", &status);
+    if let Some(parent) = parent_pane {
+        let _ = crate::tmux::display_message(parent, &status);
+    }
+}
+
+fn append_check_process_status(stage: &str, detail: &str) {
+    let _ = crate::append_check_process_status(stage, detail);
+}
+
+fn append_check_process_retry(mode: &str, input: &str, detail: &str) {
+    let _ = crate::append_check_process_retry(mode, input, detail);
+}
+
+fn current_exe_process_detail() -> String {
+    crate::binary_context_summary()
+}
+
+fn emit_command_start_status(parent_pane: Option<&str>, scope: &str, command: &str, args: &[&str]) {
+    let status = format!(
+        "[orc-start] scope={} command={} args={} {}",
+        scope,
+        command,
+        if args.is_empty() {
+            "(none)".to_string()
+        } else {
+            args.join(" ")
+        },
+        current_exe_process_detail()
+    );
+    eprintln!("{}", status);
+    append_check_process_status(scope, &status);
+    if let Some(parent) = parent_pane {
+        let _ = crate::tmux::display_message(parent, &status);
+    }
+}
+
 fn quote_sh(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
@@ -1043,11 +1215,19 @@ fn quote_sh(value: &str) -> String {
 fn run_code_subcommand_via_tmux_pane(command: &str, args: &[&str]) -> Result<String, String> {
     let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
     let cwd = env::current_dir().map_err(|e| format!("failed to read cwd: {}", e))?;
+    let parent_pane = crate::tmux::current_pane_id().ok();
+    let task_session = env::var("ORC_TASK_SESSION_KEY").ok();
+    emit_command_start_status(parent_pane.as_deref(), "tmux-worker", command, args);
     let before = capture_workflow_evidence().ok();
     let runtime = Path::new(".project").join("runtime");
     fs::create_dir_all(&runtime)
         .map_err(|e| format!("failed to create {}: {}", runtime.display(), e))?;
-    let token = format!("{}-{}-{}", now_unix_ts(), std::process::id(), normalize_feature_key(command));
+    let token = format!(
+        "{}-{}-{}",
+        now_unix_ts(),
+        std::process::id(),
+        normalize_feature_key(command)
+    );
     let script_path = runtime.join(format!("tmux-subcmd-{}.sh", token));
     let stdout_path = runtime.join(format!("tmux-subcmd-{}.stdout.log", token));
     let stderr_path = runtime.join(format!("tmux-subcmd-{}.stderr.log", token));
@@ -1068,11 +1248,16 @@ set +e\n\
 cd {cwd}\n\
 echo \"[orc-worker] start: {command}{args}\"\n\
 echo \"[orc-worker] cwd: {cwd_display}\"\n\
+{task_session_export}\
 {exe} {command}{args} > >(tee {stdout}) 2> >(tee {stderr} >&2)\n\
 status=$?\n\
 printf \"%s\" \"$status\" > {code}\n",
         cwd = quote_sh(&cwd.display().to_string()),
         cwd_display = cwd.display(),
+        task_session_export = task_session
+            .as_deref()
+            .map(|value| format!("export ORC_TASK_SESSION_KEY={}\n", quote_sh(value)))
+            .unwrap_or_default(),
         exe = quote_sh(&exe.display().to_string()),
         command = quote_sh(command),
         args = args_joined,
@@ -1082,13 +1267,15 @@ printf \"%s\" \"$status\" > {code}\n",
     );
     fs::write(&script_path, script)
         .map_err(|e| format!("failed to write {}: {}", script_path.display(), e))?;
-    let parent_pane = crate::tmux::current_pane_id().ok();
     debug_log_auto_stage(
         "session",
         &format!("worker pane start: {} {}", command, args.join(" ")),
     );
-    let pane_id = crate::tmux::split_window_run(&format!("bash {}", quote_sh(&script_path.display().to_string())))
-        .map_err(|e| format!("failed to spawn tmux worker pane: {}", e))?;
+    let pane_id = crate::tmux::split_window_run(&format!(
+        "bash {}",
+        quote_sh(&script_path.display().to_string())
+    ))
+    .map_err(|e| format!("failed to spawn tmux worker pane: {}", e))?;
     let worker = crate::tmux::register_worker_pane(&pane_id);
     let _ = crate::tmux::rename_pane(
         &worker.pane_id,
@@ -1096,14 +1283,32 @@ printf \"%s\" \"$status\" > {code}\n",
     );
     let timeout_sec = code_subcommand_timeout_sec();
     let started = Instant::now();
+    let mut next_report_sec = LONG_WAIT_REPORT_SEC;
     while !code_path.exists() {
+        let elapsed_sec = started.elapsed().as_secs();
+        if elapsed_sec >= next_report_sec {
+            let latest = read_last_non_empty_line(&stderr_path)
+                .or_else(|| read_last_non_empty_line(&stdout_path))
+                .unwrap_or_else(|| "worker pane has no output yet".to_string());
+            report_long_wait_status(
+                parent_pane.as_deref(),
+                "tmux-worker",
+                command,
+                elapsed_sec,
+                &latest,
+            );
+            next_report_sec += LONG_WAIT_REPORT_SEC;
+        }
         if started.elapsed() >= Duration::from_secs(timeout_sec) {
             let _ = crate::tmux::display_message(
                 parent_pane.as_deref().unwrap_or(""),
                 &format!("orc worker timeout: {}", command),
             );
             let _ = crate::tmux::kill_worker_pane(&worker);
-            return Err(format!("{} failed: timeout after {}s", command, timeout_sec));
+            return Err(format!(
+                "{} failed: timeout after {}s",
+                command, timeout_sec
+            ));
         }
         thread::sleep(Duration::from_millis(200));
     }
@@ -1152,8 +1357,16 @@ fn capture_workflow_evidence() -> Result<WorkflowEvidenceSnapshot, String> {
     let drafts_path = drafts_yaml_path()?;
     let plan_exists = plan_path.exists();
     let drafts_exists = drafts_path.exists();
-    let plan = if plan_exists { Some(load_plan_doc()?) } else { None };
-    let drafts = if drafts_exists { Some(load_drafts_doc()?) } else { None };
+    let plan = if plan_exists {
+        Some(load_plan_doc()?)
+    } else {
+        None
+    };
+    let drafts = if drafts_exists {
+        Some(load_drafts_doc()?)
+    } else {
+        None
+    };
     Ok(WorkflowEvidenceSnapshot {
         plan_exists,
         plan_planned_len: plan.as_ref().map_or(0, |doc| doc.drafts.planned.len()),
@@ -1162,18 +1375,30 @@ fn capture_workflow_evidence() -> Result<WorkflowEvidenceSnapshot, String> {
         plan_error_len: plan.as_ref().map_or(0, |doc| doc.drafts.error.len()),
         drafts_exists,
         draft_items_len: drafts.as_ref().map_or(0, |doc| doc.draft.len()),
-        drafts_planned_len: drafts
-            .as_ref()
-            .map_or(0, |doc| doc.draft.iter().filter(|item| item.state == "planned").count()),
-        drafts_worked_len: drafts
-            .as_ref()
-            .map_or(0, |doc| doc.draft.iter().filter(|item| item.state == "worked").count()),
-        drafts_complete_len: drafts
-            .as_ref()
-            .map_or(0, |doc| doc.draft.iter().filter(|item| item.state == "complete").count()),
-        drafts_error_len: drafts
-            .as_ref()
-            .map_or(0, |doc| doc.draft.iter().filter(|item| item.state == "error").count()),
+        drafts_planned_len: drafts.as_ref().map_or(0, |doc| {
+            doc.draft
+                .iter()
+                .filter(|item| item.state == "planned")
+                .count()
+        }),
+        drafts_worked_len: drafts.as_ref().map_or(0, |doc| {
+            doc.draft
+                .iter()
+                .filter(|item| item.state == "worked")
+                .count()
+        }),
+        drafts_complete_len: drafts.as_ref().map_or(0, |doc| {
+            doc.draft
+                .iter()
+                .filter(|item| item.state == "complete")
+                .count()
+        }),
+        drafts_error_len: drafts.as_ref().map_or(0, |doc| {
+            doc.draft
+                .iter()
+                .filter(|item| item.state == "error")
+                .count()
+        }),
     })
 }
 
@@ -1198,12 +1423,21 @@ fn verify_plan_artifacts(
     if !after.plan_exists {
         return Err("init_code_plan completed without .project/plan.yaml".to_string());
     }
-    if after.plan_planned_len + after.plan_worked_len + after.plan_complete_len + after.plan_error_len == 0 {
-        return Err("init_code_plan completed but .project/plan.yaml has no draft states".to_string());
+    if after.plan_planned_len
+        + after.plan_worked_len
+        + after.plan_complete_len
+        + after.plan_error_len
+        == 0
+    {
+        return Err(
+            "init_code_plan completed but .project/plan.yaml has no draft states".to_string(),
+        );
     }
     if let Some(before) = before {
         if before == after {
-            return Err("init_code_plan completed but .project/plan.yaml state did not change".to_string());
+            return Err(
+                "init_code_plan completed but .project/plan.yaml state did not change".to_string(),
+            );
         }
     }
     Ok(())
@@ -1217,7 +1451,9 @@ fn verify_draft_artifacts(
         return Err("add_code_draft completed without .project/drafts.yaml".to_string());
     }
     if after.draft_items_len == 0 {
-        return Err("add_code_draft completed but .project/drafts.yaml has no draft items".to_string());
+        return Err(
+            "add_code_draft completed but .project/drafts.yaml has no draft items".to_string(),
+        );
     }
     if after.drafts_planned_len + after.drafts_worked_len + after.drafts_complete_len == 0 {
         return Err("add_code_draft completed but .project/drafts.yaml has no planned/worked/complete state".to_string());
@@ -1229,7 +1465,10 @@ fn verify_draft_artifacts(
             && before.drafts_complete_len == after.drafts_complete_len
             && before.drafts_error_len == after.drafts_error_len
         {
-            return Err("add_code_draft completed but .project/drafts.yaml state did not change".to_string());
+            return Err(
+                "add_code_draft completed but .project/drafts.yaml state did not change"
+                    .to_string(),
+            );
         }
     }
     Ok(())
@@ -1243,7 +1482,8 @@ fn verify_impl_artifacts(
         return Err("impl_code_draft completed without plan/drafts artifacts".to_string());
     }
     if let Some(before) = before {
-        let after_resolved = after.plan_complete_len + after.drafts_complete_len + after.drafts_error_len;
+        let after_resolved =
+            after.plan_complete_len + after.drafts_complete_len + after.drafts_error_len;
         let before_resolved =
             before.plan_complete_len + before.drafts_complete_len + before.drafts_error_len;
         if after_resolved < before_resolved {
@@ -1269,36 +1509,46 @@ fn impl_draft_llm_timeout_sec() -> u64 {
 }
 
 fn build_input_md_auto() -> Result<String, String> {
+    append_check_process_status("create_input_md", "read project.md");
     let project_md = fs::read_to_string(crate::PROJECT_MD_PATH)
         .map_err(|e| format!("failed to read {}: {}", crate::PROJECT_MD_PATH, e))?;
     let plan_path = plan_yaml_path()?;
+    append_check_process_status(
+        "create_input_md",
+        &format!("read plan.yaml | {}", plan_path.display()),
+    );
     let plan_yaml = fs::read_to_string(&plan_path)
         .map_err(|e| format!("failed to read {}: {}", plan_path.display(), e))?;
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("presets").join("code")
+        .join("presets")
+        .join("code")
         .join("prompts")
         .join("build_input_md_auto.txt");
-    let prompt_template = fs::read_to_string(&prompt_path).map_err(|e| {
-        format!(
-            "failed to read {}: {}",
-            prompt_path.display(),
-            e
-        )
-    })?;
+    append_check_process_status(
+        "create_input_md",
+        &format!("load prompt | {}", prompt_path.display()),
+    );
+    let prompt_template = fs::read_to_string(&prompt_path)
+        .map_err(|e| format!("failed to read {}: {}", prompt_path.display(), e))?;
     let prompt = format!(
         "{}\n\nproject.md:\n{}\n\nplan.yaml:\n{}\n\n출력은 반드시 input.md 본문만 반환한다.",
         prompt_template, project_md, plan_yaml
     );
+    append_check_process_status("create_input_md", "prompt prepared");
+    append_check_process_status("create_input_md", "request llm");
     let raw = crate::run_codex_exec_capture(&prompt)?;
     let body = crate::extract_markdown_block(&raw);
     if body.trim().is_empty() {
         return Err("build_input_md_auto failed: empty input.md body".to_string());
     }
+    append_check_process_status("create_input_md", "write input.md raw body");
     fs::write(crate::INPUT_MD_PATH, format!("{}\n", body))
         .map_err(|e| format!("failed to write {}: {}", crate::INPUT_MD_PATH, e))?;
+    append_check_process_status("create_input_md", "validate input.md objects");
     let parsed = parse_input_md_objects(Path::new(crate::INPUT_MD_PATH))?;
     if !parsed.is_empty() {
+        append_check_process_status("create_input_md", "rewrite normalized input.md");
         let mut rebuilt = String::new();
         for obj in &parsed {
             rebuilt.push_str(&format!("# {}\n", obj.name));
@@ -1316,6 +1566,11 @@ fn build_input_md_auto() -> Result<String, String> {
     if parsed.is_empty() {
         return Err("build_input_md_auto failed: input.md has no valid feature object".to_string());
     }
+    append_check_process_status("create_input_md", "artifact verification completed");
+    append_check_process_status(
+        "create_input_md",
+        &format!("completed | feature_objects={}", parsed.len()),
+    );
     Ok("build_input_md_auto completed: input.md generated".to_string())
 }
 
@@ -1346,7 +1601,10 @@ pub(crate) fn check_code_draft(_auto_yes: bool) -> Result<String, String> {
         .draft
         .iter()
         .all(|item| matches!(item.state.as_str(), "complete" | "error"));
-    let follow = if fast_path_check && !test_result.to_ascii_lowercase().contains("fail") && !test_result.to_ascii_lowercase().contains("error") {
+    let follow = if fast_path_check
+        && !test_result.to_ascii_lowercase().contains("fail")
+        && !test_result.to_ascii_lowercase().contains("error")
+    {
         "NO_CHANGE (fast-path)".to_string()
     } else {
         crate::run_check_code_after_draft_changes(&list, "check_code_draft")?
@@ -1388,12 +1646,11 @@ pub(crate) fn check_task() -> Result<String, String> {
     if missing.is_empty() {
         Ok("check_task completed: plan/draft linkage ok".to_string())
     } else {
-        Ok(format!("check_task completed: missing draft items={}", missing.join(", ")))
+        Ok(format!(
+            "check_task completed: missing draft items={}",
+            missing.join(", ")
+        ))
     }
-}
-
-pub(crate) fn check_draft() -> Result<String, String> {
-    check_code_draft(true)
 }
 
 fn infer_from_message(msg: &str) -> (String, String, String) {
@@ -1405,11 +1662,13 @@ fn infer_from_message(msg: &str) -> (String, String, String) {
 fn infer_spec_with_llm(message: &str, workspace_hint: Option<&str>) -> Option<String> {
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("presets").join("code")
+        .join("presets")
+        .join("code")
         .join("prompts")
         .join("infer_code_spec.txt");
     let template = fs::read_to_string(&prompt_path).ok().unwrap_or_else(|| {
-        "spec inference prompt\n- 출력은 한 줄: spec: <value>\n- 설명/코드블록 없이 값만 출력".to_string()
+        "spec inference prompt\n- 출력은 한 줄: spec: <value>\n- 설명/코드블록 없이 값만 출력"
+            .to_string()
     });
     let hint = workspace_hint.unwrap_or("");
     let prompt = format!(
@@ -1487,15 +1746,23 @@ struct DraftItemInferOut {
     check: Vec<String>,
 }
 
-fn infer_draft_fields_with_llm(project_md: &str, name: &str, domain: &str, item_type: &str) -> DraftFieldsInferOut {
+fn infer_draft_fields_with_llm(
+    project_md: &str,
+    name: &str,
+    domain: &str,
+    item_type: &str,
+) -> DraftFieldsInferOut {
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("presets").join("code")
+        .join("presets")
+        .join("code")
         .join("prompts")
         .join("infer_draft_fields.txt");
     let prompt_template = fs::read_to_string(&prompt_path)
         .map_err(|e| format!("failed to read {}: {}", prompt_path.display(), e))
-        .unwrap_or_else(|_| "infer_draft_fields prompt\n- output yaml keys: scope, tasks, check".to_string());
+        .unwrap_or_else(|_| {
+            "infer_draft_fields prompt\n- output yaml keys: scope, tasks, check".to_string()
+        });
     let prompt = format!(
         "{}\n\nproject_md:\n{}\n\nname: {}\ndomain: {}\ntype: {}",
         prompt_template, project_md, name, domain, item_type
@@ -1515,17 +1782,18 @@ fn infer_draft_item_with_llm(
 ) -> DraftItemDoc {
     let fallback_item = fallback_draft_item(name, from_input);
     if from_input.is_some() {
+        append_check_process_status(
+            "add_code_draft",
+            &format!("reuse input object without llm | {}", name),
+        );
         return fallback_item;
     }
-    let input_rules = from_input
-        .map(|v| v.rules.join(" | "))
-        .unwrap_or_default();
-    let input_steps = from_input
-        .map(|v| v.steps.join(" | "))
-        .unwrap_or_default();
+    let input_rules = from_input.map(|v| v.rules.join(" | ")).unwrap_or_default();
+    let input_steps = from_input.map(|v| v.steps.join(" | ")).unwrap_or_default();
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("presets").join("code")
+        .join("presets")
+        .join("code")
         .join("prompts")
         .join("infer_draft_item.txt");
     let prompt_template = fs::read_to_string(&prompt_path)
@@ -1538,9 +1806,22 @@ fn infer_draft_item_with_llm(
         "{}\n\ndraft_item_template:\n{}\n\nproject_md:\n{}\n\nplan_yaml:\n{}\n\nname: {}\ninput_rules: {}\ninput_steps: {}",
         prompt_template, draft_item_template, project_md, plan_yaml, name, input_rules, input_steps
     );
-    let Ok(raw) = crate::run_codex_exec_capture_with_timeout(&prompt, DRAFT_ITEM_LLM_TIMEOUT_SEC) else {
+    append_check_process_status(
+        "add_code_draft",
+        &format!("draft item prompt prepared | {}", name),
+    );
+    let Ok(raw) = crate::run_codex_exec_capture_with_timeout(&prompt, DRAFT_ITEM_LLM_TIMEOUT_SEC)
+    else {
+        append_check_process_status(
+            "add_code_draft",
+            &format!("draft item llm fallback | {}", name),
+        );
         return fallback_item;
     };
+    append_check_process_status(
+        "add_code_draft",
+        &format!("draft item llm response received | {}", name),
+    );
     let yaml = crate::extract_yaml_block(&raw);
     let item_out = serde_yaml::from_str::<DraftItemInferOut>(&yaml).unwrap_or_default();
     let inferred_type = if item_out.item_type.trim().is_empty() {
@@ -1553,8 +1834,12 @@ fn infer_draft_item_with_llm(
     } else {
         item_out.domain
     };
-    let first_domain = inferred_domain.first().cloned().unwrap_or_else(|| "app".to_string());
-    let fallback_fields = infer_draft_fields_with_llm(project_md, name, &first_domain, &inferred_type);
+    let first_domain = inferred_domain
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "app".to_string());
+    let fallback_fields =
+        infer_draft_fields_with_llm(project_md, name, &first_domain, &inferred_type);
     let mut step = item_out.step;
     if step.is_empty() {
         step = from_input
@@ -1583,6 +1868,10 @@ fn infer_draft_item_with_llm(
         normalize_feature_key(&item_out.name)
     };
     let constraints = normalize_constraints_format(item_out.constraints);
+    append_check_process_status(
+        "add_code_draft",
+        &format!("draft item normalized | {}", name),
+    );
     DraftItemDoc {
         name: if inferred_name.is_empty() {
             fallback_item.name
@@ -1633,7 +1922,11 @@ fn fallback_draft_item(name: &str, from_input: Option<&InputFeatureObject>) -> D
 }
 
 fn normalize_constraint_entry(raw: &str) -> String {
-    let mut value = raw.trim().trim_start_matches("- ").trim().replace("=>", "->");
+    let mut value = raw
+        .trim()
+        .trim_start_matches("- ")
+        .trim()
+        .replace("=>", "->");
     if value.is_empty() {
         return "입력 -> 출력 : 기능 설명".to_string();
     }
@@ -1645,7 +1938,11 @@ fn normalize_constraint_entry(raw: &str) -> String {
             let desc = value[colon_abs + 1..].trim();
             let fixed_input = if input.is_empty() { "입력" } else { input };
             let fixed_output = if output.is_empty() { "출력" } else { output };
-            let fixed_desc = if desc.is_empty() { "기능 설명" } else { desc };
+            let fixed_desc = if desc.is_empty() {
+                "기능 설명"
+            } else {
+                desc
+            };
             return format!("{} -> {} : {}", fixed_input, fixed_output, fixed_desc);
         }
     }
@@ -1653,7 +1950,11 @@ fn normalize_constraint_entry(raw: &str) -> String {
         let input = left.trim();
         let desc = right.trim();
         let fixed_input = if input.is_empty() { "입력" } else { input };
-        let fixed_desc = if desc.is_empty() { "기능 설명" } else { desc };
+        let fixed_desc = if desc.is_empty() {
+            "기능 설명"
+        } else {
+            desc
+        };
         return format!("{} -> 출력 : {}", fixed_input, fixed_desc);
     }
     value = value.replace(':', " ");
@@ -1674,7 +1975,8 @@ fn normalize_constraints_format(raw_constraints: Vec<String>) -> Vec<String> {
 fn infer_project_detail_with_llm(project_md: &str) -> Result<String, String> {
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("presets").join("code")
+        .join("presets")
+        .join("code")
         .join("prompts")
         .join("add_detail_project_code.txt");
     let template = fs::read_to_string(&prompt_path)
@@ -1693,7 +1995,8 @@ fn infer_project_detail_with_llm(project_md: &str) -> Result<String, String> {
 fn infer_domain_block_with_llm(project_md: &str) -> Result<String, String> {
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("presets").join("code")
+        .join("presets")
+        .join("code")
         .join("prompts")
         .join("create_domain.txt");
     let template = fs::read_to_string(&prompt_path)
@@ -1706,7 +2009,9 @@ fn infer_domain_block_with_llm(project_md: &str) -> Result<String, String> {
     let out = crate::extract_markdown_block(&raw);
     let body = if out.trim().is_empty() { raw } else { out };
     if !body.lines().any(|v| v.trim_start().starts_with("## ")) {
-        return Err("create_code_domain failed: inferred domains block has no domain header".to_string());
+        return Err(
+            "create_code_domain failed: inferred domains block has no domain header".to_string(),
+        );
     }
     Ok(body)
 }
@@ -1714,7 +2019,8 @@ fn infer_domain_block_with_llm(project_md: &str) -> Result<String, String> {
 fn infer_plan_doc_with_llm(project_md: &str) -> Result<CodePlanDoc, String> {
     let prompt_path = crate::source_root()
         .join("assets")
-        .join("presets").join("code")
+        .join("presets")
+        .join("code")
         .join("prompts")
         .join("infer_plan_yaml.txt");
     let template = fs::read_to_string(&prompt_path)
@@ -1733,10 +2039,22 @@ fn infer_plan_doc_with_llm(project_md: &str) -> Result<CodePlanDoc, String> {
 }
 
 fn validate_project_md_headers(markdown: &str) -> Result<(), String> {
-    let required = ["# info", "# features", "# rules", "# constraints", "# domains"];
+    let required = [
+        "# info",
+        "# features",
+        "# rules",
+        "# constraints",
+        "# domains",
+    ];
     for header in required {
-        if !markdown.lines().any(|v| v.trim().eq_ignore_ascii_case(header)) {
-            return Err(format!("project.md format invalid: missing header `{}`", header));
+        if !markdown
+            .lines()
+            .any(|v| v.trim().eq_ignore_ascii_case(header))
+        {
+            return Err(format!(
+                "project.md format invalid: missing header `{}`",
+                header
+            ));
         }
     }
     Ok(())
@@ -1791,7 +2109,10 @@ fn ensure_bootstrap_spec_artifacts(project_root: &Path, spec: &str) -> Result<St
             let deps_obj = deps
                 .as_object_mut()
                 .ok_or_else(|| "package.json dependencies is not object".to_string())?;
-            deps_obj.insert("zustand".to_string(), JsonValue::String("^5.0.0".to_string()));
+            deps_obj.insert(
+                "zustand".to_string(),
+                JsonValue::String("^5.0.0".to_string()),
+            );
             let pretty = serde_json::to_string_pretty(&json)
                 .map_err(|e| format!("failed to encode package.json: {}", e))?;
             fs::write(&package_json_path, format!("{}\n", pretty))
@@ -2042,8 +2363,8 @@ fn ask_yes_no(prompt: &str) -> Result<bool, String> {
 
 fn is_current_dir_empty() -> Result<bool, String> {
     let cwd = env::current_dir().map_err(|e| format!("failed to read cwd: {}", e))?;
-    let mut entries = fs::read_dir(&cwd)
-        .map_err(|e| format!("failed to read {}: {}", cwd.display(), e))?;
+    let mut entries =
+        fs::read_dir(&cwd).map_err(|e| format!("failed to read {}: {}", cwd.display(), e))?;
     Ok(entries.next().is_none())
 }
 
@@ -2065,15 +2386,15 @@ fn load_plan_doc() -> Result<CodePlanDoc, String> {
     let path = plan_yaml_path()?;
     if !path.exists() {
         let raw = read_code_template("plan.yaml")?;
-        let mut doc: CodePlanDoc =
-            serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse plan template: {}", e))?;
+        let mut doc: CodePlanDoc = serde_yaml::from_str(&raw)
+            .map_err(|e| format!("failed to parse plan template: {}", e))?;
         sync_plan_doc(&mut doc);
         return Ok(doc);
     }
     let raw = fs::read_to_string(&path)
         .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
-    let mut doc: CodePlanDoc =
-        serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse {}: {}", path.display(), e))?;
+    let mut doc: CodePlanDoc = serde_yaml::from_str(&raw)
+        .map_err(|e| format!("failed to parse {}: {}", path.display(), e))?;
     sync_plan_doc(&mut doc);
     Ok(doc)
 }
@@ -2082,7 +2403,8 @@ fn save_plan_doc(doc: &CodePlanDoc) -> Result<(), String> {
     let path = plan_yaml_path()?;
     let mut next = doc.clone();
     sync_plan_doc(&mut next);
-    let raw = serde_yaml::to_string(&next).map_err(|e| format!("failed to encode plan yaml: {}", e))?;
+    let raw =
+        serde_yaml::to_string(&next).map_err(|e| format!("failed to encode plan yaml: {}", e))?;
     fs::write(&path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
 }
 
@@ -2090,15 +2412,15 @@ fn load_drafts_doc() -> Result<CodeDraftsDoc, String> {
     let path = drafts_yaml_path()?;
     if !path.exists() {
         let raw = read_code_template("drafts.yaml")?;
-        let mut doc: CodeDraftsDoc =
-            serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse drafts template: {}", e))?;
+        let mut doc: CodeDraftsDoc = serde_yaml::from_str(&raw)
+            .map_err(|e| format!("failed to parse drafts template: {}", e))?;
         sync_drafts_doc(&mut doc);
         return Ok(doc);
     }
     let raw = fs::read_to_string(&path)
         .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
-    let mut doc: CodeDraftsDoc =
-        serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse {}: {}", path.display(), e))?;
+    let mut doc: CodeDraftsDoc = serde_yaml::from_str(&raw)
+        .map_err(|e| format!("failed to parse {}: {}", path.display(), e))?;
     sync_drafts_doc(&mut doc);
     Ok(doc)
 }
@@ -2107,7 +2429,8 @@ fn save_drafts_doc(doc: &CodeDraftsDoc) -> Result<(), String> {
     let path = drafts_yaml_path()?;
     let mut next = doc.clone();
     sync_drafts_doc(&mut next);
-    let raw = serde_yaml::to_string(&next).map_err(|e| format!("failed to encode drafts yaml: {}", e))?;
+    let raw =
+        serde_yaml::to_string(&next).map_err(|e| format!("failed to encode drafts yaml: {}", e))?;
     fs::write(&path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
 }
 
@@ -2135,18 +2458,30 @@ fn sync_plan_with_draft_items(plan: &mut CodePlanDoc, drafts: &CodeDraftsDoc) {
     for item in &drafts.draft {
         let _ = plan_draft_state_change(plan, &item.name, &item.state);
     }
-    plan.drafts
-        .planned
-        .retain(|name| !drafts.draft.iter().any(|item| item.name == *name && item.state != "planned"));
-    plan.drafts
-        .worked
-        .retain(|name| !drafts.draft.iter().any(|item| item.name == *name && item.state != "worked"));
-    plan.drafts
-        .complete
-        .retain(|name| !drafts.draft.iter().any(|item| item.name == *name && item.state != "complete"));
-    plan.drafts
-        .error
-        .retain(|name| !drafts.draft.iter().any(|item| item.name == *name && item.state != "error"));
+    plan.drafts.planned.retain(|name| {
+        !drafts
+            .draft
+            .iter()
+            .any(|item| item.name == *name && item.state != "planned")
+    });
+    plan.drafts.worked.retain(|name| {
+        !drafts
+            .draft
+            .iter()
+            .any(|item| item.name == *name && item.state != "worked")
+    });
+    plan.drafts.complete.retain(|name| {
+        !drafts
+            .draft
+            .iter()
+            .any(|item| item.name == *name && item.state != "complete")
+    });
+    plan.drafts.error.retain(|name| {
+        !drafts
+            .draft
+            .iter()
+            .any(|item| item.name == *name && item.state != "error")
+    });
     sync_plan_doc(plan);
 }
 
@@ -2186,7 +2521,10 @@ fn now_unix_ts() -> u64 {
 fn validate_scenario_file() -> Result<(), String> {
     let path = Path::new(".project").join("scenario.md");
     if !path.exists() {
-        return Err(format!("scenario validation failed: missing {}", path.display()));
+        return Err(format!(
+            "scenario validation failed: missing {}",
+            path.display()
+        ));
     }
     let raw = fs::read_to_string(&path)
         .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
@@ -2228,7 +2566,11 @@ fn extract_domains_from_project_md(project_md: &str) -> Vec<String> {
     crate::extract_project_md_domain_names(project_md)
 }
 
-fn extract_domain_subsection_items(project_md: &str, domain: &str, subsection: &str) -> Vec<String> {
+fn extract_domain_subsection_items(
+    project_md: &str,
+    domain: &str,
+    subsection: &str,
+) -> Vec<String> {
     let domain_key = normalize_feature_key(domain);
     let subsection_key = normalize_feature_key(subsection);
     let mut in_domains = false;
@@ -2393,7 +2735,6 @@ name : sample
         assert!(plan.drafts.complete.iter().any(|v| v == "ui"));
         assert!(!plan.drafts.planned.iter().any(|v| v == "ui"));
     }
-
 }
 
 fn sync_plan_doc(doc: &mut CodePlanDoc) {
@@ -2409,9 +2750,15 @@ fn sync_plan_doc(doc: &mut CodePlanDoc) {
     dedup_vec(&mut doc.drafts.complete);
     dedup_vec(&mut doc.drafts.worked);
     dedup_vec(&mut doc.drafts.planned);
-    doc.drafts.error.retain(|v| !doc.drafts.complete.iter().any(|c| c == v));
-    doc.drafts.worked.retain(|v| !doc.drafts.error.iter().any(|e| e == v));
-    doc.drafts.worked.retain(|v| !doc.drafts.complete.iter().any(|c| c == v));
+    doc.drafts
+        .error
+        .retain(|v| !doc.drafts.complete.iter().any(|c| c == v));
+    doc.drafts
+        .worked
+        .retain(|v| !doc.drafts.error.iter().any(|e| e == v));
+    doc.drafts
+        .worked
+        .retain(|v| !doc.drafts.complete.iter().any(|c| c == v));
     doc.drafts.planned.retain(|v| {
         !doc.drafts.complete.iter().any(|c| c == v)
             && !doc.drafts.worked.iter().any(|w| w == v)
@@ -2564,8 +2911,7 @@ fn ensure_project_memo_initialized() -> Result<(), String> {
     if memo_path.exists() {
         return Ok(());
     }
-    fs::write(&memo_path, "")
-        .map_err(|e| format!("failed to write {}: {}", memo_path.display(), e))
+    fs::write(&memo_path, "").map_err(|e| format!("failed to write {}: {}", memo_path.display(), e))
 }
 
 fn infer_workspace_features(cwd: &Path) -> Result<Vec<String>, String> {
@@ -2791,10 +3137,11 @@ fn write_feedback_sections(test_result: &str, issues: &[String]) -> Result<(), S
         "- 발견된 문제를 기준으로 후속 수정 후 check 단계를 재실행한다.".to_string()
     };
     let body = format!(
-        "# 결과\n- {}\n\n# 미해결\n{}\n\n# 보완\n{}\n",
+        "# 결과\n- {}\n\n# 미해결\n{}\n\n# 개선점\n{}\n",
         test_result, unresolved, improvement
     );
-    fs::write("feedback.md", body).map_err(|e| format!("failed to write feedback.md: {}", e))
+    let path = crate::project_feedback_path();
+    fs::write(&path, body).map_err(|e| format!("failed to write {}: {}", path.display(), e))
 }
 
 fn replace_info_field_value(raw: &str, key: &str, value: &str) -> String {

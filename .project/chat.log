@@ -17957,3 +17957,1010 @@ planned:
   - project_type_add_symbol_create_symbol_project_md
 
 
+[1773072010] LLM_PROMPT
+add_code_plan prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/YAML 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- templates/plan.yaml을 따르고 `drafts.planned` 항목을 생성/추가한다.
+
+
+project.md:
+# info
+name : project_type_add_symbol_create_symbol_project_md
+description : project type add 상세페이지에 symbol 버튼(전구 아이콘) 추가, create_symbol 프롬프트 기반 상징 리스트 생성/선택, Project.md 반영
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+출력은 YAML만:
+planned:
+  - <snake_case>
+
+[1773129404] LLM_PROMPT
+build_input_md_auto prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/YAML/Markdown 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- `project.md`와 `plan.yaml`을 읽고 필요한 기능 리스트를 `input.md` 본문으로 생성한다.
+- 출력 형식은 아래 객체가 여러 개 나열된 Markdown이어야 한다.
+# 기능 이름
+- 기능 규칙 1
+- 기능 규칙 2
+> 기능 수행 순서 1
+> 기능 수행 순서 2
+- 설명 문장, 코드블록, YAML, JSON은 출력하지 않는다.
+
+
+project.md:
+# info
+name : project_type_add_symbol_create_symbol_project_md
+description : project type add 상세페이지에 symbol 버튼(전구 아이콘) 추가, create_symbol 프롬프트 기반 상징 리스트 생성/선택, Project.md 반영
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+plan.yaml:
+goal: Astro + React + TypeScript + Tailwind CSS + shadcn/ui + Zustand + GSAP 조합으로 반응형 학교 랜딩페이지(main/ask 분리)와 문서 기반 Rust CLI 오케스트레이션 기능을 일관된 규칙으로 구현·운영한다.
+domains:
+- navigation
+- main_page
+- ask_page
+- state_management
+- ui_system
+- animation_scroll
+- cli_orchestration
+drafts:
+  planned:
+  - rust_cli_workspace
+  - project_documentation
+  - cli_rust_orchestra
+  - cli_help
+  - cli_create_code_draft
+  - cli_impl_code_draft
+  - cli_test
+  - cli_check_task
+  - cli_check_draft
+  - cli_open_ui
+  - cli_init_code_project
+  - cli_init_code_plan
+  - cli_add_code_plan
+  - cli_add_code_draft
+  - cli_add_code_draft_item
+  - cli_check_code_draft
+  - cli_auto
+  - cli_send_tmux
+  - cli_enter
+  - cli_chat
+  - cli_chat_wait
+  - project_type_add_symbol_create_symbol_project_md
+  - detail_page_check_pane_run_parallel_non_auto_check_drafts_yaml_subject_step_rc_check_project_screenshot_grid_preview_feedback_md_report_modal_instruction_retry_md_retry
+  worked: []
+  complete: []
+  error: []
+
+
+출력은 반드시 input.md 본문만 반환한다.
+
+[1773129587] LLM_PROMPT
+infer_draft_item prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 출력은 YAML만 반환한다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- `draft_item_template` 입력(`assets/presets/code/templates/draft_item.yaml`)의 단일 item 스키마를 그대로 따른다.
+- `draft_item_template`의 주석을 먼저 읽어 각 필드 의미를 이해한 뒤 값을 채운다.
+- 출력 단계에서는 템플릿 주석/예시를 제거하고 값만 포함한 YAML item만 반환한다.
+- 최상위 키는 `name`, `type`, `domain`, `depends_on`, `scope`, `rule`, `step`, `tasks`, `constraints`, `check`만 사용한다.
+- 각 키 값 타입:
+  - `name`, `type`: string
+  - 나머지 키: string 리스트
+- `constraints`의 각 항목은 반드시 `입력 -> 출력 : 기능 설명` 포맷으로 작성한다.
+- `project.md`, `plan_yaml`, `name`, `input_rules`, `input_steps`를 함께 읽고 해당 draft_item의 책임을 추론한다.
+- domain은 project.md의 domains 중 적합한 항목을 선택한다.
+- 에피소드/스토리/본문처럼 글을 직접 생성하는 draft_item이면 `constraints` 또는 `rule`에 `1300~1700자(약 1500자)` 분량 목표를 반드시 포함한다.
+
+
+draft_item_template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project_md:
+# info
+name : project_type_add_symbol_create_symbol_project_md
+description : project type add 상세페이지에 symbol 버튼(전구 아이콘) 추가, create_symbol 프롬프트 기반 상징 리스트 생성/선택, Project.md 반영
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+plan_yaml:
+goal: Astro + React + TypeScript + Tailwind CSS + shadcn/ui + Zustand + GSAP 조합으로 반응형 학교 랜딩페이지(main/ask 분리)와 문서 기반 Rust CLI 오케스트레이션 기능을 일관된 규칙으로 구현·운영한다.
+domains:
+- navigation
+- main_page
+- ask_page
+- state_management
+- ui_system
+- animation_scroll
+- cli_orchestration
+drafts:
+  planned:
+  - rust_cli_workspace
+  - project_documentation
+  - cli_rust_orchestra
+  - cli_help
+  - cli_create_code_draft
+  - cli_impl_code_draft
+  - cli_test
+  - cli_check_task
+  - cli_check_draft
+  - cli_open_ui
+  - cli_init_code_project
+  - cli_init_code_plan
+  - cli_add_code_plan
+  - cli_add_code_draft
+  - cli_add_code_draft_item
+  - cli_check_code_draft
+  - cli_auto
+  - cli_send_tmux
+  - cli_enter
+  - cli_chat
+  - cli_chat_wait
+  - project_type_add_symbol_create_symbol_project_md
+  - detail_page_check_pane_run_parallel_non_auto_check_drafts_yaml_subject_step_rc_check_project_screenshot_grid_preview_feedback_md_report_modal_instruction_retry_md_retry
+  worked: []
+  complete: []
+  error: []
+
+
+name: rust_cli_workspace
+input_rules: 
+input_steps: 
+
+[1773129597] LLM_RETRY
+attempt 1/2 failed: codex exec timed out after 10s
+
+[1773129607] LLM_RETRY
+attempt 2/2 failed: codex exec timed out after 10s
+
+[1773129607] LLM_ERROR
+codex exec timed out after 10s
+
+[1773129607] LLM_PROMPT
+infer_draft_item prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 출력은 YAML만 반환한다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- `draft_item_template` 입력(`assets/presets/code/templates/draft_item.yaml`)의 단일 item 스키마를 그대로 따른다.
+- `draft_item_template`의 주석을 먼저 읽어 각 필드 의미를 이해한 뒤 값을 채운다.
+- 출력 단계에서는 템플릿 주석/예시를 제거하고 값만 포함한 YAML item만 반환한다.
+- 최상위 키는 `name`, `type`, `domain`, `depends_on`, `scope`, `rule`, `step`, `tasks`, `constraints`, `check`만 사용한다.
+- 각 키 값 타입:
+  - `name`, `type`: string
+  - 나머지 키: string 리스트
+- `constraints`의 각 항목은 반드시 `입력 -> 출력 : 기능 설명` 포맷으로 작성한다.
+- `project.md`, `plan_yaml`, `name`, `input_rules`, `input_steps`를 함께 읽고 해당 draft_item의 책임을 추론한다.
+- domain은 project.md의 domains 중 적합한 항목을 선택한다.
+- 에피소드/스토리/본문처럼 글을 직접 생성하는 draft_item이면 `constraints` 또는 `rule`에 `1300~1700자(약 1500자)` 분량 목표를 반드시 포함한다.
+
+
+draft_item_template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project_md:
+# info
+name : project_type_add_symbol_create_symbol_project_md
+description : project type add 상세페이지에 symbol 버튼(전구 아이콘) 추가, create_symbol 프롬프트 기반 상징 리스트 생성/선택, Project.md 반영
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+plan_yaml:
+goal: Astro + React + TypeScript + Tailwind CSS + shadcn/ui + Zustand + GSAP 조합으로 반응형 학교 랜딩페이지(main/ask 분리)와 문서 기반 Rust CLI 오케스트레이션 기능을 일관된 규칙으로 구현·운영한다.
+domains:
+- navigation
+- main_page
+- ask_page
+- state_management
+- ui_system
+- animation_scroll
+- cli_orchestration
+drafts:
+  planned:
+  - rust_cli_workspace
+  - project_documentation
+  - cli_rust_orchestra
+  - cli_help
+  - cli_create_code_draft
+  - cli_impl_code_draft
+  - cli_test
+  - cli_check_task
+  - cli_check_draft
+  - cli_open_ui
+  - cli_init_code_project
+  - cli_init_code_plan
+  - cli_add_code_plan
+  - cli_add_code_draft
+  - cli_add_code_draft_item
+  - cli_check_code_draft
+  - cli_auto
+  - cli_send_tmux
+  - cli_enter
+  - cli_chat
+  - cli_chat_wait
+  - project_type_add_symbol_create_symbol_project_md
+  - detail_page_check_pane_run_parallel_non_auto_check_drafts_yaml_subject_step_rc_check_project_screenshot_grid_preview_feedback_md_report_modal_instruction_retry_md_retry
+  worked: []
+  complete: []
+  error: []
+
+
+name: project_documentation
+input_rules: 
+input_steps: 
+
+[1773129617] LLM_RETRY
+attempt 1/2 failed: codex exec timed out after 10s
+
+[1773129627] LLM_RETRY
+attempt 2/2 failed: codex exec timed out after 10s
+
+[1773129627] LLM_ERROR
+codex exec timed out after 10s
+
+[1773129627] LLM_PROMPT
+infer_draft_item prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 출력은 YAML만 반환한다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- `draft_item_template` 입력(`assets/presets/code/templates/draft_item.yaml`)의 단일 item 스키마를 그대로 따른다.
+- `draft_item_template`의 주석을 먼저 읽어 각 필드 의미를 이해한 뒤 값을 채운다.
+- 출력 단계에서는 템플릿 주석/예시를 제거하고 값만 포함한 YAML item만 반환한다.
+- 최상위 키는 `name`, `type`, `domain`, `depends_on`, `scope`, `rule`, `step`, `tasks`, `constraints`, `check`만 사용한다.
+- 각 키 값 타입:
+  - `name`, `type`: string
+  - 나머지 키: string 리스트
+- `constraints`의 각 항목은 반드시 `입력 -> 출력 : 기능 설명` 포맷으로 작성한다.
+- `project.md`, `plan_yaml`, `name`, `input_rules`, `input_steps`를 함께 읽고 해당 draft_item의 책임을 추론한다.
+- domain은 project.md의 domains 중 적합한 항목을 선택한다.
+- 에피소드/스토리/본문처럼 글을 직접 생성하는 draft_item이면 `constraints` 또는 `rule`에 `1300~1700자(약 1500자)` 분량 목표를 반드시 포함한다.
+
+
+draft_item_template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project_md:
+# info
+name : project_type_add_symbol_create_symbol_project_md
+description : project type add 상세페이지에 symbol 버튼(전구 아이콘) 추가, create_symbol 프롬프트 기반 상징 리스트 생성/선택, Project.md 반영
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+plan_yaml:
+goal: Astro + React + TypeScript + Tailwind CSS + shadcn/ui + Zustand + GSAP 조합으로 반응형 학교 랜딩페이지(main/ask 분리)와 문서 기반 Rust CLI 오케스트레이션 기능을 일관된 규칙으로 구현·운영한다.
+domains:
+- navigation
+- main_page
+- ask_page
+- state_management
+- ui_system
+- animation_scroll
+- cli_orchestration
+drafts:
+  planned:
+  - rust_cli_workspace
+  - project_documentation
+  - cli_rust_orchestra
+  - cli_help
+  - cli_create_code_draft
+  - cli_impl_code_draft
+  - cli_test
+  - cli_check_task
+  - cli_check_draft
+  - cli_open_ui
+  - cli_init_code_project
+  - cli_init_code_plan
+  - cli_add_code_plan
+  - cli_add_code_draft
+  - cli_add_code_draft_item
+  - cli_check_code_draft
+  - cli_auto
+  - cli_send_tmux
+  - cli_enter
+  - cli_chat
+  - cli_chat_wait
+  - project_type_add_symbol_create_symbol_project_md
+  - detail_page_check_pane_run_parallel_non_auto_check_drafts_yaml_subject_step_rc_check_project_screenshot_grid_preview_feedback_md_report_modal_instruction_retry_md_retry
+  worked: []
+  complete: []
+  error: []
+
+
+name: cli_rust_orchestra
+input_rules: 
+input_steps: 
+
+[1773129637] LLM_RETRY
+attempt 1/2 failed: codex exec timed out after 10s
+
+[1773129647] LLM_RETRY
+attempt 2/2 failed: codex exec timed out after 10s
+
+[1773129647] LLM_ERROR
+codex exec timed out after 10s
+
+[1773129647] LLM_PROMPT
+infer_draft_item prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 출력은 YAML만 반환한다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- `draft_item_template` 입력(`assets/presets/code/templates/draft_item.yaml`)의 단일 item 스키마를 그대로 따른다.
+- `draft_item_template`의 주석을 먼저 읽어 각 필드 의미를 이해한 뒤 값을 채운다.
+- 출력 단계에서는 템플릿 주석/예시를 제거하고 값만 포함한 YAML item만 반환한다.
+- 최상위 키는 `name`, `type`, `domain`, `depends_on`, `scope`, `rule`, `step`, `tasks`, `constraints`, `check`만 사용한다.
+- 각 키 값 타입:
+  - `name`, `type`: string
+  - 나머지 키: string 리스트
+- `constraints`의 각 항목은 반드시 `입력 -> 출력 : 기능 설명` 포맷으로 작성한다.
+- `project.md`, `plan_yaml`, `name`, `input_rules`, `input_steps`를 함께 읽고 해당 draft_item의 책임을 추론한다.
+- domain은 project.md의 domains 중 적합한 항목을 선택한다.
+- 에피소드/스토리/본문처럼 글을 직접 생성하는 draft_item이면 `constraints` 또는 `rule`에 `1300~1700자(약 1500자)` 분량 목표를 반드시 포함한다.
+
+
+draft_item_template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project_md:
+# info
+name : project_type_add_symbol_create_symbol_project_md
+description : project type add 상세페이지에 symbol 버튼(전구 아이콘) 추가, create_symbol 프롬프트 기반 상징 리스트 생성/선택, Project.md 반영
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+plan_yaml:
+goal: Astro + React + TypeScript + Tailwind CSS + shadcn/ui + Zustand + GSAP 조합으로 반응형 학교 랜딩페이지(main/ask 분리)와 문서 기반 Rust CLI 오케스트레이션 기능을 일관된 규칙으로 구현·운영한다.
+domains:
+- navigation
+- main_page
+- ask_page
+- state_management
+- ui_system
+- animation_scroll
+- cli_orchestration
+drafts:
+  planned:
+  - rust_cli_workspace
+  - project_documentation
+  - cli_rust_orchestra
+  - cli_help
+  - cli_create_code_draft
+  - cli_impl_code_draft
+  - cli_test
+  - cli_check_task
+  - cli_check_draft
+  - cli_open_ui
+  - cli_init_code_project
+  - cli_init_code_plan
+  - cli_add_code_plan
+  - cli_add_code_draft
+  - cli_add_code_draft_item
+  - cli_check_code_draft
+  - cli_auto
+  - cli_send_tmux
+  - cli_enter
+  - cli_chat
+  - cli_chat_wait
+  - project_type_add_symbol_create_symbol_project_md
+  - detail_page_check_pane_run_parallel_non_auto_check_drafts_yaml_subject_step_rc_check_project_screenshot_grid_preview_feedback_md_report_modal_instruction_retry_md_retry
+  worked: []
+  complete: []
+  error: []
+
+
+name: cli_help
+input_rules: 
+input_steps: 
+
+[1773129657] LLM_RETRY
+attempt 1/2 failed: codex exec timed out after 10s
+
+[1773129667] LLM_RETRY
+attempt 2/2 failed: codex exec timed out after 10s
+
+[1773129667] LLM_ERROR
+codex exec timed out after 10s
+
+[1773129667] LLM_PROMPT
+infer_draft_item prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 출력은 YAML만 반환한다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- `draft_item_template` 입력(`assets/presets/code/templates/draft_item.yaml`)의 단일 item 스키마를 그대로 따른다.
+- `draft_item_template`의 주석을 먼저 읽어 각 필드 의미를 이해한 뒤 값을 채운다.
+- 출력 단계에서는 템플릿 주석/예시를 제거하고 값만 포함한 YAML item만 반환한다.
+- 최상위 키는 `name`, `type`, `domain`, `depends_on`, `scope`, `rule`, `step`, `tasks`, `constraints`, `check`만 사용한다.
+- 각 키 값 타입:
+  - `name`, `type`: string
+  - 나머지 키: string 리스트
+- `constraints`의 각 항목은 반드시 `입력 -> 출력 : 기능 설명` 포맷으로 작성한다.
+- `project.md`, `plan_yaml`, `name`, `input_rules`, `input_steps`를 함께 읽고 해당 draft_item의 책임을 추론한다.
+- domain은 project.md의 domains 중 적합한 항목을 선택한다.
+- 에피소드/스토리/본문처럼 글을 직접 생성하는 draft_item이면 `constraints` 또는 `rule`에 `1300~1700자(약 1500자)` 분량 목표를 반드시 포함한다.
+
+
+draft_item_template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project_md:
+# info
+name : project_type_add_symbol_create_symbol_project_md
+description : project type add 상세페이지에 symbol 버튼(전구 아이콘) 추가, create_symbol 프롬프트 기반 상징 리스트 생성/선택, Project.md 반영
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+plan_yaml:
+goal: Astro + React + TypeScript + Tailwind CSS + shadcn/ui + Zustand + GSAP 조합으로 반응형 학교 랜딩페이지(main/ask 분리)와 문서 기반 Rust CLI 오케스트레이션 기능을 일관된 규칙으로 구현·운영한다.
+domains:
+- navigation
+- main_page
+- ask_page
+- state_management
+- ui_system
+- animation_scroll
+- cli_orchestration
+drafts:
+  planned:
+  - rust_cli_workspace
+  - project_documentation
+  - cli_rust_orchestra
+  - cli_help
+  - cli_create_code_draft
+  - cli_impl_code_draft
+  - cli_test
+  - cli_check_task
+  - cli_check_draft
+  - cli_open_ui
+  - cli_init_code_project
+  - cli_init_code_plan
+  - cli_add_code_plan
+  - cli_add_code_draft
+  - cli_add_code_draft_item
+  - cli_check_code_draft
+  - cli_auto
+  - cli_send_tmux
+  - cli_enter
+  - cli_chat
+  - cli_chat_wait
+  - project_type_add_symbol_create_symbol_project_md
+  - detail_page_check_pane_run_parallel_non_auto_check_drafts_yaml_subject_step_rc_check_project_screenshot_grid_preview_feedback_md_report_modal_instruction_retry_md_retry
+  worked: []
+  complete: []
+  error: []
+
+
+name: cli_create_code_draft
+input_rules: 
+input_steps: 
+
+[1773129677] LLM_RETRY
+attempt 1/2 failed: codex exec timed out after 10s
+
+[1773129687] LLM_RETRY
+attempt 2/2 failed: codex exec timed out after 10s
+
+[1773129687] LLM_ERROR
+codex exec timed out after 10s
+
+[1773129687] LLM_PROMPT
+infer_draft_item prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 출력은 YAML만 반환한다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- `draft_item_template` 입력(`assets/presets/code/templates/draft_item.yaml`)의 단일 item 스키마를 그대로 따른다.
+- `draft_item_template`의 주석을 먼저 읽어 각 필드 의미를 이해한 뒤 값을 채운다.
+- 출력 단계에서는 템플릿 주석/예시를 제거하고 값만 포함한 YAML item만 반환한다.
+- 최상위 키는 `name`, `type`, `domain`, `depends_on`, `scope`, `rule`, `step`, `tasks`, `constraints`, `check`만 사용한다.
+- 각 키 값 타입:
+  - `name`, `type`: string
+  - 나머지 키: string 리스트
+- `constraints`의 각 항목은 반드시 `입력 -> 출력 : 기능 설명` 포맷으로 작성한다.
+- `project.md`, `plan_yaml`, `name`, `input_rules`, `input_steps`를 함께 읽고 해당 draft_item의 책임을 추론한다.
+- domain은 project.md의 domains 중 적합한 항목을 선택한다.
+- 에피소드/스토리/본문처럼 글을 직접 생성하는 draft_item이면 `constraints` 또는 `rule`에 `1300~1700자(약 1500자)` 분량 목표를 반드시 포함한다.
+
+
+draft_item_template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project_md:
+# info
+name : project_type_add_symbol_create_symbol_project_md
+description : project type add 상세페이지에 symbol 버튼(전구 아이콘) 추가, create_symbol 프롬프트 기반 상징 리스트 생성/선택, Project.md 반영
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+plan_yaml:
+goal: Astro + React + TypeScript + Tailwind CSS + shadcn/ui + Zustand + GSAP 조합으로 반응형 학교 랜딩페이지(main/ask 분리)와 문서 기반 Rust CLI 오케스트레이션 기능을 일관된 규칙으로 구현·운영한다.
+domains:
+- navigation
+- main_page
+- ask_page
+- state_management
+- ui_system
+- animation_scroll
+- cli_orchestration
+drafts:
+  planned:
+  - rust_cli_workspace
+  - project_documentation
+  - cli_rust_orchestra
+  - cli_help
+  - cli_create_code_draft
+  - cli_impl_code_draft
+  - cli_test
+  - cli_check_task
+  - cli_check_draft
+  - cli_open_ui
+  - cli_init_code_project
+  - cli_init_code_plan
+  - cli_add_code_plan
+  - cli_add_code_draft
+  - cli_add_code_draft_item
+  - cli_check_code_draft
+  - cli_auto
+  - cli_send_tmux
+  - cli_enter
+  - cli_chat
+  - cli_chat_wait
+  - project_type_add_symbol_create_symbol_project_md
+  - detail_page_check_pane_run_parallel_non_auto_check_drafts_yaml_subject_step_rc_check_project_screenshot_grid_preview_feedback_md_report_modal_instruction_retry_md_retry
+  worked: []
+  complete: []
+  error: []
+
+
+name: cli_impl_code_draft
+input_rules: 
+input_steps: 
+
+[1773129697] LLM_RETRY
+attempt 1/2 failed: codex exec timed out after 10s
+

@@ -12,3 +12,4 @@ infer_draft_item prompt
 - `constraints`의 각 항목은 반드시 `입력 -> 출력 : 기능 설명` 포맷으로 작성한다.
 - `project.md`, `plan_yaml`, `name`, `input_rules`, `input_steps`를 함께 읽고 해당 draft_item의 책임을 추론한다.
 - domain은 project.md의 domains 중 적합한 항목을 선택한다.
+- 에피소드/스토리/본문처럼 글을 직접 생성하는 draft_item이면 `constraints` 또는 `rule`에 `1300~1700자(약 1500자)` 분량 목표를 반드시 포함한다.

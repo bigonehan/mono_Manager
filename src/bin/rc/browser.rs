@@ -139,17 +139,12 @@ mod tests {
             ),
             "agent-browser wait \".auth-card:nth-of-type(2) input[placeholder='name']\""
         );
-        assert_eq!(
-            sleep_command(1),
-            "sleep 1"
-        );
+        assert_eq!(sleep_command(1), "sleep 1");
         assert_eq!(
             snapshot_command("agent-browser"),
             "agent-browser snapshot -i"
         );
-        assert!(
-            wait_for_url_command("http://127.0.0.1:3000")
-                .contains("python3 - \"http://127.0.0.1:3000\" <<'PY'")
-        );
+        assert!(wait_for_url_command("http://127.0.0.1:3000")
+            .contains("python3 - \"http://127.0.0.1:3000\" <<'PY'"));
     }
 }

@@ -290,7 +290,7 @@ struct DraftsListDoc {
     #[serde(default)]
     flows: Vec<String>,
     #[serde(default)]
-        features: Vec<String>,
+    features: Vec<String>,
     #[serde(default)]
     planned: Vec<String>,
     #[serde(default)]
@@ -576,10 +576,18 @@ fn load_border_palette() -> BorderPalette {
     let candidates = [
         root.join("configs").join("style.yaml"),
         root.join("assets").join("style").join("pane_style.yaml"),
-        PathBuf::from("assets").join("style").join("pane_style.yaml"),
+        PathBuf::from("assets")
+            .join("style")
+            .join("pane_style.yaml"),
         PathBuf::from("configs").join("style.yaml"),
-        root.join("src").join("assets").join("style").join("pane_style.yaml"),
-        PathBuf::from("src").join("assets").join("style").join("pane_style.yaml"),
+        root.join("src")
+            .join("assets")
+            .join("style")
+            .join("pane_style.yaml"),
+        PathBuf::from("src")
+            .join("assets")
+            .join("style")
+            .join("pane_style.yaml"),
     ];
 
     for path in candidates {
@@ -679,10 +687,15 @@ fn resolve_draft_template_path() -> Result<PathBuf, String> {
     let candidates = [
         manifest_root
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("templates")
             .join("drafts.yaml"),
-        root.join("assets").join("presets").join("code").join("templates").join("drafts.yaml"),
+        root.join("assets")
+            .join("presets")
+            .join("code")
+            .join("templates")
+            .join("drafts.yaml"),
         PathBuf::from("assets")
             .join("presets")
             .join("code")
@@ -707,8 +720,14 @@ fn resolve_project_preset_path() -> Result<PathBuf, String> {
         root.join("assets").join("presets").join("project.yml"),
         PathBuf::from("assets").join("presets").join("project.yaml"),
         PathBuf::from("assets").join("presets").join("project.yml"),
-        root.join("src").join("assets").join("presets").join("project.yaml"),
-        root.join("src").join("assets").join("presets").join("project.yml"),
+        root.join("src")
+            .join("assets")
+            .join("presets")
+            .join("project.yaml"),
+        root.join("src")
+            .join("assets")
+            .join("presets")
+            .join("project.yml"),
     ];
     for candidate in candidates {
         if candidate.exists() {
@@ -878,7 +897,10 @@ fn resolve_detail_layout_path(preset: &str) -> Result<PathBuf, String> {
         root.join("assets").join("layouts").join(&file),
         PathBuf::from("assets").join("layouts").join(&file),
         root.join("src").join("assets").join("layouts").join(&file),
-        PathBuf::from("src").join("assets").join("layouts").join(&file),
+        PathBuf::from("src")
+            .join("assets")
+            .join("layouts")
+            .join(&file),
     ];
     for candidate in candidates {
         if candidate.exists() {
@@ -900,7 +922,10 @@ fn compile_detail_layout(preset: &str, doc: DetailLayoutDoc) -> Result<DetailLay
     let mut panels = Vec::new();
     for panel in doc.panels {
         if panel.cell_start == 0 || panel.cell_end == 0 {
-            return Err(format!("detail layout panel `{}` cell index must be >= 1", panel.id));
+            return Err(format!(
+                "detail layout panel `{}` cell index must be >= 1",
+                panel.id
+            ));
         }
         if panel.cell_start as u32 > max_index || panel.cell_end as u32 > max_index {
             return Err(format!(
@@ -1018,7 +1043,11 @@ fn layout_panel_name(layout: &DetailLayoutPreset, id: &str, fallback: &str) -> S
         .unwrap_or_else(|| fallback.to_string())
 }
 
-fn selected_pane_shortcut(layout: &DetailLayoutPreset, tab_index: usize, pane_focus: usize) -> String {
+fn selected_pane_shortcut(
+    layout: &DetailLayoutPreset,
+    tab_index: usize,
+    pane_focus: usize,
+) -> String {
     if tab_index != 1 {
         return String::new();
     }
@@ -1093,7 +1122,10 @@ fn ui_model_bin() -> String {
     let candidates = [
         root.join("configs").join("configs.yaml"),
         root.join("assets").join("config").join("config.yaml"),
-        root.join("src").join("assets").join("config").join("config.yaml"),
+        root.join("src")
+            .join("assets")
+            .join("config")
+            .join("config.yaml"),
     ];
     for path in candidates {
         let Ok(raw) = fs::read_to_string(&path) else {
@@ -1129,9 +1161,18 @@ fn extract_markdown_block(raw: &str) -> Option<String> {
 }
 
 fn validate_project_md_format(project_md: &str) -> Result<(), String> {
-    let required_headers = ["# info", "# features", "# rules", "# constraints", "# domains"];
+    let required_headers = [
+        "# info",
+        "# features",
+        "# rules",
+        "# constraints",
+        "# domains",
+    ];
     for header in required_headers {
-        if !project_md.lines().any(|line| line.trim().eq_ignore_ascii_case(header)) {
+        if !project_md
+            .lines()
+            .any(|line| line.trim().eq_ignore_ascii_case(header))
+        {
             return Err(format!("missing header `{}`", header));
         }
     }
@@ -1425,7 +1466,9 @@ fn render_draft_bulk_add_modal(
             .fg(Color::Rgb(255, 165, 0))
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM)
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::DIM)
     };
     f.render_widget(
         Paragraph::new(modal.input.clone())
@@ -1570,11 +1613,7 @@ fn open_ai_onboarding_modal(
     app.status_line = "ai onboarding started".to_string();
 }
 
-fn open_add_plan_ai_chat_modal(
-    app: &mut UiApp,
-    projects: &[ProjectRecord],
-    project_index: usize,
-) {
+fn open_add_plan_ai_chat_modal(app: &mut UiApp, projects: &[ProjectRecord], project_index: usize) {
     let Some(project) = projects.get(project_index) else {
         app.status_line = "no project selected".to_string();
         return;
@@ -1661,7 +1700,11 @@ fn load_bootstrap_rule_for_spec(spec: &str) -> Option<BootstrapRule> {
                 .iter()
                 .filter_map(|v| {
                     let v = v.trim().to_ascii_lowercase();
-                    if v.is_empty() { None } else { Some(v) }
+                    if v.is_empty() {
+                        None
+                    } else {
+                        Some(v)
+                    }
                 })
                 .any(|kw| spec_lc.contains(&kw));
             if matched {
@@ -1675,16 +1718,26 @@ fn load_bootstrap_rule_for_spec(spec: &str) -> Option<BootstrapRule> {
 fn resolve_bootstrap_prompt_path() -> Result<PathBuf, String> {
     let root = crate::source_root();
     let candidates = [
-        root.join("assets").join("presets").join("code").join("prompts").join("bootstrap.txt"),
-        PathBuf::from("assets").join("presets").join("code").join("prompts").join("bootstrap.txt"),
+        root.join("assets")
+            .join("presets")
+            .join("code")
+            .join("prompts")
+            .join("bootstrap.txt"),
+        PathBuf::from("assets")
+            .join("presets")
+            .join("code")
+            .join("prompts")
+            .join("bootstrap.txt"),
         root.join("src")
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join("bootstrap.txt"),
         PathBuf::from("src")
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join("bootstrap.txt"),
     ];
@@ -1775,7 +1828,7 @@ fn run_bootstrap_llm_prepare(
     project: &ProjectRecord,
     project_root: &Path,
     preset: &str,
-    ) -> Result<(), String> {
+) -> Result<(), String> {
     let spec = extract_bootstrap_spec_from_project_md(project_root)?;
     let model_bin = ui_model_bin();
     let template_path = resolve_bootstrap_prompt_path()?;
@@ -1835,7 +1888,10 @@ fn apply_bootstrap(
         }
     } else {
         let spec_lc = confirm.spec.to_ascii_lowercase();
-        if spec_lc.contains("react native") || spec_lc.contains("react-native") || spec_lc.contains("expo") {
+        if spec_lc.contains("react native")
+            || spec_lc.contains("react-native")
+            || spec_lc.contains("expo")
+        {
             Some("react-native")
         } else if spec_lc.contains("react")
             || spec_lc.contains("next")
@@ -1861,8 +1917,7 @@ fn apply_bootstrap(
 
 fn build_ai_detail_chat_prompt(modal: &AiChatModal, user_message: &str) -> String {
     let full_md_requested = is_full_project_md_request(user_message);
-    let (spec_ready, domain_ready, feature_count) =
-        collect_onboarding_signals(modal, user_message);
+    let (spec_ready, domain_ready, feature_count) = collect_onboarding_signals(modal, user_message);
     let completion_ready = spec_ready && domain_ready && feature_count >= 3;
     format!(
         "당신은 `$plan-project-code` 스킬을 따라 project.md를 완성하는 도우미다.\n\
@@ -1950,9 +2005,18 @@ fn collect_onboarding_signals(
         joined.push_str(&modal.initial_spec);
     }
     let joined = joined.to_ascii_lowercase();
-    let spec_ready = ["react", "three", "fiber", "zustand", "tauri", "rust", "typescript", "next"]
-        .iter()
-        .any(|k| joined.contains(k))
+    let spec_ready = [
+        "react",
+        "three",
+        "fiber",
+        "zustand",
+        "tauri",
+        "rust",
+        "typescript",
+        "next",
+    ]
+    .iter()
+    .any(|k| joined.contains(k))
         || joined.contains("spec");
     let domain_ready = joined.contains("도메인") || joined.contains("domain");
     let mut feature_count = 0usize;
@@ -1968,7 +2032,9 @@ fn collect_onboarding_signals(
 }
 
 fn build_ai_finalize_project_md_prompt(modal: &AiChatModal) -> String {
-    let current_md_path = Path::new(&modal.project_path).join(".project").join("project.md");
+    let current_md_path = Path::new(&modal.project_path)
+        .join(".project")
+        .join("project.md");
     let current_md = fs::read_to_string(current_md_path).unwrap_or_default();
     format!(
         "너는 project.md 생성기다.\n\
@@ -2102,7 +2168,9 @@ fn is_add_plan_apply_request(user_message: &str) -> bool {
 }
 
 fn build_ai_add_plan_prompt(modal: &AiChatModal, user_message: &str) -> String {
-    let project_md_path = Path::new(&modal.project_path).join(".project").join("project.md");
+    let project_md_path = Path::new(&modal.project_path)
+        .join(".project")
+        .join("project.md");
     let project_md = fs::read_to_string(project_md_path).unwrap_or_default();
     let base = Path::new(&modal.project_path).join(".project");
     let tasks_doc = load_tasks_list_doc(&base).unwrap_or_default();
@@ -2248,7 +2316,10 @@ fn extract_add_plan_update_from_raw_response(raw_response: &str) -> Option<AddPl
     }
 }
 
-fn append_project_md_features_items(project_path: &Path, items: &[String]) -> Result<Vec<String>, String> {
+fn append_project_md_features_items(
+    project_path: &Path,
+    items: &[String],
+) -> Result<Vec<String>, String> {
     if items.is_empty() {
         return Ok(Vec::new());
     }
@@ -2347,7 +2418,10 @@ fn run_add_plan_via_cli(project_path: &Path, hint: &str) -> Result<String, Strin
     }
 }
 
-fn apply_add_plan_update_from_yaml(modal: &AiChatModal, raw_response: &str) -> Result<Option<String>, String> {
+fn apply_add_plan_update_from_yaml(
+    modal: &AiChatModal,
+    raw_response: &str,
+) -> Result<Option<String>, String> {
     let parsed_body = if let Some(yaml) = extract_yaml_codeblock(raw_response) {
         match serde_yaml::from_str::<AddPlanUpdateDoc>(&yaml) {
             Ok(v) => Some(v.add_plan_update),
@@ -2381,7 +2455,9 @@ fn apply_add_plan_update_from_yaml(modal: &AiChatModal, raw_response: &str) -> R
     let planned_added = append_planned_from_add_plan_items(project_path, &added_features)?;
     Ok(Some(format!(
         "add_code_plan applied: project.md features +{} / tasks_list planned +{} | {}",
-        added_features.len(), planned_added, add_plan_msg
+        added_features.len(),
+        planned_added,
+        add_plan_msg
     )))
 }
 
@@ -2441,10 +2517,8 @@ fn spawn_ai_stream(model_bin: &str, prompt: String) -> (Receiver<AiStreamEvent>,
                             let _ = tx_out.send(AiStreamEvent::Chunk(line.clone()));
                         }
                         Err(e) => {
-                            let _ = tx_out.send(AiStreamEvent::Error(format!(
-                                "stdout read failed: {}",
-                                e
-                            )));
+                            let _ = tx_out
+                                .send(AiStreamEvent::Error(format!("stdout read failed: {}", e)));
                             break;
                         }
                     }
@@ -2512,11 +2586,7 @@ fn append_project_chat_log(project_path: &str, role: &str, message: &str) {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-    {
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
         let _ = writeln!(file, "[{}] {}", ts, role);
         let _ = writeln!(file, "{}", message);
         let _ = writeln!(file);
@@ -2536,12 +2606,7 @@ fn close_ai_chat_modal_and_open_bootstrap(
     cancel_ai_stream(app);
     app.ai_chat_modal = None;
     app.status_line = "ai modal closed".to_string();
-    open_bootstrap_confirm_with_spec_hint(
-        app,
-        projects,
-        project_index,
-        spec_hint_owned.as_deref(),
-    );
+    open_bootstrap_confirm_with_spec_hint(app, projects, project_index, spec_hint_owned.as_deref());
 }
 
 fn now_unix() -> String {
@@ -2561,9 +2626,7 @@ fn generate_project_id(existing: &BTreeSet<String>) -> String {
     for _ in 0..512 {
         let mut out = String::with_capacity(4);
         for _ in 0..4 {
-            seed = seed
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1);
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
             let idx = (seed as usize) % ALNUM.len();
             out.push(ALNUM[idx] as char);
         }
@@ -2578,7 +2641,13 @@ fn assign_missing_project_ids(projects: &mut [ProjectRecord]) -> bool {
     let mut changed = false;
     let mut existing: BTreeSet<String> = projects
         .iter()
-        .filter_map(|p| if p.id.is_empty() { None } else { Some(p.id.clone()) })
+        .filter_map(|p| {
+            if p.id.is_empty() {
+                None
+            } else {
+                Some(p.id.clone())
+            }
+        })
         .collect();
     for project in projects {
         if project.id.is_empty() {
@@ -3013,11 +3082,7 @@ fn apply_project_create(
         p.description = modal.description.trim().to_string();
         p.updated_at = now;
         if !has_any_project_md(&path) {
-            let _ = run_create_project_in_project_dir(
-                &path,
-                name,
-                modal.description.trim(),
-            )?;
+            let _ = run_create_project_in_project_dir(&path, name, modal.description.trim())?;
             created_new = true;
         }
         let _ = sync_project_md_files(&path)?;
@@ -3026,7 +3091,13 @@ fn apply_project_create(
     } else {
         let existing_ids: BTreeSet<String> = projects
             .iter()
-            .filter_map(|p| if p.id.is_empty() { None } else { Some(p.id.clone()) })
+            .filter_map(|p| {
+                if p.id.is_empty() {
+                    None
+                } else {
+                    Some(p.id.clone())
+                }
+            })
             .collect();
         let create_project_msg =
             run_create_project_in_project_dir(&path, name, modal.description.trim())?;
@@ -3127,9 +3198,11 @@ fn apply_path_change_confirm(
     if confirm.source_index >= projects.len() {
         return Err("selected project index is out of range".to_string());
     }
-    if projects.iter().enumerate().any(|(idx, p)| {
-        idx != confirm.source_index && p.name == confirm.new_name
-    }) {
+    if projects
+        .iter()
+        .enumerate()
+        .any(|(idx, p)| idx != confirm.source_index && p.name == confirm.new_name)
+    {
         return Err(format!("project name already exists: {}", confirm.new_name));
     }
 
@@ -3270,7 +3343,9 @@ fn render_projects_tab(
         .title("Project Select")
         .borders(Borders::ALL)
         .border_style(if state.overlay_modal {
-            Style::default().fg(palette.inactive).add_modifier(Modifier::DIM)
+            Style::default()
+                .fg(palette.inactive)
+                .add_modifier(Modifier::DIM)
         } else if state.active {
             pane_border_style(true, palette).add_modifier(Modifier::BOLD)
         } else {
@@ -3323,7 +3398,9 @@ fn render_projects_tab(
             let p = &visible[idx];
             let is_selected = idx == selected_index;
             let card_border = if state.overlay_modal {
-                Style::default().fg(palette.inactive).add_modifier(Modifier::DIM)
+                Style::default()
+                    .fg(palette.inactive)
+                    .add_modifier(Modifier::DIM)
             } else if is_selected {
                 pane_border_style(true, palette)
             } else {
@@ -3334,7 +3411,11 @@ fn render_projects_tab(
                 Line::from(Span::styled(p.description.clone(), desc_style)),
                 Line::from(Span::styled(p.path.clone(), path_style)),
             ])
-            .block(Block::default().borders(Borders::ALL).border_style(card_border))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(card_border),
+            )
             .wrap(Wrap { trim: false });
             f.render_widget(card, *card_area);
             if state.parallel_running && is_selected {
@@ -3385,7 +3466,9 @@ fn render_details_tab(
     });
     let (name_value, desc_value, spec_value, goal_value): (String, String, String, String) =
         if parsed_has_core_info {
-            let doc = parsed.as_ref().expect("parsed exists when parsed_has_core_info");
+            let doc = parsed
+                .as_ref()
+                .expect("parsed exists when parsed_has_core_info");
             (
                 doc.name.clone(),
                 doc.description.clone(),
@@ -3505,7 +3588,11 @@ fn render_details_tab(
     };
     let constraint_area = inset_rect(constraint_slot, active_pane_margin(app, 2));
     let constraint_block = Block::default()
-        .title(layout_panel_name(&app.detail_layout, "constraint", "Constraint"))
+        .title(layout_panel_name(
+            &app.detail_layout,
+            "constraint",
+            "Constraint",
+        ))
         .borders(Borders::ALL)
         .border_style(tweened_pane_border_style(app, 2, palette));
     f.render_widget(
@@ -3560,10 +3647,8 @@ fn render_details_tab(
         .split(draft_slot);
 
     let plan_area = inset_rect(right_rows[0], active_pane_margin(app, 4));
-    let plan_selected = app.menu_active
-        && app.tab_index == 1
-        && app.pane_focus == 4
-        && !has_overlay_modal(app);
+    let plan_selected =
+        app.menu_active && app.tab_index == 1 && app.pane_focus == 4 && !has_overlay_modal(app);
     let plan_border_style = if plan_selected {
         tweened_pane_border_style(app, 4, palette)
     } else if planned.is_empty() {
@@ -3617,10 +3702,8 @@ fn render_details_tab(
     } else {
         "Drafts".to_string()
     };
-    let draft_selected = app.menu_active
-        && app.tab_index == 1
-        && app.pane_focus == 5
-        && !has_overlay_modal(app);
+    let draft_selected =
+        app.menu_active && app.tab_index == 1 && app.pane_focus == 5 && !has_overlay_modal(app);
     let draft_border_style = if app.parallel_running || draft_selected {
         tweened_pane_border_style(app, 5, palette)
     } else if generated.is_empty() {
@@ -3870,12 +3953,8 @@ mod tests {
             selected: true,
             project_type: "code".to_string(),
         };
-        let mut modal = new_ai_chat_modal_template(
-            &project,
-            0,
-            AiChatMode::DetailProject,
-            "codex".to_string(),
-        );
+        let mut modal =
+            new_ai_chat_modal_template(&project, 0, AiChatMode::DetailProject, "codex".to_string());
         modal.initial_spec = "react,zustand,three-fiber".to_string();
         let (spec_ready, domain_ready, feature_count) =
             collect_onboarding_signals(&modal, "원하는 도메인 : player, character, system");
@@ -3979,12 +4058,10 @@ goal : 100번 점프 달성 시 승리
         assert_eq!(values.constraints.len(), 2);
 
         assert_eq!(values.features.len(), 2);
-        assert!(
-            values
-                .features
-                .iter()
-                .any(|v| v == "jump_action : cube를 누르면 점프")
-        );
+        assert!(values
+            .features
+            .iter()
+            .any(|v| v == "jump_action : cube를 누르면 점프"));
         assert_eq!(
             values.planned,
             vec!["jump_action".to_string(), "victory_rule".to_string()]
@@ -3996,7 +4073,10 @@ goal : 100번 점프 달성 시 승리
                 "100번 이상 점프하면 승리한다".to_string()
             ]
         );
-        assert_eq!(values.generated, vec!["jump".to_string(), "win".to_string()]);
+        assert_eq!(
+            values.generated,
+            vec!["jump".to_string(), "win".to_string()]
+        );
     }
 
     #[test]
@@ -4095,11 +4175,7 @@ fn collect_generated_draft_items_from_project(project: &ProjectRecord) -> Vec<St
     out
 }
 
-fn open_list_edit_modal(
-    app: &mut UiApp,
-    projects: &[ProjectRecord],
-    target: ListEditTarget,
-) {
+fn open_list_edit_modal(app: &mut UiApp, projects: &[ProjectRecord], target: ListEditTarget) {
     let Some(project) = projects.get(app.project_index) else {
         app.status_line = "no selected project".to_string();
         return;
@@ -4250,11 +4326,7 @@ fn render_list_edit_modal(
         .constraints([Constraint::Min(8), Constraint::Length(2)])
         .split(inner);
     let list_w = chunks[0].width.saturating_sub(6).max(8);
-    let row_capacity = chunks[0]
-        .height
-        .saturating_sub(2)
-        .saturating_div(2)
-        .max(1) as usize;
+    let row_capacity = chunks[0].height.saturating_sub(2).saturating_div(2).max(1) as usize;
     let list_start = if modal.selected_index >= row_capacity {
         modal
             .selected_index
@@ -4263,13 +4335,19 @@ fn render_list_edit_modal(
     } else {
         0
     };
-    let list_end = list_start.saturating_add(row_capacity).min(modal.items.len());
+    let list_end = list_start
+        .saturating_add(row_capacity)
+        .min(modal.items.len());
     let lines: Vec<Line> = if modal.items.is_empty() {
         vec![Line::from("(empty)")]
     } else {
         let mut out = Vec::new();
         for idx in list_start..list_end {
-            let prefix = if idx == modal.selected_index { "> " } else { "  " };
+            let prefix = if idx == modal.selected_index {
+                "> "
+            } else {
+                "  "
+            };
             let value = truncate_to_width_ellipsis(&modal.items[idx], list_w.saturating_sub(2));
             let base = format!("{}{}", prefix, value);
             if idx == modal.selected_index {
@@ -4364,9 +4442,15 @@ fn input_value_style(is_default: bool) -> Style {
     }
 }
 
-fn modal_field_value_style(modal: &CreateProjectModal, field_index: usize, is_default: bool) -> Style {
+fn modal_field_value_style(
+    modal: &CreateProjectModal,
+    field_index: usize,
+    is_default: bool,
+) -> Style {
     if modal.field_index != field_index {
-        return Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM);
+        return Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::DIM);
     }
     input_value_style(is_default)
 }
@@ -4449,7 +4533,11 @@ fn render_create_modal(
         .border_style(modal_input_border_style(modal.field_index == 1));
     f.render_widget(
         Paragraph::new(modal.description.clone())
-            .style(modal_field_value_style(modal, 1, modal.description_is_default))
+            .style(modal_field_value_style(
+                modal,
+                1,
+                modal.description_is_default,
+            ))
             .wrap(Wrap { trim: false })
             .block(desc_block),
         layout[3],
@@ -4680,11 +4768,7 @@ fn render_path_change_confirm_modal(
     );
 }
 
-fn render_delete_confirm_modal(
-    f: &mut ratatui::Frame,
-    area: Rect,
-    confirm: &DeleteProjectConfirm,
-) {
+fn render_delete_confirm_modal(f: &mut ratatui::Frame, area: Rect, confirm: &DeleteProjectConfirm) {
     let lines = vec![
         Line::from(format!("Delete project `{}`?", confirm.project_name)),
         Line::from(format!("path: {}", confirm.project_path)),
@@ -4744,11 +4828,7 @@ fn render_draft_create_confirm_modal(
     );
 }
 
-fn render_bootstrap_confirm_modal(
-    f: &mut ratatui::Frame,
-    area: Rect,
-    confirm: &BootstrapConfirm,
-) {
+fn render_bootstrap_confirm_modal(f: &mut ratatui::Frame, area: Rect, confirm: &BootstrapConfirm) {
     let lines = vec![
         Line::from("상세 기획 반영이 완료되었습니다."),
         Line::from("spec 기준으로 프로젝트 bootstrap을 실행할까요?"),
@@ -4773,7 +4853,9 @@ fn ai_detail_input_border_style(modal: &AiChatModal) -> Style {
     } else if modal.focus == AiDetailFocus::Input {
         Style::default().fg(Color::Rgb(255, 165, 0))
     } else {
-        Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM)
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::DIM)
     }
 }
 
@@ -5151,7 +5233,8 @@ pub fn run_ui(
                                     let (spec_ready, domain_ready, feature_count) =
                                         collect_onboarding_signals(modal, "");
                                     if spec_ready && domain_ready && feature_count >= 3 {
-                                        let raw_response = modal.streaming_buffer.trim().to_string();
+                                        let raw_response =
+                                            modal.streaming_buffer.trim().to_string();
                                         append_project_chat_log(
                                             &modal.project_path,
                                             "LLM_RESPONSE_RAW",
@@ -5221,7 +5304,8 @@ pub fn run_ui(
                                         && is_project_md_dump(&raw_response);
                                     if blocked_full_dump {
                                         app.status_line =
-                                            "project.md 전체 출력 응답은 적용하지 않았습니다".to_string();
+                                            "project.md 전체 출력 응답은 적용하지 않았습니다"
+                                                .to_string();
                                         modal.streaming_buffer.clear();
                                         modal.stream_rx = None;
                                         modal.stream_cancel = None;
@@ -5273,7 +5357,8 @@ pub fn run_ui(
                                 }
                                 AiChatMode::AddPlan => {
                                     if modal.add_plan_apply_requested {
-                                        match apply_add_plan_update_from_yaml(modal, &raw_response) {
+                                        match apply_add_plan_update_from_yaml(modal, &raw_response)
+                                        {
                                             Ok(Some(msg)) => {
                                                 app.status_line = msg;
                                             }
@@ -5286,7 +5371,8 @@ pub fn run_ui(
                                             }
                                         }
                                     } else {
-                                        app.status_line = "add_code_plan 추천안 응답 수신".to_string();
+                                        app.status_line =
+                                            "add_code_plan 추천안 응답 수신".to_string();
                                     }
                                     modal.add_plan_apply_requested = false;
                                 }
@@ -5299,11 +5385,7 @@ pub fn run_ui(
                         Ok(AiStreamEvent::Error(err)) => {
                             modal.streaming = false;
                             modal.add_plan_apply_requested = false;
-                            append_project_chat_log(
-                                &modal.project_path,
-                                "LLM_ERROR",
-                                &err,
-                            );
+                            append_project_chat_log(&modal.project_path, "LLM_ERROR", &err);
                             if modal.warmup_inflight {
                                 modal.warmup_inflight = false;
                                 app.status_line = "ai detail warmup failed".to_string();
@@ -5347,8 +5429,8 @@ pub fn run_ui(
             continue;
         }
 
-        let has_event =
-            event::poll(Duration::from_millis(80)).map_err(|e| format!("ui event poll failed: {}", e))?;
+        let has_event = event::poll(Duration::from_millis(80))
+            .map_err(|e| format!("ui event poll failed: {}", e))?;
         if !has_event {
             continue;
         }
@@ -5432,7 +5514,9 @@ pub fn run_ui(
                                         app.status_line = "list item added".to_string();
                                     }
                                     ListEditInputMode::Edit => {
-                                        if !modal.items.is_empty() && modal.selected_index < modal.items.len() {
+                                        if !modal.items.is_empty()
+                                            && modal.selected_index < modal.items.len()
+                                        {
                                             modal.items[modal.selected_index] = item.clone();
                                             app.status_line = "list item updated".to_string();
                                         }
@@ -5468,7 +5552,8 @@ pub fn run_ui(
                     KeyCode::Char('d') => {
                         if !modal.items.is_empty() && modal.selected_index < modal.items.len() {
                             modal.items.remove(modal.selected_index);
-                            if modal.selected_index > 0 && modal.selected_index >= modal.items.len() {
+                            if modal.selected_index > 0 && modal.selected_index >= modal.items.len()
+                            {
                                 modal.selected_index -= 1;
                             }
                             app.status_line = "list item deleted".to_string();
@@ -5507,9 +5592,9 @@ pub fn run_ui(
                 }
                 continue;
             }
-                if app.bootstrap_confirm.is_some() {
-                    let mut confirm = app.bootstrap_confirm.take().unwrap();
-                    match key_event.code {
+            if app.bootstrap_confirm.is_some() {
+                let mut confirm = app.bootstrap_confirm.take().unwrap();
+                match key_event.code {
                     KeyCode::Left | KeyCode::Right => {
                         confirm.confirm_selected = !confirm.confirm_selected;
                         app.bootstrap_confirm = Some(confirm);
@@ -5517,7 +5602,9 @@ pub fn run_ui(
                     KeyCode::Enter => {
                         if confirm.confirm_selected {
                             app.pending_action = Some(PendingUiAction::ApplyBootstrap { confirm });
-                            app.busy_message = Some("bootstrap preset + spec 기준 LLM 준비/초기화 실행 중".to_string());
+                            app.busy_message = Some(
+                                "bootstrap preset + spec 기준 LLM 준비/초기화 실행 중".to_string(),
+                            );
                         } else {
                             app.status_line = "bootstrap skipped".to_string();
                         }
@@ -5534,7 +5621,10 @@ pub fn run_ui(
             if let Some(modal) = app.ai_chat_modal.as_mut() {
                 match key_event.code {
                     KeyCode::Esc => {
-                        if modal.focus == AiDetailFocus::Input && modal.input_active && !modal.streaming {
+                        if modal.focus == AiDetailFocus::Input
+                            && modal.input_active
+                            && !modal.streaming
+                        {
                             modal.input_active = false;
                             modal.input_enter_streak = 0;
                             app.status_line = "ai input inactive".to_string();
@@ -5777,11 +5867,7 @@ pub fn run_ui(
                     } else if app.tab_index == 1 && app.pane_focus == 1 {
                         open_list_edit_modal(&mut app, projects, ListEditTarget::Rule);
                     } else if app.tab_index == 1 && app.pane_focus == 2 {
-                        open_list_edit_modal(
-                            &mut app,
-                            projects,
-                            ListEditTarget::Constraint,
-                        );
+                        open_list_edit_modal(&mut app, projects, ListEditTarget::Constraint);
                     } else if app.tab_index == 1 && app.pane_focus == 3 {
                         open_list_edit_modal(&mut app, projects, ListEditTarget::Feature);
                     } else if app.tab_index == 1 && (app.pane_focus == 4 || app.pane_focus == 5) {
@@ -5801,8 +5887,9 @@ pub fn run_ui(
                                     app.pending_action = Some(PendingUiAction::ApplyCreateDraft {
                                         project_index: app.project_index,
                                     });
-                                    app.busy_message =
-                                        Some("enter_draft 실행: create_code_draft 요청 중".to_string());
+                                    app.busy_message = Some(
+                                        "enter_draft 실행: create_code_draft 요청 중".to_string(),
+                                    );
                                 } else if !planned.is_empty()
                                     && !all_planned_task_files_exist(project, &planned)
                                 {
@@ -5891,7 +5978,8 @@ pub fn run_ui(
                                     project_index: app.project_index,
                                 });
                                 app.busy_message = Some(
-                                    "planned 항목 파일 누락 감지: create_code_draft 보정 실행 중".to_string(),
+                                    "planned 항목 파일 누락 감지: create_code_draft 보정 실행 중"
+                                        .to_string(),
                                 );
                             } else {
                                 let project_index = app.project_index;
@@ -5917,11 +6005,9 @@ pub fn run_ui(
                         app.status_line = e;
                         continue;
                     }
-                    if let Err(e) = reload_projects_from_registry(
-                        projects,
-                        recent_active_pane,
-                        &mut app,
-                    ) {
+                    if let Err(e) =
+                        reload_projects_from_registry(projects, recent_active_pane, &mut app)
+                    {
                         app.status_line = e;
                         continue;
                     }
@@ -5933,11 +6019,9 @@ pub fn run_ui(
                         app.status_line = e;
                         continue;
                     }
-                    if let Err(e) = reload_projects_from_registry(
-                        projects,
-                        recent_active_pane,
-                        &mut app,
-                    ) {
+                    if let Err(e) =
+                        reload_projects_from_registry(projects, recent_active_pane, &mut app)
+                    {
                         app.status_line = e;
                     }
                 }
@@ -5947,11 +6031,9 @@ pub fn run_ui(
                         app.status_line = e;
                         continue;
                     }
-                    if let Err(e) = reload_projects_from_registry(
-                        projects,
-                        recent_active_pane,
-                        &mut app,
-                    ) {
+                    if let Err(e) =
+                        reload_projects_from_registry(projects, recent_active_pane, &mut app)
+                    {
                         app.status_line = e;
                     }
                 }
@@ -5969,10 +6051,16 @@ pub fn run_ui(
                 KeyCode::Right if app.tab_index == 0 => {
                     move_project_grid_selection(projects, &mut app, 1);
                 }
-                KeyCode::Left if app.tab_index == 1 => move_detail_pane_focus(&mut app, KeyCode::Left),
-                KeyCode::Right if app.tab_index == 1 => move_detail_pane_focus(&mut app, KeyCode::Right),
+                KeyCode::Left if app.tab_index == 1 => {
+                    move_detail_pane_focus(&mut app, KeyCode::Left)
+                }
+                KeyCode::Right if app.tab_index == 1 => {
+                    move_detail_pane_focus(&mut app, KeyCode::Right)
+                }
                 KeyCode::Up if app.tab_index == 1 => move_detail_pane_focus(&mut app, KeyCode::Up),
-                KeyCode::Down if app.tab_index == 1 => move_detail_pane_focus(&mut app, KeyCode::Down),
+                KeyCode::Down if app.tab_index == 1 => {
+                    move_detail_pane_focus(&mut app, KeyCode::Down)
+                }
                 _ => {}
             }
         }

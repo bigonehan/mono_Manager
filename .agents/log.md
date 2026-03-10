@@ -1,3 +1,8 @@
+## 2026-03-10 - 작업한일
+- `src/chat.rs`에 60초 장기 대기 heartbeat를 추가해 LLM 실행이 길어질 때 `[orc-status]` 상태를 stderr, chat log, tmux owner pane으로 함께 전달하도록 구현함.
+- `src/code.rs`의 새 세션/tmux worker 대기에 같은 heartbeat를 추가하고, tmux worker는 최근 stdout/stderr 한 줄까지 parent pane으로 전달해 현재 병목 지점을 바로 확인할 수 있게 함.
+- `src/main.rs`의 병렬 feedback 생성 경로에서 120초 고정 timeout을 제거하고 설정 기반 timeout으로 바꿔 조기 실패를 줄였으며, `cargo test` 전체 통과로 검증함.
+
 ## 2026-03-09 - 작업한일
 - `orc-cli-workflow` 스킬에 병렬 build 완료 직후 `orc clit test -p . -m "<build 완료 기능 요약>"`를 실행해 루트 `feedback.md`를 남기는 검증 단계를 추가함.
 - manager-worker 순서, 완료 조건, 실패 처리 예시를 같은 규칙에 맞게 갱신해 병렬 구현 완료 후 `clit test` 기반 점검이 빠지지 않도록 정리함.
@@ -2611,3 +2616,50 @@
 - `orc` CLI 명령 목록에 `clit <args...>`를 추가했다.
 - `orc clit ...` 호출 시 rust-orc 내부 `crates/rc`를 직접 실행하도록 포워딩을 연결했다.
 - 통합 실행 확인: `cargo run --manifest-path /home/tree/project/rust-orc/Cargo.toml -- clit test -p /tmp -m smoke`.
+
+## 2026-03-10 - 작업한일
+- `orc open-ui -w`의 고정 포트 사용을 제거하고 저장소 경로(`assets/web` canonical path) 기반 동적 포트 할당으로 변경함.
+- 웹 서버 생존 체크/기동/대기/URL 출력이 모두 계산된 포트 기준으로 동작하도록 `src/web/mod.rs`를 갱신함.
+- 검증에서 `cargo run --bin orc ... open-ui -w`를 각 저장소에서 실행해 `rust-orc=4175`, `rust-write=4344`로 서로 다른 URL이 출력되는 것을 확인함.
+
+## 2026-03-10 - 작업한일
+- `orc open-ui -w`가 debug 모드에서 dev server를 attached child로 실행하고, URL 출력 뒤 프로세스를 유지하며 Astro 로그를 터미널에 계속 출력하도록 변경함.
+- web port별 pid 파일을 기록해 같은 `orc`가 띄운 기존 서버를 debug 시작 전에 정리하고, stale pid는 새 실행 시작 시 자동 청소하도록 보완함.
+- 검증: `cargo test --manifest-path /home/tree/project/rust-orc/Cargo.toml web::`, `cargo run --bin orc --manifest-path /home/tree/project/rust-orc/Cargo.toml -- open-ui -w`, `orc open-ui -w` 실행 후 `Ctrl+C`로 종료하고 `127.0.0.1:4175` 리슨 해제 확인.
+
+## 2026-03-10 - 작업한일
+- `orc open-ui -w` Rust launcher 포트를 동적 계산 대신 고정 `127.0.0.1:4175`로 변경함.
+- `assets/web/astro.config.mjs`, `assets/web/playwright.config.ts`, `assets/web/tests/web.spec.ts`의 개발/검증 포트도 모두 4175로 통일함.
+- 검증: `cargo test --manifest-path /home/tree/project/rust-orc/Cargo.toml web::` 통과, `cd /home/tree/project/rust-orc/assets/web && npx tsc --noEmit` 통과, `npm run test:e2e`는 3건 중 2건 통과 후 기존 auto 상태 시나리오 1건 실패.
+
+## 2026-03-10 - 작업한일
+- web UI와 Rust web API의 project type 직렬화를 `code|mono`로 고정하고, legacy `story|movie` 입력은 `code`로만 흡수하도록 정리함.
+- project status를 `wait|work|complete|auto`로 축소하고, web UI 런타임 표시는 `is_dev_running`, `is_build_running` 보조 플래그로 분리함.
+- `assets/web/tests/web.spec.ts`의 상태 기대값과 `MonoDetailLayout` 기본 badge를 새 상태 집합에 맞게 갱신함.
+- 검증: `cargo test --manifest-path /home/tree/project/rust-orc/Cargo.toml web_api`, `cd /home/tree/project/rust-orc/assets/web && npx tsc --noEmit`, `cd /home/tree/project/rust-orc/assets/web && npm run test:e2e -- --grep 'web ui: load and create/select project'`.
+
+## 2026-03-10 - 작업한일
+- `create_input_md`, `add_code_draft -f`, auto retry, check-code follow-up가 진행 중 상태와 retry 입력을 `.project/check-process.md`에 누적하도록 정리함.
+- `.project/feedback.md`를 구현 완료 후 결과/개선점 전용 파일로 사용하도록 check 결과와 병렬 feedback 저장 경로를 정리함.
+- 실행 시작 시 `[orc-start]`로 현재 `orc` 바이너리 경로, origin, 버전, 수정 시각을 owner가 바로 볼 수 있게 추가하고 `cargo test` 전체 통과로 검증함.
+
+## 2026-03-10 - 작업한일
+- web detail 화면에 drafts 기반 subject/step 목록, 수동 `rc` check 버튼, screenshot grid, feedback/report/retry 흐름을 포함한 별도 check pane을 추가함.
+- web 병렬 build는 `ORC_WEB_MANUAL_CHECK=1`일 때 auto check를 건너뛰고, check pane에서 `instruction_retry.md` 기반 재시도와 root `feedback.md` 보고서를 다루도록 서버/API/UI를 연결함.
+- 검증: `cargo test`, `cd assets/web && npx tsc --noEmit`, `cd assets/web && npm run test:e2e -- --grep "web ui: check pane renders draft subject and appends screenshot feedback"`.
+
+## 2026-03-10 - 작업한일
+- `rust-write`의 브라우저 음성 입력 훅을 `assets/web/src/lib/use-voice-input.ts`로 이식하고, 공통 `Input`/`Textarea`에 녹음 버튼을 붙여 web UI의 단일행/멀티라인 텍스트 입력이 음성 transcript를 기존 `onChange` 흐름으로 반영하도록 변경함.
+- 별도 화면별 중복 구현 없이 detail/edit/check/form modal 입력이 모두 공통 컴포넌트를 통해 음성 입력을 지원하게 했고, 비지원 브라우저나 비텍스트 input type은 버튼 상태로 차단함.
+- 검증: `cargo test`, `cd assets/web && npx tsc --noEmit`, `cd assets/web && npm run test:e2e -- --grep "voice input"`.
+
+## 2026-03-10 - 작업한일
+- top-level `orc` task 시작 시 `.project/check-process.md`, `.project/feedback.md`, `.project/screenshot`를 session 단위로 초기화하고, 동일 task의 내부 subcommand/web 연쇄 실행은 `ORC_TASK_SESSION_KEY`로 재초기화를 막도록 정리함.
+- `rc`와 web check pane의 feedback 경로를 `.project/feedback.md`로 단일화하고, web manual check는 `orc`와 같은 공통 binary resolver를 통해 `rc` 실행 경로를 결정하도록 변경함.
+- `assets/web/tests/helpers/mock-speech-recognition.ts`를 추가해 Playwright 음성 입력 mock을 공용 helper로 분리했고, check pane/voice input 검증이 새 helper 및 `.project/feedback.md` 경로를 사용하도록 갱신함.
+- 검증: `cargo test`, `cd assets/web && npx tsc --noEmit`, `cd assets/web && npm run test:e2e -- --grep "voice input|check pane"`.
+
+## 2026-03-10 - 작업한일
+- repo 루트의 중복 규칙 파일 `AGENTS.override`, `AGENTS.override.md`를 제거하고 repo 전용 규칙을 `AGENTS.md` 하나로 병합함.
+- 전역 사용자 규칙은 `/home/tree/ai/codex/AGENTS.override.md`, repo 전용 규칙은 `AGENTS.md`만 쓰도록 경계와 재발 방지 규칙을 명시함.
+- 검증: `eza -la /home/tree/project/rust-orc | rg "AGENTS"`, `rg -n "AGENTS\\.override\\*|AGENTS\\.override|AGENTS\\.override\\.md" /home/tree/ai/skills /home/tree/ai/codex /home/tree/project/rust-orc`, `cargo test`.

@@ -1,15 +1,16 @@
 import type { APIRoute } from "astro";
-import { startAutoFromMessage } from "@/server/orc";
+import { appendCheckFeedback } from "@/server/orc";
 
 export const prerender = false;
 
 export const POST: APIRoute = async ({ request }) => {
   try {
     const body = await request.json();
-    const id = String(body.id ?? "");
-    const message = String(body.message ?? "");
-    const { detail, output } = startAutoFromMessage(id, message);
-    return new Response(JSON.stringify({ detail, output }), {
+    const result = appendCheckFeedback(String(body.id ?? ""), {
+      screenshotPath: String(body.screenshotPath ?? ""),
+      message: String(body.message ?? "")
+    });
+    return new Response(JSON.stringify(result), {
       headers: { "content-type": "application/json" }
     });
   } catch (error) {

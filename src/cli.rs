@@ -8,12 +8,18 @@ pub fn program_name(args: &[String]) -> &str {
 }
 
 pub fn is_help_command(args: &[String]) -> bool {
-    if matches!(args.get(1).map(String::as_str), Some("help" | "-h" | "--help")) {
+    if matches!(
+        args.get(1).map(String::as_str),
+        Some("help" | "-h" | "--help")
+    ) {
         return true;
     }
     if args.len() >= 3
         && super::profile::is_known_profile_name(args[1].as_str())
-        && matches!(args.get(2).map(String::as_str), Some("help" | "-h" | "--help"))
+        && matches!(
+            args.get(2).map(String::as_str),
+            Some("help" | "-h" | "--help")
+        )
     {
         return true;
     }
@@ -38,7 +44,6 @@ pub fn print_usage(program: &str) {
         "check_code_draft [-a]",
         "test",
         "check_task",
-        "check_draft",
         "open-ui [-w|--web]",
         "serve-web-api [--addr <host:port>]",
         "auto <message> | auto -f",
@@ -121,12 +126,6 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             }
             profile.feedback_service().check(false)
         }
-        "check_draft" => {
-            if !tail.is_empty() {
-                return Err("check_draft does not accept arguments".to_string());
-            }
-            profile.feedback_service().check_draft()
-        }
         "open-ui" => {
             if tail.is_empty() {
                 super::tui::open_ui()
@@ -206,13 +205,19 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         }
         "chat-wait" => {
             if tail.len() < 2 {
-                return Err("chat-wait requires -n <name> -a <true|false> (optional: -c <count>)".to_string());
+                return Err(
+                    "chat-wait requires -n <name> -a <true|false> (optional: -c <count>)"
+                        .to_string(),
+                );
             }
             super::chat_wait_command(tail).await
         }
         "clit" => {
             if tail.is_empty() {
-                return Err("clit requires rc arguments (example: clit test -p <path> -m <mode>)".to_string());
+                return Err(
+                    "clit requires rc arguments (example: clit test -p <path> -m <mode>)"
+                        .to_string(),
+                );
             }
             super::run_rc_forward(tail)
         }

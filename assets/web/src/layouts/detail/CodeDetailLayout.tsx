@@ -16,6 +16,7 @@ export function CodeDetailLayout({
   selectedDomain,
   setSelectedDomain,
   openEditor,
+  actionsDisabled,
   memoDraft,
   updateMemo,
   flushMemo,
@@ -38,6 +39,7 @@ export function CodeDetailLayout({
                 e.stopPropagation();
                 openEditor();
               }}
+              disabled={actionsDisabled}
               aria-label="edit-pane"
             >
               <Settings className="h-4 w-4" />
@@ -73,7 +75,13 @@ export function CodeDetailLayout({
         </div>
       </div>
       )}
-      <MemoPane memoDraft={memoDraft} updateMemo={updateMemo} flushMemo={flushMemo} memoSaving={memoSaving} />
+      <MemoPane
+        memoDraft={memoDraft}
+        updateMemo={updateMemo}
+        flushMemo={flushMemo}
+        memoSaving={memoSaving}
+        actionsDisabled={actionsDisabled}
+      />
       <DetailTabsPane
         rules={detail?.rules ?? []}
         constraints={detail?.constraints ?? []}
@@ -81,6 +89,7 @@ export function CodeDetailLayout({
         selectedPane={selectedPane}
         setSelectedPane={setSelectedPane}
         openEditor={openEditor}
+        actionsDisabled={actionsDisabled}
       />
       <DomainsPane
         detail={detail}
@@ -158,8 +167,9 @@ function MemoPane({
   memoDraft,
   updateMemo,
   flushMemo,
-  memoSaving
-}: Pick<DetailLayoutProps, "memoDraft" | "updateMemo" | "flushMemo" | "memoSaving">) {
+  memoSaving,
+  actionsDisabled
+}: Pick<DetailLayoutProps, "memoDraft" | "updateMemo" | "flushMemo" | "memoSaving" | "actionsDisabled">) {
   return (
     <div>
       <div className={sectionLabelClass}>memo</div>
@@ -171,6 +181,7 @@ function MemoPane({
           rows={9}
           className="min-h-[190px] resize-y bg-white"
           placeholder="memo"
+          disabled={actionsDisabled}
         />
         <div className="mt-2 flex justify-end text-xs text-muted-foreground">
           {memoSaving ? "saving..." : "saved"}

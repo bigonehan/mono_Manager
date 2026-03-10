@@ -100,5 +100,4 @@ impl AppConfig {
             .filter(|v| !v.is_empty())
             .unwrap_or("fish")
     }
-
 }

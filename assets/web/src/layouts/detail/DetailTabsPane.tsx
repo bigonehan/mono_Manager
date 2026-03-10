@@ -10,6 +10,7 @@ type Props = {
   selectedPane: DetailPane;
   setSelectedPane: (pane: DetailPane) => void;
   openEditor: () => void;
+  actionsDisabled: boolean;
   sectionLabel?: string;
 };
 
@@ -96,6 +97,7 @@ export function DetailTabsPane({
   selectedPane,
   setSelectedPane,
   openEditor,
+  actionsDisabled,
   sectionLabel
 }: Props) {
   const activePane: "rules" | "constraints" | "features" =
@@ -113,6 +115,7 @@ export function DetailTabsPane({
               key={`detail-tab-${tab}`}
               type="button"
               onClick={() => setSelectedPane(tab as "rules" | "constraints" | "features")}
+              disabled={actionsDisabled}
               className={`rounded-t-md border border-b-0 px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
                 activePane === tab
                   ? "border-border bg-white text-foreground"
@@ -126,6 +129,7 @@ export function DetailTabsPane({
             data-testid={`pane-edit-gear-${activePane}`}
             className="mb-1 rounded p-1 text-muted-foreground hover:bg-muted"
             onClick={openEditor}
+            disabled={actionsDisabled}
             aria-label={`edit-pane-${activePane}`}
           >
             <Settings className="h-4 w-4" />

@@ -3,7 +3,14 @@ import type { DetailLayoutProps } from "@/layouts/detail/types";
 import { parseSpecTokens } from "@/layouts/detail/types";
 import { DetailTabsPane } from "@/layouts/detail/DetailTabsPane";
 
-export function WriteDetailLayout({ detail, showProjectInfo = true, selectedPane, setSelectedPane, openEditor }: DetailLayoutProps) {
+export function WriteDetailLayout({
+  detail,
+  showProjectInfo = true,
+  selectedPane,
+  setSelectedPane,
+  openEditor,
+  actionsDisabled
+}: DetailLayoutProps) {
   return (
     <div className="space-y-4">
       {showProjectInfo && (
@@ -20,6 +27,7 @@ export function WriteDetailLayout({ detail, showProjectInfo = true, selectedPane
               e.stopPropagation();
               openEditor();
             }}
+            disabled={actionsDisabled}
             aria-label="edit-pane"
           >
             <Settings className="h-4 w-4" />
@@ -45,6 +53,7 @@ export function WriteDetailLayout({ detail, showProjectInfo = true, selectedPane
         selectedPane={selectedPane}
         setSelectedPane={setSelectedPane}
         openEditor={openEditor}
+        actionsDisabled={actionsDisabled}
       />
     </div>
   );

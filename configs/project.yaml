@@ -1,5 +1,13 @@
-recentActivepane: CbgR
+recentActivepane: jecM
 projects:
+  - id: CbgR
+    name: web/next
+    path: /home/tree/home/template/web/next
+    description: monorepo template package
+    created_at: "1772888984"
+    updated_at: "1772963389"
+    selected: false
+    project_type: mono
   - id: Crqr
     name: blender-bots
     path: /home/tree/project/blender-bots
@@ -33,11 +41,11 @@ projects:
     selected: false
     project_type: code
   - id: 7zpF
-    name: pw-1772902015381
+    name: pw-1773077961064
     path: /tmp/tmp_project
     description: playwright e2e project
     created_at: "1772888365"
-    updated_at: "1772902016"
+    updated_at: "1773077963"
     selected: false
     project_type: code
   - id: ue6A
@@ -128,14 +136,6 @@ projects:
     updated_at: "1772898385"
     selected: false
     project_type: mono
-  - id: CbgR
-    name: web/next
-    path: /home/tree/home/template/web/next
-    description: monorepo template package
-    created_at: "1772888984"
-    updated_at: "1772963389"
-    selected: true
-    project_type: mono
   - id: NHVc
     name: template/desktop
     path: /home/tree/home/template/desktop
@@ -208,11 +208,195 @@ projects:
     updated_at: "1772949882"
     selected: false
     project_type: mono
-  - id: YEnP
+  - id: 2zkQ
+    name: pw-episode-1773074123280
+    path: /tmp/pw-episode-1773074123280
+    description: episode ui verification
+    created_at: "1773074125"
+    updated_at: "1773074126"
+    selected: false
+    project_type: code
+  - id: HbvM
+    name: web/structure_viewer
+    path: /home/tree/home/apps/web/structure_viewer
+    description: monorepo app package
+    created_at: "1773074125"
+    updated_at: "1773074125"
+    selected: false
+    project_type: mono
+  - id: QAta
+    name: mobile/reader
+    path: /home/tree/home/template/mobile/reader
+    description: monorepo template package
+    created_at: "1773074125"
+    updated_at: "1773074125"
+    selected: false
+    project_type: mono
+  - id: cb9y
+    name: server/lecture
+    path: /home/tree/home/template/server/lecture
+    description: monorepo template package
+    created_at: "1773074125"
+    updated_at: "1773074125"
+    selected: false
+    project_type: mono
+  - id: i4tY
+    name: web/dir
+    path: /home/tree/home/template/web/dir
+    description: monorepo template package
+    created_at: "1773074125"
+    updated_at: "1773074125"
+    selected: false
+    project_type: mono
+  - id: YmLh
+    name: web/game
+    path: /home/tree/home/template/web/game
+    description: monorepo template package
+    created_at: "1773074125"
+    updated_at: "1773074125"
+    selected: false
+    project_type: mono
+  - id: gSZB
+    name: web/landing
+    path: /home/tree/home/template/web/landing
+    description: monorepo template package
+    created_at: "1773074125"
+    updated_at: "1773074736"
+    selected: false
+    project_type: mono
+  - id: B2rh
+    name: web/lecture
+    path: /home/tree/home/template/web/lecture
+    description: monorepo template package
+    created_at: "1773074125"
+    updated_at: "1773074125"
+    selected: false
+    project_type: mono
+  - id: 2AXn
+    name: web/references
+    path: /home/tree/home/template/web/references
+    description: monorepo template package
+    created_at: "1773074125"
+    updated_at: "1773074125"
+    selected: false
+    project_type: mono
+  - id: bCwC
+    name: pw-episode-1773074176140
+    path: /tmp/pw-episode-1773074176140
+    description: episode ui verification
+    created_at: "1773074178"
+    updated_at: "1773074179"
+    selected: false
+    project_type: code
+  - id: vzVk
     name: web/blog-feature-gapfix
     path: /home/tree/home/template/web/blog-feature-gapfix
     description: monorepo template package
-    created_at: "1772888984"
-    updated_at: "1772897749"
+    created_at: "1773075493"
+    updated_at: "1773075493"
     selected: false
     project_type: mono
+  - id: PfZz
+    name: pw-episode-1773076780531
+    path: /tmp/pw-episode-1773076780531
+    description: episode ui verification
+    created_at: "1773076780"
+    updated_at: "1773076781"
+    selected: false
+    project_type: code
+  - id: Ana9
+    name: pw-auto-1773076782007
+    path: /tmp/pw-auto-1773076782007
+    description: auto ui verification
+    created_at: "1773076782"
+    updated_at: "1773076782"
+    selected: false
+    project_type: code
+  - id: dyka
+    name: pw-auto-1773076782007-other
+    path: /tmp/pw-auto-1773076782007-other
+    description: auto ui verification
+    created_at: "1773076782"
+    updated_at: "1773076782"
+    selected: false
+    project_type: code
+  - id: mFE2
+    name: pw-episode-1773077963932
+    path: /tmp/pw-episode-1773077963932
+    description: episode ui verification
+    created_at: "1773077964"
+    updated_at: "1773077965"
+    selected: false
+    project_type: code
+  - id: 4isu
+    name: pw-auto-1773077965421
+    path: /tmp/pw-auto-1773077965421
+    description: auto ui verification
+    created_at: "1773077965"
+    updated_at: "1773077966"
+    selected: false
+    project_type: code
+  - id: j3Gh
+    name: pw-auto-1773077965421-other
+    path: /tmp/pw-auto-1773077965421-other
+    description: auto ui verification
+    created_at: "1773077965"
+    updated_at: "1773077965"
+    selected: false
+    project_type: code
+  - id: jN7b
+    name: pw-check-1773132865973
+    path: /tmp/pw-check-1773132865973
+    description: check pane verification
+    created_at: "1773132866"
+    updated_at: "1773132869"
+    selected: false
+    project_type: code
+  - id: vfin
+    name: web/donation
+    path: /home/tree/home/template/web/donation
+    description: monorepo template package
+    created_at: "1773132868"
+    updated_at: "1773132868"
+    selected: false
+    project_type: mono
+  - id: 2EYV
+    name: pw-voice-1773136050219
+    path: /tmp/pw-voice-1773136050219
+    description: voice input verification
+    created_at: "1773136050"
+    updated_at: "1773136053"
+    selected: false
+    project_type: code
+  - id: acJN
+    name: desktop/basic
+    path: /home/tree/home/template/desktop/basic
+    description: monorepo template package
+    created_at: "1773136052"
+    updated_at: "1773136052"
+    selected: false
+    project_type: mono
+  - id: 7Wu2
+    name: pw-voice-1773136092028
+    path: /tmp/pw-voice-1773136092028
+    description: voice input verification
+    created_at: "1773136092"
+    updated_at: "1773136095"
+    selected: false
+    project_type: code
+  - id: NPg5
+    name: pw-check-1773140592996
+    path: /tmp/pw-check-1773140592996
+    description: check pane verification
+    created_at: "1773140593"
+    updated_at: "1773140596"
+    selected: false
+    project_type: code
+  - id: jecM
+    name: pw-voice-1773140597140
+    path: /tmp/pw-voice-1773140597140
+    description: voice input verification
+    created_at: "1773140597"
+    updated_at: "1773140597"
+    selected: true
+    project_type: code

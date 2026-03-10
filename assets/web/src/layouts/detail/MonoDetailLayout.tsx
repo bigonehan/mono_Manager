@@ -9,7 +9,14 @@ function getMonorepoDomainsHardcoded(_projectPath: string): string[] {
   return ["accounts", "catalog", "orders", "payment", "shared"];
 }
 
-export function MonoDetailLayout({ detail, showProjectInfo = true, selectedPane, setSelectedPane, openEditor }: DetailLayoutProps) {
+export function MonoDetailLayout({
+  detail,
+  showProjectInfo = true,
+  selectedPane,
+  setSelectedPane,
+  openEditor,
+  actionsDisabled
+}: DetailLayoutProps) {
   const domains = getMonorepoDomainsHardcoded(detail?.path ?? "");
   return (
     <div className="space-y-4">
@@ -27,6 +34,7 @@ export function MonoDetailLayout({ detail, showProjectInfo = true, selectedPane,
               e.stopPropagation();
               openEditor();
             }}
+            disabled={actionsDisabled}
             aria-label="edit-pane"
           >
             <Settings className="h-4 w-4" />
@@ -37,7 +45,7 @@ export function MonoDetailLayout({ detail, showProjectInfo = true, selectedPane,
             <div className="text-4xl font-extrabold tracking-tight">{detail?.name ?? ""}</div>
             <div className="mt-1 text-xl text-muted-foreground">{detail?.description ?? ""}</div>
           </div>
-          <span className="rounded-lg bg-muted px-3 py-1 text-xs font-bold uppercase">{detail?.state ?? "basic"}</span>
+          <span className="rounded-lg bg-muted px-3 py-1 text-xs font-bold uppercase">{detail?.state ?? "wait"}</span>
         </div>
         <div className="mt-6 flex flex-wrap gap-2">
           <span className="inline-flex rounded-xl border border-border bg-muted p-2 text-foreground">
@@ -58,6 +66,7 @@ export function MonoDetailLayout({ detail, showProjectInfo = true, selectedPane,
         selectedPane={selectedPane}
         setSelectedPane={setSelectedPane}
         openEditor={openEditor}
+        actionsDisabled={actionsDisabled}
       />
       <div>
         <div className={sectionLabelClass}>domains</div>

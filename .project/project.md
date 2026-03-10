@@ -1,6 +1,6 @@
 # info
-name : project_type_add_symbol_create_symbol_project_md
-description : project type add 상세페이지에 symbol 버튼(전구 아이콘) 추가, create_symbol 프롬프트 기반 상징 리스트 생성/선택, Project.md 반영
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
 spec : astro, react, typescript, zustand
 path : /home/tree/project/rust-orc
 
@@ -31,6 +31,16 @@ path : /home/tree/project/rust-orc
 - cli_chat
 - cli_chat_wait
 - cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
 # rules
 - 프로젝트 내부의 공통 규칙
 

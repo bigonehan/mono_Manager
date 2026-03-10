@@ -14,16 +14,13 @@ impl TuiRuntime {
         crate::save_registry(&registry_path, &registry)?;
         let result = ui::run_ui(&mut registry.projects, &mut registry.recent_active_pane)?;
         if normalized {
-            registry.recent_active_pane = registry
-                .recent_active_pane
-                .as_ref()
-                .and_then(|id| {
-                    registry
-                        .projects
-                        .iter()
-                        .find(|p| &p.id == id)
-                        .map(|p| p.id.clone())
-                });
+            registry.recent_active_pane = registry.recent_active_pane.as_ref().and_then(|id| {
+                registry
+                    .projects
+                    .iter()
+                    .find(|p| &p.id == id)
+                    .map(|p| p.id.clone())
+            });
         }
         if result.changed || normalized {
             crate::save_registry(&registry_path, &registry)?;

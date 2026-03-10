@@ -117,13 +117,7 @@ pub(crate) fn render_confirm_cancel_wrapper(
             .wrap(Wrap { trim: false }),
         body_area,
     );
-    render_confirm_buttons_bottom_right(
-        f,
-        inner,
-        confirm_label,
-        cancel_label,
-        confirm_selected,
-    );
+    render_confirm_buttons_bottom_right(f, inner, confirm_label, cancel_label, confirm_selected);
 }
 
 pub(crate) fn render_busy_modal(f: &mut ratatui::Frame, area: Rect, message: &str) {

@@ -1,15 +1,13 @@
 import type { APIRoute } from "astro";
-import { startAutoFromMessage } from "@/server/orc";
+import { runManualRcCheck } from "@/server/orc";
 
 export const prerender = false;
 
 export const POST: APIRoute = async ({ request }) => {
   try {
     const body = await request.json();
-    const id = String(body.id ?? "");
-    const message = String(body.message ?? "");
-    const { detail, output } = startAutoFromMessage(id, message);
-    return new Response(JSON.stringify({ detail, output }), {
+    const result = runManualRcCheck(String(body.id ?? ""));
+    return new Response(JSON.stringify(result), {
       headers: { "content-type": "application/json" }
     });
   } catch (error) {

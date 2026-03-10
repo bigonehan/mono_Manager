@@ -98,10 +98,6 @@ pub(crate) fn check_story_task() -> Result<String, String> {
     crate::code::check_task()
 }
 
-pub(crate) fn check_story_only() -> Result<String, String> {
-    crate::code::check_draft()
-}
-
 pub(crate) fn create_story_input_md() -> Result<String, String> {
     crate::code::create_input_md()
 }
@@ -215,13 +211,21 @@ fn enforce_project_dir() -> Result<PathBuf, String> {
     Ok(dir.to_path_buf())
 }
 
-fn write_story_project_md(name: &str, description: &str, path: &str, spec: &str) -> Result<(), String> {
+fn write_story_project_md(
+    name: &str,
+    description: &str,
+    path: &str,
+    spec: &str,
+) -> Result<(), String> {
     let mut body = read_story_template("project.md")?;
     body = replace_info_field_value(&body, "name", name);
     body = replace_info_field_value(&body, "description", description);
     body = replace_info_field_value(&body, "path", path);
     body = replace_info_field_value(&body, "spec", &normalize_story_spec(spec));
-    write_file(Path::new(crate::PROJECT_MD_PATH), &format!("{}\n", body.trim_end()))
+    write_file(
+        Path::new(crate::PROJECT_MD_PATH),
+        &format!("{}\n", body.trim_end()),
+    )
 }
 
 fn ensure_story_plan_yaml() -> Result<(), String> {

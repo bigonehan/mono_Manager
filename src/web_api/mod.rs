@@ -10,8 +10,8 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
 use tower_http::cors::{Any, CorsLayer};
@@ -26,8 +26,7 @@ struct AppState {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 enum ProjectType {
-    Story,
-    Movie,
+    #[serde(alias = "story", alias = "movie")]
     #[default]
     Code,
     Mono,
@@ -60,11 +59,12 @@ struct ProjectRegistry {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum ProjectState {
-    Init,
-    Basic,
-    Work,
+    #[serde(alias = "init", alias = "basic")]
     Wait,
-    Run,
+    #[serde(alias = "review", alias = "run", alias = "build")]
+    Work,
+    Complete,
+    Auto,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -330,14 +330,16 @@ async fn post_project_load(
     Json(body): Json<LoadProjectRequest>,
 ) -> impl IntoResponse {
     match load_project_from_path(&state.repo_root, body) {
-        Ok((project, created_project_meta)) => match load_project_detail(&state.repo_root, &project.id) {
-            Ok(detail) => ok_json(json!({
-                "project": project,
-                "detail": detail,
-                "created_project_meta": created_project_meta
-            })),
-            Err(e) => err_json(e),
-        },
+        Ok((project, created_project_meta)) => {
+            match load_project_detail(&state.repo_root, &project.id) {
+                Ok(detail) => ok_json(json!({
+                    "project": project,
+                    "detail": detail,
+                    "created_project_meta": created_project_meta
+                })),
+                Err(e) => err_json(e),
+            }
+        }
         Err(e) => err_json(e),
     }
 }
@@ -352,9 +354,7 @@ async fn get_project_detail(
     }
 }
 
-async fn get_project_browse(
-    Query(query): Query<BrowseQuery>,
-) -> impl IntoResponse {
+async fn get_project_browse(Query(query): Query<BrowseQuery>) -> impl IntoResponse {
     match browse_project_dirs(&query.path) {
         Ok((current_path, parent_path, entries)) => ok_json(json!({
             "currentPath": current_path,
@@ -365,9 +365,7 @@ async fn get_project_browse(
     }
 }
 
-async fn post_monorepo_sync(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+async fn post_monorepo_sync(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     match sync_monorepo_projects(&state.repo_root) {
         Ok((root, domains, packages, created, updated)) => ok_json(json!({
             "root": root,
@@ -446,7 +444,10 @@ async fn post_project_memo(
     }
 }
 
-async fn post_run(State(state): State<Arc<AppState>>, Json(body): Json<RunRequest>) -> impl IntoResponse {
+async fn post_run(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<RunRequest>,
+) -> impl IntoResponse {
     match run_orc_action(&state.repo_root, &body.id, &body.action, &body.payload).await {
         Ok(output) => ok_json(json!({ "output": output })),
         Err(e) => err_json(e),
@@ -481,7 +482,7 @@ async fn get_tui_map() -> impl IntoResponse {
             "Rules/Constraints/Features list editing",
             "Plan/Drafts panels (planned/generated)",
             "create_code_draft, add_code_draft, impl_code_draft",
-            "check_code_draft -a, check_draft"
+            "check_code_draft -a"
         ]
     }))
 }
@@ -546,14 +547,17 @@ fn load_registry(repo_root: &Path) -> Result<ProjectRegistry, String> {
     if !path.exists() {
         return Ok(ProjectRegistry::default());
     }
-    let raw = fs::read_to_string(&path).map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
-    serde_yaml::from_str::<ProjectRegistry>(&raw).map_err(|e| format!("invalid yaml {}: {}", path.display(), e))
+    let raw = fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+    serde_yaml::from_str::<ProjectRegistry>(&raw)
+        .map_err(|e| format!("invalid yaml {}: {}", path.display(), e))
 }
 
 fn save_registry(repo_root: &Path, registry: &ProjectRegistry) -> Result<(), String> {
     let path = registry_path(repo_root);
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
     }
     let raw = serde_yaml::to_string(registry).map_err(|e| format!("yaml encode error: {}", e))?;
     fs::write(&path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
@@ -567,7 +571,9 @@ fn browse_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/home/tree"))
 }
 
-fn browse_project_dirs(input_path: &str) -> Result<(String, Option<String>, Vec<BrowseEntry>), String> {
+fn browse_project_dirs(
+    input_path: &str,
+) -> Result<(String, Option<String>, Vec<BrowseEntry>), String> {
     let root = browse_root()
         .canonicalize()
         .unwrap_or_else(|_| PathBuf::from("/home/tree"));
@@ -597,7 +603,9 @@ fn browse_project_dirs(input_path: &str) -> Result<(String, Option<String>, Vec<
     });
 
     let mut entries = Vec::new();
-    for entry in fs::read_dir(&current).map_err(|e| format!("failed to read {}: {}", current.display(), e))? {
+    for entry in fs::read_dir(&current)
+        .map_err(|e| format!("failed to read {}: {}", current.display(), e))?
+    {
         let entry = entry.map_err(|e| format!("failed to read entry: {}", e))?;
         let path = entry.path();
         if !path.is_dir() {
@@ -675,9 +683,13 @@ fn collect_monorepo_packages(root: &Path) -> Vec<(String, PathBuf, String)> {
                         added_nested = true;
                     }
                     if !added_nested {
-                        let fallback = if first.join("next.config.js").exists() || first.join("next.config.ts").exists() {
+                        let fallback = if first.join("next.config.js").exists()
+                            || first.join("next.config.ts").exists()
+                        {
                             "next".to_string()
-                        } else if first.join("astro.config.mjs").exists() || first.join("astro.config.ts").exists() {
+                        } else if first.join("astro.config.mjs").exists()
+                            || first.join("astro.config.ts").exists()
+                        {
                             "astro".to_string()
                         } else if first.join("app.json").exists() {
                             "expo".to_string()
@@ -742,9 +754,10 @@ fn sync_monorepo_projects(repo_root: &Path) -> Result<SyncMonorepoProjectsResult
     let package_rows = collect_monorepo_packages(&root);
     let mut registry = load_registry(repo_root)?;
     let now = now_unix();
-    registry
-        .projects
-        .retain(|p| !(p.project_type == ProjectType::Code && is_monorepo_managed_path(Path::new(&p.path), &root)));
+    registry.projects.retain(|p| {
+        !(p.project_type == ProjectType::Code
+            && is_monorepo_managed_path(Path::new(&p.path), &root))
+    });
     let mut created = 0usize;
     let mut updated = 0usize;
     for (kind, pkg_path, name) in &package_rows {
@@ -834,7 +847,11 @@ fn list_projects(repo_root: &Path) -> Result<Vec<ProjectRecord>, String> {
 fn create_project(repo_root: &Path, input: CreateProjectRequest) -> Result<ProjectRecord, String> {
     let mut registry = load_registry(repo_root)?;
     let normalized_path = input.path.trim().to_string();
-    if let Some(existing_idx) = registry.projects.iter().position(|p| p.path == normalized_path) {
+    if let Some(existing_idx) = registry
+        .projects
+        .iter()
+        .position(|p| p.path == normalized_path)
+    {
         for p in &mut registry.projects {
             p.selected = false;
         }
@@ -932,27 +949,28 @@ fn load_project_from_path(
     for p in &mut registry.projects {
         p.selected = false;
     }
-    let project = if let Some(existing) = registry.projects.iter_mut().find(|p| p.path == path_string) {
-        existing.name = parsed_name;
-        existing.description = parsed_description;
-        existing.updated_at = now.clone();
-        existing.selected = true;
-        existing.clone()
-    } else {
-        let record = ProjectRecord {
-            id: random_id(),
-            name: parsed_name,
-            path: path_string,
-            description: parsed_description,
-            created_at: now.clone(),
-            updated_at: now,
-            selected: true,
-            project_type: input.project_type.unwrap_or_default(),
-            state: None,
+    let project =
+        if let Some(existing) = registry.projects.iter_mut().find(|p| p.path == path_string) {
+            existing.name = parsed_name;
+            existing.description = parsed_description;
+            existing.updated_at = now.clone();
+            existing.selected = true;
+            existing.clone()
+        } else {
+            let record = ProjectRecord {
+                id: random_id(),
+                name: parsed_name,
+                path: path_string,
+                description: parsed_description,
+                created_at: now.clone(),
+                updated_at: now,
+                selected: true,
+                project_type: input.project_type.unwrap_or_default(),
+                state: None,
+            };
+            registry.projects.push(record.clone());
+            record
         };
-        registry.projects.push(record.clone());
-        record
-    };
     registry.recent_active_pane = project.id.clone();
     save_registry(repo_root, &registry)?;
     ensure_project_files(&project)?;
@@ -1002,7 +1020,8 @@ fn delete_project(repo_root: &Path, id: &str) -> Result<(), String> {
     save_registry(repo_root, &registry)?;
     let meta = project_meta_dir(Path::new(&target.path));
     if meta.exists() {
-        fs::remove_dir_all(&meta).map_err(|e| format!("failed to remove {}: {}", meta.display(), e))?;
+        fs::remove_dir_all(&meta)
+            .map_err(|e| format!("failed to remove {}: {}", meta.display(), e))?;
     }
     Ok(())
 }
@@ -1139,10 +1158,16 @@ fn save_project_lists(
     load_project_detail(repo_root, id)
 }
 
-async fn run_orc_action(repo_root: &Path, id: &str, action: &str, payload: &str) -> Result<String, String> {
+async fn run_orc_action(
+    repo_root: &Path,
+    id: &str,
+    action: &str,
+    payload: &str,
+) -> Result<String, String> {
     let detail = load_project_detail(repo_root, id)?;
     let previous = std::env::current_dir().map_err(|e| format!("failed to get cwd: {}", e))?;
-    std::env::set_current_dir(repo_root).map_err(|e| format!("failed to enter repo root: {}", e))?;
+    std::env::set_current_dir(repo_root)
+        .map_err(|e| format!("failed to enter repo root: {}", e))?;
     let output = match action {
         "create_draft" => crate::code::create_code_draft(),
         "add_draft" => {
@@ -1155,7 +1180,6 @@ async fn run_orc_action(repo_root: &Path, id: &str, action: &str, payload: &str)
         }
         "impl_draft" => crate::code::impl_code_draft().await,
         "check_code" => crate::code::check_code_draft(true),
-        "check_draft" => crate::code::check_draft(),
         _ => Err(format!("unsupported action: {}", action)),
     };
     let _ = std::env::set_current_dir(previous);
@@ -1167,8 +1191,10 @@ fn load_drafts_list(project_path: &Path) -> Result<DraftsListDoc, String> {
     if !path.exists() {
         return Ok(DraftsListDoc::default());
     }
-    let raw = fs::read_to_string(&path).map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
-    serde_yaml::from_str::<DraftsListDoc>(&raw).map_err(|e| format!("invalid yaml {}: {}", path.display(), e))
+    let raw = fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+    serde_yaml::from_str::<DraftsListDoc>(&raw)
+        .map_err(|e| format!("invalid yaml {}: {}", path.display(), e))
 }
 
 fn save_drafts_list(project_path: &Path, doc: &DraftsListDoc) -> Result<(), String> {
@@ -1214,7 +1240,13 @@ fn read_runtime_logs(state: &Arc<AppState>, id: &str) -> Result<Vec<String>, Str
         .runtime_logs
         .lock()
         .map_err(|_| "failed to lock runtime logs".to_string())?;
-    Ok(map.get(id).cloned().unwrap_or_default().into_iter().rev().collect())
+    Ok(map
+        .get(id)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .rev()
+        .collect())
 }
 
 fn set_project_state(repo_root: &Path, id: &str, state: ProjectState) -> Result<(), String> {
@@ -1230,25 +1262,31 @@ fn set_project_state(repo_root: &Path, id: &str, state: ProjectState) -> Result<
 }
 
 fn resolve_project_state(project: &ProjectRecord) -> ProjectState {
-    if project.state == Some(ProjectState::Run) {
-        return ProjectState::Run;
+    if project.state == Some(ProjectState::Auto) {
+        return ProjectState::Auto;
+    }
+    if project.state == Some(ProjectState::Work) {
+        return ProjectState::Work;
+    }
+    if project.state == Some(ProjectState::Complete) {
+        return ProjectState::Complete;
     }
     let project_path = Path::new(&project.path);
     if !project_md_path(project_path).exists() {
-        return ProjectState::Init;
-    }
-    let drafts = load_drafts_doc(project_path);
-    let (planned, worked, complete, _error) = draft_state_counts(&drafts);
-    if planned > 0 || worked > 0 {
-        return ProjectState::Work;
-    }
-    if complete > 0 && planned == 0 && worked == 0 {
         return ProjectState::Wait;
     }
-    if !is_bootstrap_completed(project_path) {
-        return ProjectState::Init;
+    let drafts = load_drafts_doc(project_path);
+    let (planned, worked, complete, error) = draft_state_counts(&drafts);
+    if planned > 0 || worked > 0 || error > 0 {
+        return ProjectState::Work;
     }
-    ProjectState::Basic
+    if complete > 0 && planned == 0 && worked == 0 && error == 0 {
+        return ProjectState::Complete;
+    }
+    if !is_bootstrap_completed(project_path) {
+        return ProjectState::Wait;
+    }
+    ProjectState::Wait
 }
 
 async fn start_bun_dev(state: Arc<AppState>, id: &str) -> Result<String, String> {
@@ -1263,8 +1301,12 @@ async fn start_bun_dev(state: Arc<AppState>, id: &str) -> Result<String, String>
         }
         running.insert(id.to_string());
     }
-    set_project_state(&state.repo_root, id, ProjectState::Run)?;
-    push_runtime_log(&state, id, format!("[run-dev] start: {} ({})", detail.name, detail.path));
+    set_project_state(&state.repo_root, id, ProjectState::Work)?;
+    push_runtime_log(
+        &state,
+        id,
+        format!("[run-dev] start: {} ({})", detail.name, detail.path),
+    );
 
     let mut cmd = Command::new("bun");
     cmd.arg("run")
@@ -1308,8 +1350,40 @@ async fn start_bun_dev(state: Arc<AppState>, id: &str) -> Result<String, String>
         if let Ok(mut running) = state_wait.running_dev.lock() {
             running.remove(&id_wait);
         }
+        let _ = refresh_project_state(&state_wait.repo_root, &id_wait);
     });
     Ok(format!("bun run dev started: {}", detail.name))
+}
+
+fn refresh_project_state(repo_root: &Path, id: &str) -> Result<(), String> {
+    let mut registry = load_registry(repo_root)?;
+    let project = registry
+        .projects
+        .iter_mut()
+        .find(|p| p.id == id)
+        .ok_or_else(|| format!("project not found: {}", id))?;
+    project.state = Some(infer_project_state(project));
+    project.updated_at = now_unix();
+    save_registry(repo_root, &registry)
+}
+
+fn infer_project_state(project: &ProjectRecord) -> ProjectState {
+    let project_path = Path::new(&project.path);
+    if !project_md_path(project_path).exists() {
+        return ProjectState::Wait;
+    }
+    let drafts = load_drafts_doc(project_path);
+    let (planned, worked, complete, error) = draft_state_counts(&drafts);
+    if planned > 0 || worked > 0 || error > 0 {
+        return ProjectState::Work;
+    }
+    if complete > 0 && planned == 0 && worked == 0 && error == 0 {
+        return ProjectState::Complete;
+    }
+    if !is_bootstrap_completed(project_path) {
+        return ProjectState::Wait;
+    }
+    ProjectState::Wait
 }
 
 fn is_bootstrap_completed(project_path: &Path) -> bool {
@@ -1416,9 +1490,16 @@ fn parse_project_md(raw: &str) -> ParsedProjectMd {
                 domain_subsection = t.trim_start_matches("### ").trim().to_ascii_lowercase();
                 continue;
             }
-            if let Some(item) = t.strip_prefix("- ").map(str::trim).filter(|v| !v.is_empty()) {
+            if let Some(item) = t
+                .strip_prefix("- ")
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+            {
                 if let Some(idx) = active_domain_idx {
-                    if matches!(domain_subsection.as_str(), "action" | "feature" | "features") {
+                    if matches!(
+                        domain_subsection.as_str(),
+                        "action" | "feature" | "features"
+                    ) {
                         if !out.domains[idx].features.iter().any(|v| v == item) {
                             out.domains[idx].features.push(item.to_string());
                         }
@@ -1432,7 +1513,8 @@ fn parse_project_md(raw: &str) -> ParsedProjectMd {
             continue;
         }
         if section == "rules" && t.starts_with("- ") {
-            out.rules.push(t.trim_start_matches("- ").trim().to_string());
+            out.rules
+                .push(t.trim_start_matches("- ").trim().to_string());
             continue;
         }
         if section == "constraints" && t.starts_with("- ") {
@@ -1441,7 +1523,8 @@ fn parse_project_md(raw: &str) -> ParsedProjectMd {
             continue;
         }
         if section == "features" && t.starts_with("- ") {
-            out.features.push(t.trim_start_matches("- ").trim().to_string());
+            out.features
+                .push(t.trim_start_matches("- ").trim().to_string());
             continue;
         }
         if let Some((key, value)) = t.split_once(':') {

@@ -1,4 +1,11 @@
-use crate::{append_failure_log, build_task_prompt, check_and_improve_drafts_before_parallel, collect_parallel_feature_tasks, default_model_bin, initialize_parallel_workspace_if_empty, load_app_config, model_supports_dangerous_flag, move_finished_features_to_clear, preflight_parallel_build, print_parallel_modal, promote_planned_to_features, read_project_info, resolve_task_template_path, run_parallel_clit_check, write_parallel_feedback, config, ui};
+use crate::{
+    append_failure_log, build_task_prompt, check_and_improve_drafts_before_parallel,
+    collect_parallel_feature_tasks, config, default_model_bin,
+    initialize_parallel_workspace_if_empty, load_app_config, model_supports_dangerous_flag,
+    move_finished_features_to_clear, preflight_parallel_build, print_parallel_modal,
+    promote_planned_to_features, read_project_info, resolve_task_template_path,
+    run_parallel_clit_check, ui, write_parallel_feedback,
+};
 use std::collections::HashSet;
 use std::env;
 use std::fs;
@@ -7,6 +14,16 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
+
+fn manual_web_check_mode_enabled() -> bool {
+    match env::var("ORC_WEB_MANUAL_CHECK") {
+        Ok(value) => matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => false,
+    }
+}
 
 fn update_task_status(
     statuses: &[(String, ui::TaskRuntimeState)],
@@ -90,12 +107,7 @@ async fn run_one_parallel_task(
             "파일 반영 단계",
             "codex 작업 결과를 워크스페이스에 반영 완료로 간주합니다.",
         );
-        append_task_runtime_log(
-            debug_enabled,
-            &task_name,
-            "완료/실패",
-            "완료",
-        );
+        append_task_runtime_log(debug_enabled, &task_name, "완료/실패", "완료");
         Ok(task_name)
     } else {
         append_task_runtime_log(
@@ -112,12 +124,7 @@ async fn run_one_parallel_task(
     }
 }
 
-fn append_task_runtime_log(
-    debug_enabled: bool,
-    task_name: &str,
-    stage: &str,
-    detail: &str,
-) {
+fn append_task_runtime_log(debug_enabled: bool, task_name: &str, stage: &str, detail: &str) {
     if !debug_enabled {
         return;
     }
@@ -144,9 +151,15 @@ pub async fn run_parallel_build_code() -> Result<String, String> {
     }
 
     let app_conf = load_app_config();
-    let max_parallel = app_conf.as_ref().map_or(10, config::AppConfig::default_max_parallel);
-    let timeout_sec = app_conf.as_ref().map_or(300, config::AppConfig::default_timeout_sec);
-    let auto_yes = app_conf.as_ref().is_none_or(config::AppConfig::auto_yes_enabled);
+    let max_parallel = app_conf
+        .as_ref()
+        .map_or(10, config::AppConfig::default_max_parallel);
+    let timeout_sec = app_conf
+        .as_ref()
+        .map_or(300, config::AppConfig::default_timeout_sec);
+    let auto_yes = app_conf
+        .as_ref()
+        .is_none_or(config::AppConfig::auto_yes_enabled);
     let dangerous_bypass = app_conf
         .as_ref()
         .is_none_or(config::AppConfig::dangerous_bypass_enabled);
@@ -250,6 +263,12 @@ pub async fn run_parallel_build_code() -> Result<String, String> {
     let finished_list: Vec<String> = finished.into_iter().collect();
     promote_planned_to_features(&finished_list)?;
     let move_msg = move_finished_features_to_clear(&finished_list)?;
+    if manual_web_check_mode_enabled() {
+        return Ok(format!(
+            "run_parallel_build_code finished: success={}, failed={} | {} | manual rc check pending",
+            success, failed, move_msg
+        ));
+    }
     let clit_msg = run_parallel_clit_check(&finished_list, failed)?;
     let feedback_msg = write_parallel_feedback(&finished_list, failed, &move_msg)?;
     Ok(format!(
@@ -266,6 +285,9 @@ pub async fn press_key(key: &str) -> Result<String, String> {
     if key == run_parallel_key {
         run_parallel_build_code().await
     } else {
-        Err(format!("unmapped key: {} (run_parallel key: {})", key, run_parallel_key))
+        Err(format!(
+            "unmapped key: {} (run_parallel key: {})",
+            key, run_parallel_key
+        ))
     }
 }

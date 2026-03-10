@@ -15,6 +15,8 @@ export type ProjectRecord = {
   project_type: "code" | "mono";
   state?: ProjectState;
   current_job?: string;
+  is_dev_running?: boolean;
+  is_build_running?: boolean;
 };
 
 type ProjectRegistry = {
@@ -48,7 +50,7 @@ type PlanDoc = {
   };
 };
 
-export type ProjectState = "init" | "basic" | "work" | "wait" | "review" | "run" | "build" | "complete";
+export type ProjectState = "wait" | "work" | "complete" | "auto";
 export type ProfileType = "code" | "mono";
 
 const runtimeLogsByProject = new Map<string, string[]>();
@@ -58,6 +60,9 @@ const runUrlsByProject = new Map<string, string>();
 const buildProcessesByProject = new Map<string, ChildProcess>();
 const buildCurrentJobByProject = new Map<string, string>();
 const buildCompletionByProject = new Map<string, string>();
+const autoProcessesByProject = new Map<string, ChildProcess>();
+const autoCurrentJobByProject = new Map<string, string>();
+const autoCompletionByProject = new Map<string, string>();
 const DEV_PORT_MIN = 4300;
 const DEV_PORT_MAX = 4999;
 export type BrowseEntry = { name: string; path: string; hasProjectMeta: boolean };
@@ -86,6 +91,8 @@ export type ProjectDetail = {
   generated: string[];
   state: ProjectState;
   current_job?: string;
+  is_dev_running?: boolean;
+  is_build_running?: boolean;
   hasDraftsYaml: boolean;
   hasInputMd: boolean;
   dev_server_url?: string;
@@ -99,6 +106,20 @@ export type ProjectDetail = {
     status: "work" | "wait" | "complete";
     draft: Record<string, unknown>;
   }>;
+  checkSubject: string;
+  checkSteps: Array<{
+    subject: string;
+    text: string;
+    source: string;
+  }>;
+  feedbackMdRaw: string;
+  hasFeedbackMd: boolean;
+  screenshots: Array<{
+    name: string;
+    path: string;
+    url: string;
+    modifiedAt: string;
+  }>;
 };
 
 export function repoRoot(): string {
@@ -109,10 +130,24 @@ function browseRoot(): string {
   return process.env.ORC_BROWSE_ROOT ?? "/home/tree";
 }
 
-function resolveOrcCommandArgs(args: string[]): { bin: string; args: string[] } {
-  const envBin = (process.env.ORC_BIN ?? "").trim();
-  if (envBin.length > 0) {
-    return { bin: envBin, args };
+type ResolvedWorkspaceCommand = {
+  bin: string;
+  args: string[];
+};
+
+function resolveWorkspaceCommandArgs(binary: "orc" | "rc", args: string[]): ResolvedWorkspaceCommand {
+  const directEnvBin =
+    binary === "orc" ? (process.env.ORC_BIN ?? "").trim() : ((process.env.ORC_RC_BIN ?? process.env.RC_BIN) ?? "").trim();
+  if (directEnvBin.length > 0) {
+    return { bin: directEnvBin, args };
+  }
+  if (binary === "rc") {
+    const orcBin = (process.env.ORC_BIN ?? "").trim();
+    if (orcBin.length > 0) {
+      const parsed = path.parse(orcBin);
+      const siblingRc = path.join(parsed.dir, `rc${parsed.ext}`);
+      return { bin: siblingRc, args };
+    }
   }
   const root = repoRoot();
   const legacyAssets = path.join(root, "assets", "code");
@@ -120,10 +155,30 @@ function resolveOrcCommandArgs(args: string[]): { bin: string; args: string[] } 
   if (!fs.existsSync(legacyAssets) && fs.existsSync(presetsAssets)) {
     return {
       bin: "cargo",
-      args: ["run", "--quiet", "--manifest-path", path.join(root, "Cargo.toml"), "--", ...args]
+      args: ["run", "--quiet", "--manifest-path", path.join(root, "Cargo.toml"), "--bin", binary, "--", ...args]
     };
   }
-  return { bin: "orc", args };
+  return { bin: binary, args };
+}
+
+function resolveOrcCommandArgs(args: string[]): ResolvedWorkspaceCommand {
+  return resolveWorkspaceCommandArgs("orc", args);
+}
+
+function resolveRcCommandArgs(args: string[]): ResolvedWorkspaceCommand {
+  return resolveWorkspaceCommandArgs("rc", args);
+}
+
+function createTaskSessionKey(label: string): string {
+  return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildTaskCommandEnv(taskKey: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    ORC_TASK_SESSION_KEY: taskKey,
+    ...extra
+  };
 }
 
 function monorepoRoot(): string {
@@ -309,18 +364,10 @@ export function loadRegistry(): ProjectRegistry {
 }
 
 function normalizeProjectState(raw: unknown): ProjectState | undefined {
-  if (
-    raw === "init" ||
-    raw === "basic" ||
-    raw === "work" ||
-    raw === "wait" ||
-    raw === "review" ||
-    raw === "run" ||
-    raw === "build" ||
-    raw === "complete"
-  ) {
-    return raw;
-  }
+  if (raw === "auto") return "auto";
+  if (raw === "complete") return "complete";
+  if (raw === "work" || raw === "review" || raw === "run" || raw === "build") return "work";
+  if (raw === "wait" || raw === "init" || raw === "basic") return "wait";
   return undefined;
 }
 
@@ -352,6 +399,18 @@ function planYamlPath(projectPath: string): string {
 
 function memoPath(projectPath: string): string {
   return path.join(projectMetaDir(projectPath), "memo.md");
+}
+
+function feedbackPath(projectPath: string): string {
+  return path.join(projectMetaDir(projectPath), "feedback.md");
+}
+
+function screenshotDirPath(projectPath: string): string {
+  return path.join(projectMetaDir(projectPath), "screenshot");
+}
+
+function instructionRetryPath(projectPath: string): string {
+  return path.join(projectPath, "instruction_retry.md");
 }
 
 function ensureProjectFiles(project: ProjectRecord): void {
@@ -938,6 +997,170 @@ function dedupNormalized(values: string[]): string[] {
   return out;
 }
 
+function toTextList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item ?? "").trim())
+      .filter((item) => item.length > 0);
+  }
+  const single = String(value ?? "").trim();
+  return single ? [single] : [];
+}
+
+function guessMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".svg") return "image/svg+xml";
+  return "application/octet-stream";
+}
+
+function ensureFeedbackFile(projectPath: string): string {
+  const file = feedbackPath(projectPath);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (!fs.existsSync(file)) {
+    fs.writeFileSync(file, "# 결과\n- pending\n\n# 미해결\n- 없음\n\n# 보완\n- 없음\n", "utf8");
+  }
+  return file;
+}
+
+function defaultInstructionRetryContent(): string {
+  return [
+    "# instruction_retry",
+    "- .project/feedback.md 내용을 먼저 읽고, 현재 지적된 문제를 기준으로 재시도 범위를 다시 정리한다.",
+    "- 현재 ORC 워크플로 산출물 기준으로 plan.yaml부터 drafts.yaml을 다시 만들고 병렬 처리 과정을 처음부터 다시 시작한다.",
+    "- 이미 완료된 수정 요약이 아니라, feedback에 적힌 문제를 해결하기 위한 새 계획과 구현 순서를 우선 작성한다.",
+    "- 필요한 경우 input.md도 다시 갱신하되, 최종 목적은 plan.yaml -> drafts.yaml -> 병렬 처리 재실행이다."
+  ].join("\n");
+}
+
+function ensureInstructionRetryFile(projectPath: string): string {
+  const file = instructionRetryPath(projectPath);
+  if (!fs.existsSync(file) || !fs.readFileSync(file, "utf8").trim()) {
+    fs.writeFileSync(file, `${defaultInstructionRetryContent()}\n`, "utf8");
+  }
+  return file;
+}
+
+function appendMarkdownBullet(filePath: string, headers: string[], bullet: string): string {
+  const raw = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
+  const lines = raw.length > 0 ? raw.split(/\r?\n/) : [];
+  const normalizedHeaders = headers.map((header) => header.trim().toLowerCase());
+  let startIndex = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (normalizedHeaders.includes(lines[i].trim().toLowerCase())) {
+      startIndex = i;
+      break;
+    }
+  }
+  if (startIndex < 0) {
+    const next = `${raw.trimEnd()}\n\n${headers[0]}\n${bullet}\n`.replace(/^\n+/, "");
+    fs.writeFileSync(filePath, next, "utf8");
+    return next;
+  }
+
+  let endIndex = lines.length;
+  for (let i = startIndex + 1; i < lines.length; i += 1) {
+    if (lines[i].trim().startsWith("#")) {
+      endIndex = i;
+      break;
+    }
+  }
+  const insert: string[] = [];
+  if (endIndex > startIndex + 1 && lines[endIndex - 1].trim().length > 0) {
+    insert.push("");
+  }
+  insert.push(bullet);
+  lines.splice(endIndex, 0, ...insert);
+  const next = `${lines.join("\n").trimEnd()}\n`;
+  fs.writeFileSync(filePath, next, "utf8");
+  return next;
+}
+
+function readFeedbackMarkdown(projectPath: string): string {
+  return safeReadFile(feedbackPath(projectPath));
+}
+
+function listScreenshotItems(
+  projectId: string,
+  projectPath: string
+): Array<{ name: string; path: string; url: string; modifiedAt: string }> {
+  const dir = screenshotDirPath(projectPath);
+  fs.mkdirSync(dir, { recursive: true });
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const fullPath = path.join(dir, entry.name);
+      const modifiedAt = fs
+        .statSync(fullPath)
+        .mtimeMs.toString();
+      return {
+        name: entry.name,
+        path: fullPath,
+        url: `/api/check-screenshot?id=${encodeURIComponent(projectId)}&name=${encodeURIComponent(entry.name)}`,
+        modifiedAt
+      };
+    })
+    .sort((a, b) => Number(b.modifiedAt) - Number(a.modifiedAt));
+}
+
+function collectCheckPlan(projectPath: string): {
+  subject: string;
+  steps: Array<{ subject: string; text: string; source: string }>;
+} {
+  const parsed = parseDraftItems(projectPath);
+  const subjects: string[] = [];
+  const steps: Array<{ subject: string; text: string; source: string }> = [];
+  for (const rawItem of parsed.items) {
+    const name = String(rawItem.name ?? "").trim();
+    if (!name) continue;
+    subjects.push(name);
+    const checks = toTextList(rawItem.check);
+    const explicitSteps = toTextList(rawItem.step);
+    const tasks = toTextList(rawItem.tasks);
+    const sourceRows =
+      checks.length > 0
+        ? checks.map((text) => ({ subject: name, text, source: "check" }))
+        : explicitSteps.length > 0
+          ? explicitSteps.map((text) => ({ subject: name, text, source: "step" }))
+          : tasks.map((text) => ({ subject: name, text, source: "tasks" }));
+    steps.push(...sourceRows);
+  }
+  const uniqueSubjects = [...new Set(subjects)];
+  return {
+    subject:
+      uniqueSubjects.length > 0
+        ? uniqueSubjects.join(" / ")
+        : "drafts.yaml 기반 수동 check 대상이 아직 없습니다.",
+    steps:
+      steps.length > 0
+        ? steps
+        : uniqueSubjects.map((subject) => ({
+            subject,
+            text: `${subject} 구현 결과를 수동 check 대상으로 확인한다.`,
+            source: "generated"
+          }))
+  };
+}
+
+function moveRcScreenshotArtifacts(projectPath: string): string[] {
+  const rootCandidates = [path.join(projectPath, "rc-web.png")];
+  const screenshotDir = screenshotDirPath(projectPath);
+  fs.mkdirSync(screenshotDir, { recursive: true });
+  const moved: string[] = [];
+  for (const source of rootCandidates) {
+    if (!fs.existsSync(source)) continue;
+    const ext = path.extname(source) || ".png";
+    const target = path.join(screenshotDir, `rc-web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+    fs.renameSync(source, target);
+    moved.push(target);
+  }
+  return moved;
+}
+
 function normalizeDraftStateDoc(doc: DraftsDoc): DraftsDoc {
   const planned = dedupNormalized(Array.isArray(doc.planned) ? doc.planned : []);
   const worked = dedupNormalized(Array.isArray(doc.worked) ? doc.worked : []).filter((name) => !planned.includes(name));
@@ -1026,18 +1249,18 @@ function isBootstrapCompleted(projectPath: string): boolean {
 }
 
 function resolveProjectState(project: ProjectRecord): ProjectState {
-  if (buildProcessesByProject.has(project.id)) {
-    return "build";
+  if (autoProcessesByProject.has(project.id)) {
+    return "auto";
   }
-  if (runProcessesByProject.has(project.id)) {
-    return "run";
+  if (buildProcessesByProject.has(project.id) || runProcessesByProject.has(project.id)) {
+    return "work";
   }
   if (project.state === "complete") {
     return "complete";
   }
   const pmdPath = projectMdPath(project.path);
   if (!fs.existsSync(pmdPath)) {
-    return "init";
+    return "wait";
   }
 
   const drafts = loadDraftsDoc(project.path);
@@ -1045,19 +1268,16 @@ function resolveProjectState(project: ProjectRecord): ProjectState {
   const workedCount = listCount(drafts.worked);
   const completeCount = listCount(drafts.complete);
   const failedCount = listCount(drafts.failed);
-  if (plannedCount > 0 || workedCount > 0) {
+  if (plannedCount > 0 || workedCount > 0 || failedCount > 0) {
     return "work";
   }
-  if (completeCount > 0 && (failedCount > 0 || plannedCount > 0 || workedCount > 0)) {
-    return "review";
-  }
   if (completeCount > 0 && plannedCount === 0 && workedCount === 0) {
-    return "review";
+    return "complete";
   }
   if (!isBootstrapCompleted(project.path)) {
-    return "init";
+    return "wait";
   }
-  return "basic";
+  return "wait";
 }
 
 function parseInputTitles(projectPath: string): {
@@ -1402,6 +1622,9 @@ export async function runProjectDev(
   id: string
 ): Promise<{ output: string; running: boolean; port?: number; url?: string }> {
   const detail = loadProjectDetail(id);
+  if (autoProcessesByProject.has(id)) {
+    return { output: `auto already running: ${detail.name}`, running: false };
+  }
   const running = runProcessesByProject.get(id);
   if (running) {
     appendRuntimeLog(id, `[run-dev] stop requested: ${detail.name}`);
@@ -1445,7 +1668,12 @@ export function listProjects(): ProjectRecord[] {
   return registry.projects.map((project) => ({
     ...project,
     state: resolveProjectState(project),
-    current_job: buildCurrentJobByProject.get(project.id) || ""
+    current_job:
+      autoCurrentJobByProject.get(project.id) ||
+      buildCurrentJobByProject.get(project.id) ||
+      (runProcessesByProject.has(project.id) ? "dev server" : ""),
+    is_dev_running: runProcessesByProject.has(project.id),
+    is_build_running: buildProcessesByProject.has(project.id)
   }));
 }
 
@@ -1485,6 +1713,9 @@ export function loadProjectDetail(id: string): ProjectDetail {
   const memo = fs.existsSync(memoPath(project.path)) ? fs.readFileSync(memoPath(project.path), "utf8") : "";
   const inputMd = parseInputTitles(project.path);
   const draftItems = parseDraftItems(project.path);
+  const checkPlan = collectCheckPlan(project.path);
+  const feedbackMdRaw = readFeedbackMarkdown(project.path);
+  const screenshots = listScreenshotItems(project.id, project.path);
 
   const root = monorepoRoot();
   const domains = isMonorepoManagedPath(project.path, root) ? monorepoDomainDetails(root) : parsed.domains;
@@ -1508,7 +1739,12 @@ export function loadProjectDetail(id: string): ProjectDetail {
     }),
     generated: collectGenerated(project.path),
     state: resolveProjectState(project),
-    current_job: buildCurrentJobByProject.get(project.id) || "",
+    current_job:
+      autoCurrentJobByProject.get(project.id) ||
+      buildCurrentJobByProject.get(project.id) ||
+      (runProcessesByProject.has(project.id) ? "dev server" : ""),
+    is_dev_running: runProcessesByProject.has(project.id),
+    is_build_running: buildProcessesByProject.has(project.id),
     hasDraftsYaml,
     hasInputMd,
     dev_server_url: runProcessesByProject.has(project.id) ? runUrlsByProject.get(project.id) : undefined
@@ -1518,7 +1754,12 @@ export function loadProjectDetail(id: string): ProjectDetail {
     inputTitles: inputMd.titles,
     inputItems: inputMd.items,
     draftItems: draftItems.items,
-    draftsYamlItems: draftItems.cards
+    draftsYamlItems: draftItems.cards,
+    checkSubject: checkPlan.subject,
+    checkSteps: checkPlan.steps,
+    feedbackMdRaw,
+    hasFeedbackMd: feedbackMdRaw.trim().length > 0,
+    screenshots
   };
 }
 
@@ -1621,10 +1862,12 @@ function retryIncompleteDrafts(id: string): string {
   };
   savePlanDoc(detail.path, plan);
 
-  const orcBin = process.env.ORC_BIN ?? "orc";
-  const result = spawnSync(orcBin, ["impl_code_draft"], {
+  const taskKey = createTaskSessionKey("retry-incomplete");
+  const command = resolveOrcCommandArgs(["impl_code_draft"]);
+  const result = spawnSync(command.bin, command.args, {
     cwd: detail.path,
-    encoding: "utf8"
+    encoding: "utf8",
+    env: buildTaskCommandEnv(taskKey)
   });
   const output = (result.stdout || "").trim();
   const stderr = (result.stderr || "").trim();
@@ -1698,8 +1941,7 @@ export function runOrcAction(id: string, action: string, payload?: string): stri
     create_draft: ["create_code_draft"],
     add_draft: payload?.trim().length ? ["add_code_draft", "-m", payload] : ["add_code_draft", "-a"],
     impl_draft: ["impl_code_draft"],
-    check_code: ["check_code_draft", "-a"],
-    check_draft: ["check_draft"]
+    check_code: ["check_code_draft", "-a"]
   };
   if (action === "retry_incomplete") {
     return retryIncompleteDrafts(id);
@@ -1712,15 +1954,17 @@ export function runOrcAction(id: string, action: string, payload?: string): stri
     throw new Error(`unsupported action: ${action}`);
   }
 
-  const orcBin = process.env.ORC_BIN ?? "orc";
-  const result = spawnSync(orcBin, args, {
-    cwd: repoRoot(),
-    encoding: "utf8"
+  const taskKey = createTaskSessionKey(action);
+  const command = resolveOrcCommandArgs(args);
+  const result = spawnSync(command.bin, command.args, {
+    cwd: detail.path,
+    encoding: "utf8",
+    env: buildTaskCommandEnv(taskKey)
   });
 
   if (result.status !== 0) {
     const stderr = (result.stderr || "").trim();
-    throw new Error(stderr.length > 0 ? stderr : `command failed: ${orcBin} ${args.join(" ")}`);
+    throw new Error(stderr.length > 0 ? stderr : `command failed: ${command.bin} ${command.args.join(" ")}`);
   }
 
   return `action=${action} project=${detail.name} output=${(result.stdout || "").trim()}`;
@@ -1800,11 +2044,13 @@ export function generateInputMdFromMessage(id: string, message: string): { detai
   if (!prompt) {
     throw new Error("message is required");
   }
+  const taskKey = createTaskSessionKey("input-generate");
   const planCommand = resolveOrcCommandArgs(["add_code_plan", "-m", prompt]);
   appendRuntimeLog(id, `[input-generate] add_code_plan -m "${prompt}"`);
   const planResult = spawnSync(planCommand.bin, planCommand.args, {
     cwd: detail.path,
-    encoding: "utf8"
+    encoding: "utf8",
+    env: buildTaskCommandEnv(taskKey)
   });
   if (planResult.status !== 0) {
     const stderr = (planResult.stderr || "").trim();
@@ -1814,7 +2060,8 @@ export function generateInputMdFromMessage(id: string, message: string): { detai
   appendRuntimeLog(id, "[input-generate] create_input_md");
   const inputResult = spawnSync(inputCommand.bin, inputCommand.args, {
     cwd: detail.path,
-    encoding: "utf8"
+    encoding: "utf8",
+    env: buildTaskCommandEnv(taskKey)
   });
   if (inputResult.status !== 0) {
     const stderr = (inputResult.stderr || "").trim();
@@ -1825,28 +2072,77 @@ export function generateInputMdFromMessage(id: string, message: string): { detai
   return { detail: loadProjectDetail(id), output };
 }
 
-export function runAutoFromMessage(id: string, message: string): { detail: ProjectDetail; output: string } {
+export function startAutoFromMessage(id: string, message: string): { detail: ProjectDetail; output: string } {
   const detail = loadProjectDetail(id);
   const prompt = message.trim();
   if (!prompt) {
     throw new Error("message is required");
   }
-  const command = resolveOrcCommandArgs(["auto_add_function", prompt]);
-  appendRuntimeLog(id, `[auto] start: ${detail.name}`);
-  const result = spawnSync(command.bin, command.args, {
-    cwd: detail.path,
-    encoding: "utf8"
-  });
-  const stdout = (result.stdout || "").trim();
-  const stderr = (result.stderr || "").trim();
-  if (result.status !== 0) {
-    appendRuntimeLog(id, `[auto] failed: ${stderr || `status=${String(result.status)}`}`);
-    throw new Error(stderr || `auto failed: status=${String(result.status)}`);
+  if (autoProcessesByProject.has(id)) {
+    return { detail: loadProjectDetail(id), output: `auto already running: ${detail.name}` };
   }
-  setProjectState(id, "complete");
-  const output = stdout || "auto completed";
-  appendRuntimeLog(id, `[auto] ${output}`);
-  return { detail: loadProjectDetail(id), output };
+  const command = resolveOrcCommandArgs(["auto_add_function", prompt]);
+  const taskKey = createTaskSessionKey("auto");
+  appendRuntimeLog(id, `[auto] start: ${detail.name}`);
+  const proc = spawn(command.bin, command.args, {
+    cwd: detail.path,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: buildTaskCommandEnv(taskKey)
+  });
+  autoProcessesByProject.set(id, proc);
+  autoCurrentJobByProject.set(id, "starting");
+
+  const updateJob = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    autoCurrentJobByProject.set(id, trimmed.slice(0, 200));
+    appendRuntimeLog(id, `[auto] ${trimmed}`);
+  };
+
+  proc.stdout.on("data", (chunk) => {
+    const lines = String(chunk).split(/\r?\n/);
+    for (const line of lines) updateJob(line);
+  });
+  proc.stderr.on("data", (chunk) => {
+    const lines = String(chunk).split(/\r?\n/);
+    for (const line of lines) updateJob(line);
+  });
+  proc.on("close", (code, signal) => {
+    autoProcessesByProject.delete(id);
+    autoCurrentJobByProject.delete(id);
+    const message =
+      code === 0
+        ? "[auto] completed"
+        : `[auto] failed: code=${code === null ? "null" : String(code)} signal=${signal ?? "none"}`;
+    appendRuntimeLog(id, message);
+    autoCompletionByProject.set(id, message);
+    if (code === 0) {
+      setProjectState(id, "complete");
+    }
+  });
+  proc.on("error", (error) => {
+    autoProcessesByProject.delete(id);
+    autoCurrentJobByProject.delete(id);
+    const message = `[auto] error: ${String(error)}`;
+    appendRuntimeLog(id, message);
+    autoCompletionByProject.set(id, message);
+  });
+
+  return { detail: loadProjectDetail(id), output: `auto started: ${detail.name}` };
+}
+
+export function getAutoStatus(id: string): { detail: ProjectDetail; state: ProjectState; current_job: string; completed?: string } {
+  const detail = loadProjectDetail(id);
+  const completed = autoCompletionByProject.get(id);
+  if (completed) {
+    autoCompletionByProject.delete(id);
+  }
+  return {
+    detail,
+    state: detail.state,
+    current_job: autoCurrentJobByProject.get(id) || "",
+    completed
+  };
 }
 
 function setProjectState(id: string, nextState: ProjectState): void {
@@ -1862,6 +2158,7 @@ function setProjectState(id: string, nextState: ProjectState): void {
 }
 
 async function runInputMdSyncWorkflow(id: string, projectPath: string): Promise<string[]> {
+  const taskKey = createTaskSessionKey("form-add-input");
   const stages: Array<{ label: string; args: string[] }> = [
     { label: "plan.yaml", args: ["add_code_plan", "-f"] },
     { label: "drafts.yaml", args: ["add_code_draft", "-f"] },
@@ -1870,7 +2167,7 @@ async function runInputMdSyncWorkflow(id: string, projectPath: string): Promise<
   const outputs: string[] = [];
   for (const stage of stages) {
     appendRuntimeLog(id, `[form_add_input] ${stage.label} 작업중...`);
-    const result = await runOrcStageWithLogs(id, projectPath, stage.args, stage.label);
+    const result = await runOrcStageWithLogs(id, projectPath, stage.args, stage.label, taskKey);
     outputs.push(`${stage.label}: ${result}`);
     appendRuntimeLog(id, `[form_add_input] ${stage.label} 완료`);
   }
@@ -1881,13 +2178,15 @@ function runOrcStageWithLogs(
   id: string,
   projectPath: string,
   args: string[],
-  label: string
+  label: string,
+  taskKey: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const command = resolveOrcCommandArgs(args);
     const proc = spawn(command.bin, command.args, {
       cwd: projectPath,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      env: buildTaskCommandEnv(taskKey)
     });
     let lastStdout = "";
     proc.stdout.on("data", (chunk) => {
@@ -1924,14 +2223,21 @@ function runOrcStageWithLogs(
 
 export function startParallelBuild(id: string): { output: string } {
   const detail = loadProjectDetail(id);
+  if (autoProcessesByProject.has(id)) {
+    return { output: `auto already running: ${detail.name}` };
+  }
   if (buildProcessesByProject.has(id)) {
     return { output: `build already running: ${detail.name}` };
   }
-  const orcBin = process.env.ORC_BIN ?? "orc";
-  const proc = spawn(orcBin, ["impl_code_draft"], {
+  const command = resolveOrcCommandArgs(["impl_code_draft"]);
+  const taskKey = createTaskSessionKey("build");
+  const proc = spawn(command.bin, command.args, {
     cwd: detail.path,
     stdio: ["ignore", "pipe", "pipe"],
-    detached: true
+    detached: true,
+    env: buildTaskCommandEnv(taskKey, {
+      ORC_WEB_MANUAL_CHECK: "1"
+    })
   });
   buildProcessesByProject.set(id, proc);
   buildCurrentJobByProject.set(id, "starting");
@@ -1953,7 +2259,10 @@ export function startParallelBuild(id: string): { output: string } {
   });
   proc.on("close", (code, signal) => {
     reconcileDraftCompletionFromProjectFeatures(detail.path);
-    const message = `[build] finished: code=${code === null ? "null" : String(code)} signal=${signal ?? "none"}`;
+    const message =
+      code === 0
+        ? "[build] finished: manual rc check pending"
+        : `[build] finished: code=${code === null ? "null" : String(code)} signal=${signal ?? "none"}`;
     appendRuntimeLog(id, message);
     buildCompletionByProject.set(id, message);
     buildProcessesByProject.delete(id);
@@ -1991,7 +2300,12 @@ export function stopParallelBuild(id: string): { output: string } {
   return { output: `build stopped: ${detail.name}` };
 }
 
-export function getBuildStatus(id: string): { state: ProjectState; current_job: string; completed?: string } {
+export function getBuildStatus(id: string): {
+  state: ProjectState;
+  current_job: string;
+  is_build_running: boolean;
+  completed?: string;
+} {
   const detail = loadProjectDetail(id);
   const completed = buildCompletionByProject.get(id);
   if (completed) {
@@ -2009,7 +2323,100 @@ export function getBuildStatus(id: string): { state: ProjectState; current_job: 
       project_type: detail.project_type
     }),
     current_job: buildCurrentJobByProject.get(id) || "",
+    is_build_running: buildProcessesByProject.has(id),
     completed
+  };
+}
+
+export function runManualRcCheck(id: string): { detail: ProjectDetail; output: string } {
+  const detail = loadProjectDetail(id);
+  const subject = detail.checkSubject.trim() || detail.name;
+  const mission = `manual rc check | ${subject}`;
+  appendRuntimeLog(id, `[check] rc start: ${mission}`);
+  const command = resolveRcCommandArgs(["test", "-p", ".", "-m", mission]);
+  const result = spawnSync(command.bin, command.args, {
+    cwd: detail.path,
+    encoding: "utf8"
+  });
+  const stdout = (result.stdout || "").trim();
+  const stderr = (result.stderr || "").trim();
+  const movedScreenshots = moveRcScreenshotArtifacts(detail.path);
+  for (const screenshotPath of movedScreenshots) {
+    appendRuntimeLog(id, `[check] screenshot saved: ${screenshotPath}`);
+  }
+  if (result.status !== 0) {
+    const reason = stderr || stdout || `rc check failed: status=${String(result.status)}`;
+    appendRuntimeLog(id, `[check] failed: ${reason}`);
+    throw new Error(reason);
+  }
+  appendRuntimeLog(id, `[check] completed: ${stdout || mission}`);
+  return {
+    detail: loadProjectDetail(id),
+    output: stdout || `rc check completed: ${mission}`
+  };
+}
+
+export function appendCheckFeedback(
+  id: string,
+  input: { screenshotPath: string; message: string }
+): { detail: ProjectDetail; output: string } {
+  const detail = loadProjectDetail(id);
+  const message = input.message.trim();
+  if (!message) {
+    throw new Error("feedback message is required");
+  }
+  const screenshotPath = path.resolve(input.screenshotPath.trim());
+  const screenshotRoot = path.resolve(screenshotDirPath(detail.path));
+  if (!screenshotPath || !screenshotPath.startsWith(`${screenshotRoot}${path.sep}`)) {
+    throw new Error("selected screenshot path is invalid");
+  }
+  const file = ensureFeedbackFile(detail.path);
+  const bullet = `- {${screenshotPath}}에서 ${message}`;
+  appendMarkdownBullet(file, ["# 보완", "# 개선점", "#개선필요", "## 개선점"], bullet);
+  appendRuntimeLog(id, `[check-feedback] ${bullet}`);
+  return {
+    detail: loadProjectDetail(id),
+    output: ".project/feedback.md updated"
+  };
+}
+
+export function retryFromFeedback(id: string): { detail: ProjectDetail; output: string } {
+  const detail = loadProjectDetail(id);
+  const feedback = readFeedbackMarkdown(detail.path).trim();
+  if (!feedback) {
+    throw new Error(".project/feedback.md not found");
+  }
+  const instructionFile = ensureInstructionRetryFile(detail.path);
+  const instruction = fs.readFileSync(instructionFile, "utf8").trim();
+  const prompt = [
+    instruction,
+    "",
+    `project: ${detail.name}`,
+    `project_path: ${detail.path}`,
+    "",
+    ".project/feedback.md:",
+    feedback,
+    "",
+    "반드시 feedback을 기준으로 plan.yaml부터 drafts.yaml을 다시 만들고 병렬 처리 과정을 처음부터 다시 시작한다."
+  ].join("\n");
+  appendRuntimeLog(id, `[check-retry] instruction loaded: ${instructionFile}`);
+  appendRuntimeLog(id, `[check-retry] auto retry start: ${detail.name}`);
+  return startAutoFromMessage(id, prompt);
+}
+
+export function readCheckScreenshot(id: string, name: string): { body: Buffer; contentType: string } {
+  const detail = loadProjectDetail(id);
+  const safeName = path.basename(name);
+  if (!safeName || safeName !== name) {
+    throw new Error("invalid screenshot name");
+  }
+  const filePath = path.join(screenshotDirPath(detail.path), safeName);
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    throw new Error(`screenshot not found: ${safeName}`);
+  }
+  return {
+    body: fs.readFileSync(filePath),
+    contentType: guessMimeType(filePath)
   };
 }
 

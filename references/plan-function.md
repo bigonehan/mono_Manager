@@ -1,20 +1,27 @@
-# 기능 계획: detail drafts pane 파일 삭제 + add/modify 가드
+# 기능 계획: task artifact reset + project feedback unification
 
 ## 범위
-- detail page `drafts` 섹션에서 `input.md`, `drafts.yaml` 뷰 각각에 휴지통 버튼을 추가한다.
-- 버튼 클릭 시 `y/n` 확인 후 `y`일 때만 대상 파일을 실제 삭제한다.
-- 파일 삭제 뒤 add/modify 경로에서 파일 부재를 명시적으로 가드한다.
+- orc의 새 작업이 시작될 때 `.project/check-process.md`, `.project/feedback.md`, `.project/screenshot`를 한 번만 초기화한다.
+- web UI와 `rc` 결과 경로를 루트 `feedback.md`가 아니라 `.project/feedback.md`로 단일화한다.
+- web check pane의 수동 check는 `orc`와 같은 공통 binary resolver를 사용해 `rc` 실행 경로를 결정한다.
+- Playwright 음성 입력 mock은 `assets/web/tests/helpers`로 분리하고 기존 테스트가 helper를 재사용하게 바꾼다.
 
 ## 입출력
-- 입력: detail 선택 프로젝트 id, 삭제 대상(`input` 또는 `drafts`)
-- 출력: 대상 파일 삭제 결과 + 갱신된 project detail
+- 입력: `orc` top-level task 시작, web check pane의 manual rc check, screenshot feedback/report/retry, Playwright 음성 입력 테스트
+- 출력: 이전 task 산출물 삭제 후 새 process log 시작, `.project/feedback.md` 갱신/조회, 공통 resolver 기반 `rc` 실행, helper 기반 음성 mock 테스트
+
+## 영향 범위
+- `src/main.rs`
+- `src/code.rs`
+- `src/bin/rc.rs`
+- `assets/web/src/server/orc.ts`
+- `assets/web/src/components/WebApp.tsx`
+- `assets/web/src/pages/api/*.ts`
+- `assets/web/tests/web.spec.ts`
+- `assets/web/tests/helpers/mock-speech-recognition.ts`
 
 ## 검증
-- API 직접 호출로 `input.md`/`drafts.yaml` 삭제가 실제 파일 시스템에 반영되는지 확인
-- 삭제 이후 `add_draft` 실행 시 `drafts.yaml` 부재 가드 에러 확인
-- 삭제 이후 `input-md-raw` 저장 시 `input.md` 부재 가드 에러 확인
-
-## 범위 추가: auto_add_function
-- 신규 CLI `auto_add_function <message>`를 추가하고, web의 auto 실행 경로를 기존 `auto`에서 `auto_add_function`으로 전환한다.
-- `auto_add_function`은 message 기반 input.md/plan(draft) 생성, 병렬 구현+재시도+check 루프, 개선 codex 실행, `plan.md` 스냅샷 작성을 수행한다.
-- web runtime 완료 시 project state를 `complete`로 설정해 UI 배지에 반영한다.
+- `rg -n "check-process|project_feedback_path|feedback.md|resolveOrcCommandArgs|resolveRcCommandArgs|mock-speech-recognition" /home/tree/project/rust-orc/src /home/tree/project/rust-orc/assets/web/src /home/tree/project/rust-orc/assets/web/tests`
+- `cd /home/tree/project/rust-orc/assets/web && npx tsc --noEmit`
+- `cd /home/tree/project/rust-orc && cargo test`
+- `cd /home/tree/project/rust-orc/assets/web && npm run test:e2e -- --grep "voice input"`

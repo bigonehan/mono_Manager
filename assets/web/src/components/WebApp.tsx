@@ -7,6 +7,7 @@ import {
   Code2,
   CornerUpLeft,
   FilePlus2,
+  FileText,
   FlaskConical,
   FolderOpen,
   GraduationCap,
@@ -47,24 +48,25 @@ type ProjectItemViewMode = "card" | "minimal";
 type ProfileType = "code" | "mono";
 type DraftFormField = { key: string; value: string };
 type TemplateAssetFile = { name: string; path: string; content: string };
+type EpisodeSection = {
+  title: string;
+  rule: string;
+  step: string;
+  markdown: string;
+};
+type CheckScreenshotItem = NonNullable<Detail["screenshots"]>[number];
 
 function stateLabel(state?: Project["state"]): string {
   if (state === "complete") return "complete";
-  if (state === "build") return "build";
-  if (state === "run") return "run";
-  if (state === "review") return "review";
-  if (state === "init") return "init";
+  if (state === "auto") return "auto";
   if (state === "work") return "work";
   if (state === "wait") return "wait";
-  return "basic";
+  return "wait";
 }
 
 function stateClass(state?: Project["state"]): string {
   if (state === "complete") return "border-emerald-600/80 bg-emerald-200 text-emerald-900";
-  if (state === "build") return "border-amber-500/70 bg-amber-100 text-amber-800";
-  if (state === "run") return "border-emerald-500/50 bg-emerald-500/10 text-emerald-700";
-  if (state === "review") return "border-emerald-500/70 bg-emerald-100 text-emerald-800";
-  if (state === "init") return "border-sky-500/50 bg-sky-500/10 text-sky-700";
+  if (state === "auto") return "border-sky-500/70 bg-sky-100 text-sky-800";
   if (state === "work") return "border-orange-500/60 bg-orange-100 text-orange-800";
   if (state === "wait") return "border-zinc-400/70 bg-zinc-100 text-zinc-700";
   return "border-zinc-400/70 bg-zinc-100 text-zinc-700";
@@ -134,6 +136,146 @@ function apiUrl(path: string): string {
   return base ? `${base}${path}` : path;
 }
 
+function parseEpisodeSections(raw: string): EpisodeSection[] {
+  if (!raw.trim()) {
+    return [];
+  }
+  const rows: EpisodeSection[] = [];
+  let current: { title: string; rule: string; step: string; lines: string[] } | null = null;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      if (current && current.title) {
+        rows.push({
+          title: current.title,
+          rule: current.rule,
+          step: current.step,
+          markdown: current.lines.join("\n").trim()
+        });
+      }
+      current = {
+        title: trimmed.replace(/^#{1,6}\s+/, "").trim(),
+        rule: "",
+        step: "",
+        lines: [line]
+      };
+      continue;
+    }
+    if (!current) {
+      continue;
+    }
+    current.lines.push(line);
+    if (current.rule || !trimmed.startsWith("- ")) {
+      continue;
+    }
+    const body = trimmed.slice(2).trim();
+    const [rulePart, ...stepParts] = body.split(">");
+    current.rule = rulePart.trim();
+    current.step = stepParts.join(">").trim();
+  }
+  if (current && current.title) {
+    rows.push({
+      title: current.title,
+      rule: current.rule,
+      step: current.step,
+      markdown: current.lines.join("\n").trim()
+    });
+  }
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const key = row.title.trim();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function renderEpisodeMarkdown(markdown: string) {
+  const lines = markdown.split(/\r?\n/);
+  const blocks: Array<{ type: "heading" | "list" | "paragraph"; level?: number; text?: string; items?: string[] }> = [];
+  let listBuffer: string[] = [];
+  let paragraphBuffer: string[] = [];
+
+  const flushList = () => {
+    if (listBuffer.length === 0) return;
+    blocks.push({ type: "list", items: listBuffer });
+    listBuffer = [];
+  };
+
+  const flushParagraph = () => {
+    if (paragraphBuffer.length === 0) return;
+    blocks.push({ type: "paragraph", text: paragraphBuffer.join(" ").trim() });
+    paragraphBuffer = [];
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushList();
+      flushParagraph();
+      continue;
+    }
+    const heading = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (heading) {
+      flushList();
+      flushParagraph();
+      blocks.push({ type: "heading", level: heading[1].length, text: heading[2].trim() });
+      continue;
+    }
+    if (trimmed.startsWith("- ")) {
+      flushParagraph();
+      listBuffer.push(trimmed.slice(2).trim());
+      continue;
+    }
+    flushList();
+    paragraphBuffer.push(trimmed);
+  }
+
+  flushList();
+  flushParagraph();
+
+  return blocks.map((block, index) => {
+    if (block.type === "heading") {
+      if (block.level === 1) {
+        return (
+          <h1 key={`md-${index}`} className="text-3xl font-black tracking-tight text-foreground">
+            {block.text}
+          </h1>
+        );
+      }
+      if (block.level === 2) {
+        return (
+          <h2 key={`md-${index}`} className="text-2xl font-bold text-foreground">
+            {block.text}
+          </h2>
+        );
+      }
+      return (
+        <h3 key={`md-${index}`} className="text-xl font-semibold text-foreground">
+          {block.text}
+        </h3>
+      );
+    }
+    if (block.type === "list") {
+      return (
+        <ul key={`md-${index}`} className="space-y-2 pl-5 text-base leading-7 text-foreground/85 list-disc">
+          {(block.items ?? []).map((item) => (
+            <li key={`${index}-${item}`}>{item}</li>
+          ))}
+        </ul>
+      );
+    }
+    return (
+      <p key={`md-${index}`} className="text-base leading-7 text-foreground/85">
+        {block.text}
+      </p>
+    );
+  });
+}
+
 export default function WebApp() {
   const [createOpenLocal, setCreateOpenLocal] = useState(false);
   const [loadOpen, setLoadOpen] = useState(false);
@@ -169,7 +311,15 @@ export default function WebApp() {
     name: string;
     draft: Record<string, unknown>;
   } | null>(null);
-  const [draftsViewMode, setDraftsViewMode] = useState<"items" | "input" | "drafts">("items");
+  const [draftsViewMode, setDraftsViewMode] = useState<"input" | "drafts">("drafts");
+  const [episodeReadOpen, setEpisodeReadOpen] = useState(false);
+  const [checkRunning, setCheckRunning] = useState(false);
+  const [checkFeedbackSaving, setCheckFeedbackSaving] = useState(false);
+  const [checkRetrying, setCheckRetrying] = useState(false);
+  const [checkFeedbackInput, setCheckFeedbackInput] = useState("");
+  const [selectedScreenshotPath, setSelectedScreenshotPath] = useState("");
+  const [screenshotPreviewItem, setScreenshotPreviewItem] = useState<CheckScreenshotItem | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const [buildToast, setBuildToast] = useState("");
   const [draftModalName, setDraftModalName] = useState("edit_code_drafts");
   const [draftFormFields, setDraftFormFields] = useState<DraftFormField[]>([]);
@@ -222,6 +372,7 @@ export default function WebApp() {
     editConstraints,
     editFeatures,
     activeRunProjectIds,
+    activeAutoProjectIds,
     setTab,
     setProjects,
     setSelectedId,
@@ -245,7 +396,8 @@ export default function WebApp() {
     setEditRules,
     setEditConstraints,
     setEditFeatures,
-    setActiveRunProjectIds
+    setActiveRunProjectIds,
+    setActiveAutoProjectIds
   } = useOrcStore();
   const isCreateOpen = createOpen || createOpenLocal;
 
@@ -279,7 +431,8 @@ export default function WebApp() {
   }, [groupedProjects.monorepo]);
 
   function visualProjectState(project: Project): Project["state"] {
-    if (activeRunProjectIds.includes(project.id)) return "run";
+    if (activeAutoProjectIds.includes(project.id)) return "auto";
+    if (project.is_build_running || project.is_dev_running || activeRunProjectIds.includes(project.id)) return "work";
     return project.state;
   }
   const templateSelectedFile = useMemo(() => {
@@ -288,14 +441,42 @@ export default function WebApp() {
     const selectedTemplate = templateAssets.templates.find((file) => `templates:${file.name}` === templateSelectedKey);
     return selectedTemplate ?? null;
   }, [templateAssets, templateSelectedKey]);
+  const inputItemRows = detail?.inputItems ?? [];
+  const draftsYamlCards = detail?.draftsYamlItems ?? [];
+  const hasGreenDraft = draftsYamlCards.some((item) => item.status === "complete");
+  const episodeSections = useMemo(() => parseEpisodeSections(detail?.inputMdRaw ?? ""), [detail?.inputMdRaw]);
+  const selectedEpisode = episodeSections.find((item) => item.title === selectedInputTitle) ?? null;
+  const selectedInputRow = inputItemRows.find((item) => item.title === selectedInputTitle) ?? null;
+  const selectedEpisodeMarkdown =
+    selectedEpisode?.markdown ??
+    (selectedInputRow ? `# ${selectedInputRow.title}\n- ${selectedInputRow.rule} > ${selectedInputRow.step}` : "");
+  const hasEpisodes = inputItemRows.length > 0;
+  const checkSubject = detail?.checkSubject?.trim() || "drafts.yaml 기반 수동 check 대상이 없습니다.";
+  const checkSteps = detail?.checkSteps ?? [];
+  const checkScreenshots = detail?.screenshots ?? [];
+  const feedbackMdRaw = detail?.feedbackMdRaw ?? "";
+  const selectedCheckScreenshot =
+    checkScreenshots.find((item) => item.path === selectedScreenshotPath) ?? null;
+  const hasFeedbackReport = feedbackMdRaw.trim().length > 0;
 
   async function loadProjects() {
     const res = await fetch(apiUrl("/api/projects"));
     const data = await res.json();
     const next: Project[] = data.projects ?? [];
     setProjects(next);
+    setActiveAutoProjectIds((prev) => {
+      const nextAutoIds = next.filter((project) => project.state === "auto").map((project) => project.id);
+      const merged = new Set([...prev, ...nextAutoIds]);
+      for (const id of [...merged]) {
+        const project = next.find((row) => row.id === id);
+        if (!project || project.state !== "auto") {
+          merged.delete(id);
+        }
+      }
+      return [...merged];
+    });
     setActiveRunProjectIds((prev) => {
-      const nextRunIds = next.filter((project) => project.state === "run").map((project) => project.id);
+      const nextRunIds = next.filter((project) => project.is_dev_running).map((project) => project.id);
       const merged = new Set([...prev, ...nextRunIds]);
       for (const id of [...merged]) {
         if (!next.some((project) => project.id === id)) {
@@ -303,7 +484,7 @@ export default function WebApp() {
         }
       }
       for (const project of next) {
-        if (project.state !== "run" && merged.has(project.id) && !prev.includes(project.id)) {
+        if (!project.is_dev_running && merged.has(project.id) && !prev.includes(project.id)) {
           merged.delete(project.id);
         }
       }
@@ -449,7 +630,8 @@ export default function WebApp() {
             <span className={`rounded-full border px-2 py-1 text-[11px] uppercase tracking-wide ${stateClass(visualState)}`}>
               {stateLabel(visualState)}
             </span>
-            {visualState === "run" && <FlaskConical className="h-3.5 w-3.5 text-muted-foreground" />}
+            {visualState === "auto" && <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />}
+            {p.is_dev_running && <FlaskConical className="h-3.5 w-3.5 text-muted-foreground" />}
           </div>
           <div className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground/80">
             <FolderOpen className="h-3.5 w-3.5 shrink-0" />
@@ -604,12 +786,21 @@ export default function WebApp() {
 
   useEffect(() => {
     if (!detail?.id) return;
-    if (detail.state === "run") {
+    if (detail.is_dev_running) {
       setActiveRunProjectIds((prev) => [...new Set([...prev, detail.id])]);
       return;
     }
     setActiveRunProjectIds((prev) => prev.filter((id) => id !== detail.id));
-  }, [detail?.id, detail?.state]);
+  }, [detail?.id, detail?.is_dev_running]);
+
+  useEffect(() => {
+    if (!detail?.id) return;
+    if (detail.state === "auto") {
+      setActiveAutoProjectIds((prev) => [...new Set([...prev, detail.id])]);
+      return;
+    }
+    setActiveAutoProjectIds((prev) => prev.filter((id) => id !== detail.id));
+  }, [detail?.id, detail?.state, setActiveAutoProjectIds]);
 
   useEffect(() => {
     if (!templateSelectedFile) {
@@ -644,6 +835,7 @@ export default function WebApp() {
     const titles = (detail?.inputItems ?? []).map((item) => item.title);
     if (titles.length === 0) {
       setSelectedInputTitle("");
+      setEpisodeReadOpen(false);
       return;
     }
     if (!selectedInputTitle || !titles.includes(selectedInputTitle)) {
@@ -652,13 +844,19 @@ export default function WebApp() {
   }, [detail?.id, detail?.inputItems, selectedInputTitle]);
 
   useEffect(() => {
+    if (!selectedEpisodeMarkdown.trim()) {
+      setEpisodeReadOpen(false);
+    }
+  }, [selectedEpisodeMarkdown]);
+
+  useEffect(() => {
     if (!detail?.id) return;
-    if (detail.state !== "build") return;
+    if (!detail.is_build_running) return;
     const timer = setInterval(() => {
       void pollBuildStatus(detail.id);
     }, 1200);
     return () => clearInterval(timer);
-  }, [detail?.id, detail?.state]);
+  }, [detail?.id, detail?.is_build_running]);
 
   useEffect(() => {
     if (activeRunProjectIds.length === 0) return;
@@ -669,12 +867,43 @@ export default function WebApp() {
   }, [activeRunProjectIds.length]);
 
   useEffect(() => {
+    if (activeAutoProjectIds.length === 0) return;
+    const tick = () => {
+      for (const id of activeAutoProjectIds) {
+        void pollAutoStatus(id);
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 1200);
+    return () => clearInterval(timer);
+  }, [activeAutoProjectIds.join("|"), selectedId]);
+
+  useEffect(() => {
     if (!selectedDraftYamlItem) return;
     const exists = (detail?.draftsYamlItems ?? []).some((item) => item.name === selectedDraftYamlItem.name);
     if (!exists) {
       setSelectedDraftYamlItem(null);
     }
   }, [detail?.draftsYamlItems, selectedDraftYamlItem]);
+
+  useEffect(() => {
+    if (checkScreenshots.length === 0) {
+      setSelectedScreenshotPath("");
+      setScreenshotPreviewItem(null);
+      return;
+    }
+    if (!selectedScreenshotPath || !checkScreenshots.some((item) => item.path === selectedScreenshotPath)) {
+      setSelectedScreenshotPath(checkScreenshots[0].path);
+    }
+  }, [checkScreenshots, selectedScreenshotPath]);
+
+  useEffect(() => {
+    if (!screenshotPreviewItem) return;
+    const next = checkScreenshots.find((item) => item.path === screenshotPreviewItem.path) ?? null;
+    if (!next) {
+      setScreenshotPreviewItem(null);
+    }
+  }, [checkScreenshots, screenshotPreviewItem]);
 
   async function createProject() {
     const res = await fetch(apiUrl("/api/projects"), {
@@ -844,7 +1073,7 @@ export default function WebApp() {
       return;
     }
     pushLog(String(data.output ?? "build started"));
-    setDetail((prev) => (prev ? { ...prev, state: "build", current_job: "starting" } : prev));
+    setDetail((prev) => (prev ? { ...prev, state: "work", current_job: "starting", is_build_running: true } : prev));
     await loadProjects();
   }
 
@@ -878,7 +1107,8 @@ export default function WebApp() {
           ? {
               ...project,
               state: nextState,
-              current_job: String(data.current_job ?? "")
+              current_job: String(data.current_job ?? ""),
+              is_build_running: Boolean(data.is_build_running)
             }
           : project
       )
@@ -888,7 +1118,8 @@ export default function WebApp() {
         ? {
             ...prev,
             state: nextState,
-            current_job: String(data.current_job ?? "")
+            current_job: String(data.current_job ?? ""),
+            is_build_running: Boolean(data.is_build_running)
           }
         : prev
     );
@@ -899,6 +1130,82 @@ export default function WebApp() {
       if (detail?.id === id) {
         await loadDetail(id);
       }
+    }
+  }
+
+  async function runManualCheck() {
+    if (!detail) return;
+    setCheckRunning(true);
+    try {
+      const res = await fetch(apiUrl("/api/check-run"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: detail.id })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        pushLog(`manual check failed: ${String(data.error ?? "unknown error")}`);
+        return;
+      }
+      pushLog(String(data.output ?? "manual check completed"));
+      setDetail(data.detail);
+      await loadProjects();
+    } finally {
+      setCheckRunning(false);
+    }
+  }
+
+  async function appendScreenshotFeedback() {
+    if (!detail || !selectedCheckScreenshot) return;
+    const message = checkFeedbackInput.trim();
+    if (!message) {
+      pushLog("feedback add failed: message is empty");
+      return;
+    }
+    setCheckFeedbackSaving(true);
+    try {
+      const res = await fetch(apiUrl("/api/check-feedback"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: detail.id,
+          screenshotPath: selectedCheckScreenshot.path,
+          message
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        pushLog(`feedback add failed: ${String(data.error ?? "unknown error")}`);
+        return;
+      }
+      pushLog(String(data.output ?? ".project/feedback.md updated"));
+      setCheckFeedbackInput("");
+      setDetail(data.detail);
+    } finally {
+      setCheckFeedbackSaving(false);
+    }
+  }
+
+  async function retryFromFeedback() {
+    if (!detail) return;
+    setCheckRetrying(true);
+    try {
+      const res = await fetch(apiUrl("/api/check-retry"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: detail.id })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        pushLog(`feedback retry failed: ${String(data.error ?? "unknown error")}`);
+        return;
+      }
+      pushLog(String(data.output ?? "feedback retry started"));
+      setReportOpen(false);
+      setDetail(data.detail);
+      await loadProjects();
+    } finally {
+      setCheckRetrying(false);
     }
   }
 
@@ -1130,36 +1437,97 @@ export default function WebApp() {
     }
   }
 
+  function syncProjectRuntimeState(id: string, state: Project["state"], currentJob = "") {
+    setProjects((prev) =>
+      prev.map((project) =>
+        project.id === id
+          ? {
+              ...project,
+              state,
+              current_job: currentJob
+            }
+          : project
+      )
+    );
+  }
+
   async function runAutoFlowFromMessage() {
     if (!detail) return;
+    const targetId = detail.id;
     const message = autoModalInput.trim();
     if (!message) {
       pushLog("auto run failed: message is empty");
       return;
     }
+    setAutoModalOpen(false);
+    setAutoModalInput("");
     setAutoRunning(true);
+    setActiveAutoProjectIds((prev) => [...new Set([...prev, targetId])]);
+    setDetail((prev) => (prev && prev.id === targetId ? { ...prev, state: "auto", current_job: "starting" } : prev));
+    syncProjectRuntimeState(targetId, "auto", "starting");
     try {
       const res = await fetch(apiUrl("/api/auto-run"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          id: detail.id,
+          id: targetId,
           message
         })
       });
       const data = await res.json();
       if (!res.ok) {
         pushLog(`auto run failed: ${String(data.error ?? "unknown error")}`);
+        setActiveAutoProjectIds((prev) => prev.filter((id) => id !== targetId));
+        await loadProjects();
+        if (selectedId === targetId) {
+          await loadDetail(targetId);
+        }
         return;
       }
-      setDetail(data.detail);
-      setFormRawInput(String(data.detail?.inputMdRaw ?? ""));
-      setAutoModalOpen(false);
-      setAutoModalInput("");
-      await loadProjects();
-      pushLog(String(data.output ?? "auto completed"));
+      if (data.detail) {
+        setDetail((prev) => (prev && prev.id === targetId ? data.detail : prev));
+        syncProjectRuntimeState(
+          targetId,
+          (data.detail.state as Project["state"]) ?? "auto",
+          String(data.detail.current_job ?? "starting")
+        );
+      }
+      pushLog(String(data.output ?? "auto started"));
     } finally {
       setAutoRunning(false);
+    }
+  }
+
+  async function pollAutoStatus(id: string): Promise<void> {
+    const res = await fetch(apiUrl(`/api/auto-status?id=${encodeURIComponent(id)}`));
+    const text = await res.text();
+    let data: { detail?: Detail; state?: Project["state"]; current_job?: string; completed?: string; error?: unknown } = {};
+    try {
+      data = JSON.parse(text) as { detail?: Detail; state?: Project["state"]; current_job?: string; completed?: string; error?: unknown };
+    } catch {
+      pushLog("auto status failed: invalid api response");
+      return;
+    }
+    if (!res.ok) {
+      pushLog(`auto status failed: ${String(data.error ?? "unknown error")}`);
+      return;
+    }
+    const nextState = data.state ?? data.detail?.state ?? "wait";
+    const currentJob = String(data.current_job ?? data.detail?.current_job ?? "");
+    if (data.detail && selectedId === id) {
+      setDetail(data.detail);
+      setFormRawInput(String(data.detail.inputMdRaw ?? ""));
+    }
+    syncProjectRuntimeState(id, nextState, currentJob);
+    setActiveAutoProjectIds((prev) =>
+      nextState === "auto" ? [...new Set([...prev, id])] : prev.filter((projectId) => projectId !== id)
+    );
+    if (data.completed) {
+      pushLog(data.completed);
+      await loadProjects();
+      if (selectedId === id) {
+        await loadDetail(id);
+      }
     }
   }
 
@@ -1192,7 +1560,8 @@ export default function WebApp() {
       if (typeof data.running !== "boolean") return prev;
       return {
         ...prev,
-        state: data.running ? "run" : "basic",
+        state: prev.state,
+        is_dev_running: data.running,
         dev_server_url: data.running && typeof data.url === "string" ? data.url : undefined
       };
     });
@@ -1372,12 +1741,26 @@ export default function WebApp() {
     return () => clearTimeout(timer);
   }, [detail?.id, memoDraft]);
 
-  const isBuildRunning = detail?.state === "build";
-  const isReviewState = detail?.state === "review";
-  const isAiBusy = formAiGenerating || autoRunning;
-  const inputItemRows = detail?.inputItems ?? [];
-  const draftsYamlCards = detail?.draftsYamlItems ?? [];
-  const hasGreenDraft = draftsYamlCards.some((item) => item.status === "complete");
+  const isBuildRunning = Boolean(detail?.is_build_running);
+  const isDevRunning = Boolean(detail?.is_dev_running) || (!!detail?.id && activeRunProjectIds.includes(detail.id));
+  const isReviewState = hasGreenDraft;
+  const isAutoRunningDetail = detail?.state === "auto" || (!!detail?.id && activeAutoProjectIds.includes(detail.id));
+  const isAiBusy = formAiGenerating || autoRunning || isAutoRunningDetail;
+  const canRunManualCheck =
+    Boolean(detail?.id) &&
+    Boolean(detail?.hasDraftsYaml) &&
+    !isBuildRunning &&
+    !isAutoRunningDetail &&
+    !checkRunning;
+  const canAppendCheckFeedback =
+    Boolean(detail?.id) &&
+    Boolean(selectedCheckScreenshot) &&
+    checkFeedbackInput.trim().length > 0 &&
+    !checkFeedbackSaving &&
+    !checkRunning;
+  const detailActionLocked = addInputApplying || isAiBusy;
+  const detailVisualState: Project["state"] = isAutoRunningDetail ? "auto" : isBuildRunning || isDevRunning ? "work" : detail?.state;
+  const detailDevServerUrl = detail?.dev_server_url;
 
   function renderSidebarProjectList(items: Array<Pick<Project, "id" | "name">>, groupKey: string) {
     const search = sidebarSearch.trim().toLowerCase();
@@ -1672,8 +2055,8 @@ export default function WebApp() {
                   <span className="rounded-md border border-border px-2 py-1 text-xs font-semibold text-foreground/80">
                     {projectTypeLabel(selectedProject?.project_type)}
                   </span>
-                  <span className={`rounded-full border px-2 py-1 text-[11px] uppercase tracking-wide ${stateClass(detail?.state)}`}>
-                    {stateLabel(detail?.state)}
+                  <span className={`rounded-full border px-2 py-1 text-[11px] uppercase tracking-wide ${stateClass(detailVisualState)}`}>
+                    {stateLabel(detailVisualState)}
                   </span>
                 </div>
               </div>
@@ -1685,15 +2068,20 @@ export default function WebApp() {
               aria-label="detail-actions"
             >
               <div className="flex flex-col items-end gap-1 py-1">
-                {detail?.state === "run" && detail.dev_server_url && (
+                {isDevRunning && detailDevServerUrl && (
                   <a
-                    href={detail.dev_server_url}
+                    href={detailDevServerUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="text-xs font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
                   >
-                    {detail.dev_server_url}
+                    {detailDevServerUrl}
                   </a>
+                )}
+                {isAutoRunningDetail && (
+                  <div data-testid="detail-auto-indicator" className="text-xs font-semibold text-sky-700">
+                    auto 중{detail?.current_job ? ` · ${detail.current_job}` : ""}
+                  </div>
                 )}
                 {addInputStatus && <div className="text-xs text-muted-foreground">{addInputStatus}</div>}
                 <div className="flex w-full items-center justify-end gap-2 overflow-x-auto whitespace-nowrap">
@@ -1714,63 +2102,25 @@ export default function WebApp() {
                     setAutoModalInput("");
                     setAutoModalOpen(true);
                   }}
-                  disabled={addInputApplying || isAiBusy}
+                  disabled={detailActionLocked}
                   aria-label="auto_from_message"
+                  data-testid="detail-auto-button"
                 >
                   <GraduationCap className="h-4 w-4" />
                   <span className="hidden lg:inline">auto</span>
                 </Button>
                 <Button
                   variant="outline"
-                  className="h-10 shrink-0 gap-2 px-3 text-sm font-semibold"
-                  onClick={() => {
-                    setFormRawInput(detail?.inputMdRaw ?? "");
-                    setFormAiMessage("");
-                    setFormAiDone(false);
-                    setAddInputStatus("");
-                    setFormAddInputOpen(true);
-                  }}
-                  disabled={addInputApplying || isBuildRunning || isAiBusy}
-                  aria-label="form_add_input"
-                >
-                  <FilePlus2 className="h-4 w-4" />
-                  <span className="hidden lg:inline">add</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-10 shrink-0 gap-2 px-3 text-sm font-semibold"
-                  onClick={() => {
-                    setSelectedPane("project_info");
-                    openEditor();
-                  }}
-                  disabled={addInputApplying || isBuildRunning || isAiBusy}
-                  aria-label="modify_project_info"
-                >
-                  <Pencil className="h-4 w-4" />
-                  <span className="hidden lg:inline">modify</span>
-                </Button>
-                <Button
-                  variant="outline"
                   className={`h-10 shrink-0 gap-2 px-3 text-sm font-semibold ${
-                    isBuildRunning ? "border-red-600 bg-red-600 text-white hover:bg-red-700 hover:text-white" : ""
-                  }`}
-                  onClick={() => void (isBuildRunning ? stopBuildJob() : startBuildJob())}
-                  disabled={addInputApplying || isAiBusy}
-                  aria-label="build_parallel"
-                >
-                  {isBuildRunning ? <Ban className="h-4 w-4" /> : <Hammer className="h-4 w-4" />}
-                  <span className="hidden lg:inline">{isBuildRunning ? "stop" : "build"}</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  className={`h-10 shrink-0 gap-2 px-3 text-sm font-semibold ${
-                    detail?.state === "run" ? "border-red-600 bg-red-600 text-white hover:bg-red-700 hover:text-white" : ""
+                    isDevRunning ? "border-red-600 bg-red-600 text-white hover:bg-red-700 hover:text-white" : ""
                   }`}
                   onClick={() => void runDevServer()}
+                  disabled={detailActionLocked}
                   aria-label="run_project_test"
+                  data-testid="detail-test-button"
                 >
-                  {detail?.state === "run" ? <Ban className="h-4 w-4" /> : <FlaskConical className="h-4 w-4" />}
-                  <span className="hidden lg:inline">{detail?.state === "run" ? "stop" : "test"}</span>
+                  {isDevRunning ? <Ban className="h-4 w-4" /> : <FlaskConical className="h-4 w-4" />}
+                  <span className="hidden lg:inline">{isDevRunning ? "stop" : "test"}</span>
                 </Button>
                 </div>
               </div>
@@ -1891,24 +2241,82 @@ export default function WebApp() {
               selectedDomain={selectedDomain}
               setSelectedDomain={setSelectedDomain}
               openEditor={openEditor}
+              actionsDisabled={isAutoRunningDetail}
               memoDraft={memoDraft}
               updateMemo={updateMemoRealtime}
               flushMemo={flushMemo}
               memoSaving={memoSaving}
             />
             <div>
+              <div className={sectionLabelClass}>episodes</div>
+              <Card data-testid="episode-pane" className="rounded-2xl border border-border bg-white">
+                <CardContent className="pt-6">
+                  <div className="grid gap-3 md:grid-cols-[220px_1fr]">
+                    <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-border bg-white p-2">
+                      {inputItemRows.length === 0 && <div className="text-xs text-muted-foreground">no episodes</div>}
+                      {inputItemRows.map((item) => (
+                        <button
+                          key={`input-title-${item.title}`}
+                          className={`w-full rounded px-2 py-1 text-left text-xs ${
+                            selectedInputTitle === item.title
+                              ? "bg-muted font-semibold text-foreground"
+                              : "text-muted-foreground hover:bg-muted/50"
+                          }`}
+                          onClick={() => setSelectedInputTitle(item.title)}
+                        >
+                          {item.title}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="max-h-64 overflow-y-auto rounded-xl border border-border bg-white p-3 text-xs">
+                      {!selectedInputRow ? (
+                        <div className="text-muted-foreground">episode를 선택하세요.</div>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">title</div>
+                              <div className="mt-1 break-words text-sm text-foreground">{selectedInputRow.title}</div>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="shrink-0"
+                              onClick={() => setEpisodeReadOpen(true)}
+                              disabled={!selectedEpisodeMarkdown.trim()}
+                              data-testid="episode-read-button"
+                            >
+                              read
+                            </Button>
+                          </div>
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">rule</div>
+                            <div className="mt-1 text-sm text-foreground">{selectedInputRow.rule || "-"}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">step</div>
+                            <div className="mt-1 text-sm text-foreground">{selectedInputRow.step || "-"}</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            <div>
               <div className={sectionLabelClass}>drafts</div>
-              <div className="relative">
+              <div className="relative" data-testid="draft-pane">
                 <div className="flex flex-wrap items-end justify-end gap-2 lg:absolute lg:right-3 lg:top-0 lg:-translate-y-full">
                   {[
-                    { key: "items", label: "items" },
                     { key: "input", label: "input.md" },
                     { key: "drafts", label: "drafts.yaml" }
                   ].map((tab) => (
                     <button
                       key={`draft-tab-${tab.key}`}
                       type="button"
-                      onClick={() => setDraftsViewMode(tab.key as "items" | "input" | "drafts")}
+                      onClick={() => setDraftsViewMode(tab.key as "input" | "drafts")}
                       className={`rounded-t-md border border-b-0 px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
                         draftsViewMode === tab.key
                           ? "border-border bg-white text-foreground"
@@ -1924,6 +2332,7 @@ export default function WebApp() {
                       size="sm"
                       variant="outline"
                       onClick={() => void removeDraftPaneFile(draftsViewMode === "input" ? "input" : "drafts")}
+                      disabled={isAutoRunningDetail}
                       aria-label={draftsViewMode === "input" ? "delete-input-md" : "delete-drafts-yaml"}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -1933,52 +2342,7 @@ export default function WebApp() {
               <Card className={`rounded-2xl border border-border lg:border-x lg:border-b lg:border-t-0 ${runningImplDraft ? "bg-amber-50" : "bg-white"}`}>
                 <CardContent className="pt-6">
                   <div className="rounded-b-xl border-x border-b border-border bg-white p-3">
-                    {draftsViewMode === "items" ? (
-                      <div className="grid gap-3 md:grid-cols-[220px_1fr]">
-                        <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-border bg-white p-2">
-                          {inputItemRows.length === 0 && (
-                            <div className="text-xs text-muted-foreground">no input.md headings</div>
-                          )}
-                          {inputItemRows.map((item) => (
-                            <button
-                              key={`input-title-${item.title}`}
-                              className={`w-full rounded px-2 py-1 text-left text-xs ${
-                                selectedInputTitle === item.title
-                                  ? "bg-muted font-semibold text-foreground"
-                                  : "text-muted-foreground hover:bg-muted/50"
-                              }`}
-                              onClick={() => setSelectedInputTitle(item.title)}
-                            >
-                              {item.title}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="max-h-64 overflow-y-auto rounded-xl border border-border bg-white p-3 text-xs">
-                          {(() => {
-                            const selected = inputItemRows.find((item) => item.title === selectedInputTitle);
-                            if (!selected) {
-                              return <div className="text-muted-foreground">input.md 항목을 선택하세요.</div>;
-                            }
-                            return (
-                              <div className="space-y-2">
-                                <div>
-                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">title</div>
-                                  <div className="mt-1 text-sm text-foreground">{selected.title}</div>
-                                </div>
-                                <div>
-                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">rule</div>
-                                  <div className="mt-1 text-sm text-foreground">{selected.rule || "-"}</div>
-                                </div>
-                                <div>
-                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">step</div>
-                                  <div className="mt-1 text-sm text-foreground">{selected.step || "-"}</div>
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    ) : draftsViewMode === "input" ? (
+                    {draftsViewMode === "input" ? (
                       <pre className="max-h-64 overflow-y-auto rounded-xl border border-border bg-white p-3 text-xs leading-relaxed text-foreground/80">
                         {detail?.inputMdRaw?.trim() || "# input.md not found"}
                       </pre>
@@ -2003,18 +2367,8 @@ export default function WebApp() {
                     <Button
                       variant="outline"
                       className="h-9 gap-2 px-3 text-sm font-semibold"
-                      onClick={() => void runQuickAction("check_code")}
-                      disabled={!isReviewState || addInputApplying || isBuildRunning}
-                      aria-label="check_code_review"
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span>check</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="h-9 gap-2 px-3 text-sm font-semibold"
                       onClick={() => void runQuickAction("retry_incomplete")}
-                      disabled={!isReviewState || addInputApplying || isBuildRunning}
+                      disabled={!isReviewState || addInputApplying || isBuildRunning || isAutoRunningDetail}
                       aria-label="retry_red_items"
                     >
                       <RotateCcw className="h-4 w-4" />
@@ -2024,7 +2378,7 @@ export default function WebApp() {
                       variant="outline"
                       className="h-9 gap-2 px-3 text-sm font-semibold"
                       onClick={() => void runQuickAction("finalize_complete")}
-                      disabled={!isReviewState || !hasGreenDraft || addInputApplying || isBuildRunning}
+                      disabled={!isReviewState || !hasGreenDraft || addInputApplying || isBuildRunning || isAutoRunningDetail}
                       aria-label="finalize_green_items"
                     >
                       <CheckCircle2 className="h-4 w-4" />
@@ -2034,6 +2388,194 @@ export default function WebApp() {
                 </CardContent>
               </Card>
               </div>
+            </div>
+            <div data-testid="draft-action-row" className="flex flex-wrap justify-end gap-2">
+              <Button
+                variant="outline"
+                className="h-10 gap-2 px-3 text-sm font-semibold"
+                onClick={() => {
+                  setFormRawInput(detail?.inputMdRaw ?? "");
+                  setFormAiMessage("");
+                  setFormAiDone(false);
+                  setAddInputStatus("");
+                  setFormAddInputOpen(true);
+                }}
+                disabled={!hasEpisodes || addInputApplying || isBuildRunning || isAiBusy}
+                aria-label="form_add_input"
+                data-testid="draft-action-add"
+              >
+                <FilePlus2 className="h-4 w-4" />
+                <span>add</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="h-10 gap-2 px-3 text-sm font-semibold"
+                onClick={() => {
+                  setSelectedPane("project_info");
+                  openEditor();
+                }}
+                disabled={!hasEpisodes || addInputApplying || isBuildRunning || isAiBusy}
+                aria-label="modify_project_info"
+                data-testid="draft-action-modify"
+              >
+                <Pencil className="h-4 w-4" />
+                <span>modify</span>
+              </Button>
+              <Button
+                variant="outline"
+                className={`h-10 gap-2 px-3 text-sm font-semibold ${
+                  isBuildRunning ? "border-red-600 bg-red-600 text-white hover:bg-red-700 hover:text-white" : ""
+                }`}
+                onClick={() => void (isBuildRunning ? stopBuildJob() : startBuildJob())}
+                disabled={addInputApplying || isAiBusy}
+                aria-label="build_parallel"
+                data-testid="draft-action-build"
+              >
+                {isBuildRunning ? <Ban className="h-4 w-4" /> : <Hammer className="h-4 w-4" />}
+                <span>{isBuildRunning ? "stop" : "build"}</span>
+              </Button>
+            </div>
+            <div>
+              <div className={sectionLabelClass}>check</div>
+              <Card data-testid="check-pane" className="rounded-2xl border border-border bg-white">
+                <CardContent className="space-y-5 pt-6">
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">subject</div>
+                      <div
+                        data-testid="check-pane-subject"
+                        className="rounded-2xl border border-border bg-white px-4 py-3 text-sm font-semibold text-foreground"
+                      >
+                        {checkSubject}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">manual flow</div>
+                      <div className="rounded-2xl border border-border bg-white px-4 py-3 text-sm text-muted-foreground">
+                        {isAutoRunningDetail
+                          ? "auto mode에서는 현재 workflow가 check까지 관리합니다."
+                          : "run parallel 이후 수동 check는 이 pane에서 rc로 실행합니다."}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">step pane</div>
+                    <div
+                      data-testid="check-step-pane"
+                      className="max-h-72 overflow-y-auto rounded-2xl border border-border bg-white p-3"
+                    >
+                      {checkSteps.length === 0 && (
+                        <div className="text-sm text-muted-foreground">drafts.yaml에서 추출한 check step이 없습니다.</div>
+                      )}
+                      {checkSteps.length > 0 && (
+                        <div className="space-y-2">
+                          {checkSteps.map((item, index) => (
+                            <div
+                              key={`check-step-${item.subject}-${index}`}
+                              className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2"
+                            >
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                {item.subject} · {item.source}
+                              </div>
+                              <div className="mt-1 text-sm text-foreground">
+                                {index + 1}. {item.text}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        screenshots
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {selectedCheckScreenshot ? selectedCheckScreenshot.path : ".project/screenshot 선택 필요"}
+                      </div>
+                    </div>
+                    <div data-testid="check-screenshot-grid" className="overflow-x-auto">
+                      <div className="flex w-max gap-3 pb-2">
+                        {checkScreenshots.length === 0 && (
+                          <div className="w-[240px] rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-10 text-sm text-muted-foreground">
+                            no screenshots
+                          </div>
+                        )}
+                        {checkScreenshots.map((item) => (
+                          <button
+                            key={`check-screenshot-${item.path}`}
+                            type="button"
+                            data-testid={`check-screenshot-card-${item.name}`}
+                            className={`w-[240px] shrink-0 rounded-2xl border bg-white p-3 text-left ${
+                              selectedCheckScreenshot?.path === item.path
+                                ? "border-primary shadow-sm"
+                                : "border-border hover:bg-muted/20"
+                            }`}
+                            onClick={() => setSelectedScreenshotPath(item.path)}
+                            onDoubleClick={() => {
+                              setSelectedScreenshotPath(item.path);
+                              setScreenshotPreviewItem(item);
+                            }}
+                          >
+                            <div className="h-36 overflow-hidden rounded-xl border border-border bg-muted/20">
+                              <img src={item.url} alt={item.name} className="h-full w-full object-cover" loading="lazy" />
+                            </div>
+                            <div className="mt-2 truncate text-sm font-semibold text-foreground">{item.name}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                      <Textarea
+                        value={checkFeedbackInput}
+                        onChange={(e) => setCheckFeedbackInput(e.target.value)}
+                        rows={4}
+                        className="min-h-[120px] resize-y bg-white"
+                        placeholder="{파일 위치명}에서 어떤 점을 개선해야 하는지 적으세요"
+                        data-testid="check-feedback-input"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-10 gap-2 px-4 text-sm font-semibold"
+                        onClick={() => void appendScreenshotFeedback()}
+                        disabled={!canAppendCheckFeedback}
+                        data-testid="check-feedback-add"
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span>{checkFeedbackSaving ? "saving..." : "add feedback"}</span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      aria-label="open-feedback-report"
+                      data-testid="check-report-button"
+                      onClick={() => setReportOpen(true)}
+                      disabled={!hasFeedbackReport}
+                    >
+                      <FileText className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      className="h-10 gap-2 px-4 text-sm font-semibold"
+                      onClick={() => void runManualCheck()}
+                      disabled={!canRunManualCheck}
+                      data-testid="check-pane-run"
+                    >
+                      <FlaskConical className="h-4 w-4" />
+                      <span>{checkRunning ? "checking..." : "check"}</span>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
 
             <div>
@@ -2071,6 +2613,112 @@ export default function WebApp() {
           setSelectedDraftYamlItem(null);
         }}
       />
+
+      {screenshotPreviewItem && (
+        <div className="fixed inset-0 z-50 bg-black/40 p-4">
+          <Card className="mx-auto flex h-full w-full max-w-6xl flex-col rounded-2xl">
+            <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+              <div className="min-w-0">
+                <CardTitle className="truncate">{screenshotPreviewItem.name}</CardTitle>
+                <div className="mt-1 truncate text-sm text-muted-foreground">{screenshotPreviewItem.path}</div>
+              </div>
+              <button
+                type="button"
+                className="rounded p-1 text-muted-foreground hover:bg-muted"
+                onClick={() => setScreenshotPreviewItem(null)}
+                aria-label="close-screenshot-preview"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </CardHeader>
+            <CardContent className="min-h-0 flex-1 overflow-hidden">
+              <div className="flex h-full items-center justify-center overflow-auto rounded-2xl border border-border bg-muted/10 p-4">
+                <img
+                  src={screenshotPreviewItem.url}
+                  alt={screenshotPreviewItem.name}
+                  className="max-h-full w-auto max-w-full rounded-xl border border-border bg-white object-contain"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {reportOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 p-4">
+          <Card className="mx-auto flex h-full w-full max-w-5xl flex-col rounded-2xl">
+            <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+              <div className="min-w-0">
+                <CardTitle className="truncate">.project/feedback.md report</CardTitle>
+                <div className="mt-1 text-sm text-muted-foreground">{detail?.name ?? "selected project"}</div>
+              </div>
+              <button
+                type="button"
+                className="rounded p-1 text-muted-foreground hover:bg-muted"
+                onClick={() => setReportOpen(false)}
+                aria-label="close-feedback-report"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </CardHeader>
+            <CardContent className="min-h-0 flex-1 overflow-hidden">
+              <div
+                data-testid="feedback-report-modal"
+                className="h-full overflow-y-auto rounded-2xl border border-border bg-white p-6"
+              >
+                <div className="mx-auto flex max-w-3xl flex-col gap-5">
+                  {renderEpisodeMarkdown(feedbackMdRaw)}
+                </div>
+              </div>
+            </CardContent>
+            <div className="flex justify-end gap-2 p-4 pt-0">
+              <Button variant="outline" onClick={() => setReportOpen(false)}>
+                취소
+              </Button>
+              <Button
+                className="gap-2"
+                onClick={() => void retryFromFeedback()}
+                disabled={checkRetrying || isBuildRunning || isAutoRunningDetail}
+                data-testid="feedback-retry-button"
+              >
+                <RotateCcw className="h-4 w-4" />
+                <span>{checkRetrying ? "retrying..." : "다시 하기"}</span>
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {episodeReadOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 p-4">
+          <Card className="mx-auto flex h-full w-full max-w-5xl flex-col rounded-2xl">
+            <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+              <div className="min-w-0">
+                <CardTitle className="truncate">episode read</CardTitle>
+                <div className="mt-1 text-sm text-muted-foreground">{selectedInputTitle || "selected episode"}</div>
+              </div>
+              <button
+                type="button"
+                className="rounded p-1 text-muted-foreground hover:bg-muted"
+                onClick={() => setEpisodeReadOpen(false)}
+                aria-label="close-episode-read"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </CardHeader>
+            <CardContent className="min-h-0 flex-1 overflow-hidden">
+              <div
+                data-testid="episode-read-modal"
+                className="h-full overflow-y-auto rounded-2xl border border-border bg-white p-6"
+              >
+                <div className="mx-auto flex max-w-3xl flex-col gap-5">
+                  {renderEpisodeMarkdown(selectedEpisodeMarkdown)}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {editOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
@@ -2245,7 +2893,7 @@ export default function WebApp() {
             <CardHeader>
               <CardTitle>auto_from_message</CardTitle>
             </CardHeader>
-            <CardContent className={`flex min-h-0 flex-1 flex-col gap-3 overflow-hidden ${autoRunning ? "blur-sm" : ""}`}>
+            <CardContent className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
               <div className="flex min-h-0 flex-1 flex-col space-y-3 rounded-xl border border-border p-3">
                 <Label>요청 메시지</Label>
                 <Textarea
@@ -2254,28 +2902,16 @@ export default function WebApp() {
                   className="min-h-[260px] flex-1"
                   placeholder="요청 내용을 입력하세요"
                 />
-                <div className="flex justify-end">
-                  <Button type="button" variant="outline" onClick={() => void runAutoFlowFromMessage()} disabled={autoRunning}>
-                    요청하기
-                  </Button>
-                </div>
               </div>
               <div className="flex justify-end gap-2">
                 <Button onClick={() => void runAutoFlowFromMessage()} disabled={autoRunning}>
-                  확인
+                  요청하기
                 </Button>
                 <Button variant="outline" onClick={() => setAutoModalOpen(false)} disabled={autoRunning}>
                   Cancel
                 </Button>
               </div>
             </CardContent>
-            {autoRunning && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/45">
-                <div className="rounded-xl border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground shadow">
-                  AI 자동 작업중...
-                </div>
-              </div>
-            )}
           </Card>
         </div>
       )}

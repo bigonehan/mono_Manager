@@ -3,10 +3,10 @@ mod browser;
 #[path = "rc/config.rs"]
 mod config;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use browser::HeadMode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use config::{Config, debug_enabled, load_config};
+use config::{debug_enabled, load_config, Config};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::fs;
@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const FEEDBACK_FILE: &str = "feedback.md";
+const FEEDBACK_FILE: &str = ".project/feedback.md";
 const PLAN_FILE: &str = "plan.yaml";
 const DRAFTS_FILE: &str = "drafts.yaml";
 const SESSION_LOG_FILE: &str = ".rc-session-log.json";
@@ -612,7 +612,7 @@ fn fallback_plan_body(
     config: &Config,
 ) -> String {
     format!(
-        "# plan\n\n- path: {}\n- runner: {:?}\n- headed: {:?}\n- mode: {}\n- execute: {}\n- expected: feedback.md, drafts.yaml, session logs, captures\n",
+        "# plan\n\n- path: {}\n- runner: {:?}\n- headed: {:?}\n- mode: {}\n- execute: {}\n- expected: .project/feedback.md, drafts.yaml, session logs, captures\n",
         target_path.display(),
         runner,
         headed,
@@ -1161,12 +1161,21 @@ fn write_feedback(workdir: &Path, log: &SessionLog) -> Result<()> {
         unresolved,
         improvements
     );
-    fs::write(workdir.join(FEEDBACK_FILE), result)
-        .with_context(|| "failed to write feedback.md")?;
+    let feedback_path = workdir.join(FEEDBACK_FILE);
+    if let Some(parent) = feedback_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    fs::write(&feedback_path, result)
+        .with_context(|| format!("failed to write {}", feedback_path.display()))?;
     Ok(())
 }
 
-fn evaluate_checklist(workdir: &Path, log: &SessionLog, effective_errors: &[String]) -> Result<ChecklistEvaluation> {
+fn evaluate_checklist(
+    workdir: &Path,
+    log: &SessionLog,
+    effective_errors: &[String],
+) -> Result<ChecklistEvaluation> {
     let checklist_path = workdir.join(PROJECT_DIR).join("check_list.md");
     if cfg!(test) {
         let body = fallback_checklist(log, effective_errors);
@@ -1178,7 +1187,8 @@ fn evaluate_checklist(workdir: &Path, log: &SessionLog, effective_errors: &[Stri
     }
 
     let prompt = build_checklist_prompt(log, effective_errors);
-    let body = run_codex_checklist_prompt(&prompt).unwrap_or_else(|_| fallback_checklist(log, effective_errors));
+    let body = run_codex_checklist_prompt(&prompt)
+        .unwrap_or_else(|_| fallback_checklist(log, effective_errors));
     if let Some(parent) = checklist_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -1248,8 +1258,16 @@ fn run_codex_checklist_prompt(prompt: &str) -> Result<String> {
 }
 
 fn fallback_checklist(log: &SessionLog, effective_errors: &[String]) -> String {
-    let status = if effective_errors.is_empty() { "x" } else { " " };
-    let output = if effective_errors.is_empty() { "기본 점검 통과" } else { "기본 점검 실패" };
+    let status = if effective_errors.is_empty() {
+        "x"
+    } else {
+        " "
+    };
+    let output = if effective_errors.is_empty() {
+        "기본 점검 통과"
+    } else {
+        "기본 점검 실패"
+    };
     format!(
         "- [{}] {} -> {} : mode 기반 기본 체크리스트\n- [x] step 실행 -> output_log 기록 : 실행 로그 수집\n",
         status, log.mission, output
@@ -1317,8 +1335,8 @@ fn maybe_spawn_codex_worker(workdir: &Path) -> Result<()> {
     if pane_id.is_empty() {
         return Ok(());
     }
-    let message =
-        "feedback.md를 읽고 해결할 수 있는 문제와 개선점을 쳐아서 개선하라".replace('"', "\\\"");
+    let message = ".project/feedback.md를 읽고 해결할 수 있는 문제와 개선점을 쳐아서 개선하라"
+        .replace('"', "\\\"");
     let danger_flag = if std::env::var("CODEX_DANGEROUSLY_BYPASS_APPROVALS_AND_SANDBOX").is_ok() {
         ""
     } else {
@@ -1351,7 +1369,12 @@ fn acquire_run_lock(workdir: &Path) -> Result<RunLock> {
         .create_new(true)
         .write(true)
         .open(&path)
-        .with_context(|| format!("another rc run is already in progress (lock: {})", path.display()))?;
+        .with_context(|| {
+            format!(
+                "another rc run is already in progress (lock: {})",
+                path.display()
+            )
+        })?;
     use std::io::Write;
     writeln!(file, "pid={pid}")?;
     writeln!(file, "started_at={stamp}")?;
@@ -1459,15 +1482,10 @@ mod tests {
             &config,
         )
         .expect("drafts");
-        assert!(
-            drafts.procedures[0]
-                .steps
-                .iter()
-                .any(|step| {
-                    step.command_template.contains("python3 - \"")
-                        && step.command_template.contains("<<'PY'")
-                })
-        );
+        assert!(drafts.procedures[0].steps.iter().any(|step| {
+            step.command_template.contains("python3 - \"")
+                && step.command_template.contains("<<'PY'")
+        }));
         assert!(drafts.procedures[0].steps.iter().any(|step| {
             step.command_template
                 .contains(".auth-card:nth-of-type(2) input[placeholder='name']")

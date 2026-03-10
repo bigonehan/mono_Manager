@@ -53,7 +53,6 @@ pub(crate) trait DraftService: Send + Sync {
 pub(crate) trait FeedbackService: Send + Sync {
     fn check(&self, auto_yes: bool) -> Result<String, String>;
     fn decide_policy(&self) -> Result<String, String>;
-    fn check_draft(&self) -> Result<String, String>;
 }
 
 pub(crate) trait Profile: Send + Sync {
@@ -134,7 +133,8 @@ impl TemplateProvider for CodeTemplateProvider {
     fn project_template_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("templates")
             .join("project.md")
     }
@@ -142,7 +142,8 @@ impl TemplateProvider for CodeTemplateProvider {
     fn plan_template_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("templates")
             .join("plan.yaml")
     }
@@ -150,7 +151,8 @@ impl TemplateProvider for CodeTemplateProvider {
     fn drafts_template_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("templates")
             .join("drafts.yaml")
     }
@@ -160,7 +162,8 @@ impl PromptProvider for CodePromptProvider {
     fn add_project_detail_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join("add_detail_project_code.txt")
     }
@@ -168,7 +171,8 @@ impl PromptProvider for CodePromptProvider {
     fn infer_plan_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join("infer_plan_yaml.txt")
     }
@@ -176,7 +180,8 @@ impl PromptProvider for CodePromptProvider {
     fn infer_draft_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join("infer_draft_item.txt")
     }
@@ -184,7 +189,8 @@ impl PromptProvider for CodePromptProvider {
     fn impl_draft_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join("impl_code_draft.txt")
     }
@@ -220,7 +226,8 @@ impl PromptProvider for StoryPromptProvider {
     fn add_project_detail_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join("add_detail_project_code.txt")
     }
@@ -228,7 +235,8 @@ impl PromptProvider for StoryPromptProvider {
     fn infer_plan_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join("infer_plan_yaml.txt")
     }
@@ -236,7 +244,8 @@ impl PromptProvider for StoryPromptProvider {
     fn infer_draft_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join("infer_draft_item.txt")
     }
@@ -244,7 +253,8 @@ impl PromptProvider for StoryPromptProvider {
     fn impl_draft_prompt_path(&self) -> PathBuf {
         crate::source_root()
             .join("assets")
-            .join("presets").join("code")
+            .join("presets")
+            .join("code")
             .join("prompts")
             .join("impl_code_draft.txt")
     }
@@ -434,10 +444,6 @@ impl FeedbackService for CodeFeedbackService {
     fn decide_policy(&self) -> Result<String, String> {
         crate::code::check_task()
     }
-
-    fn check_draft(&self) -> Result<String, String> {
-        crate::code::check_draft()
-    }
 }
 
 impl FeedbackService for StoryFeedbackService {
@@ -447,10 +453,6 @@ impl FeedbackService for StoryFeedbackService {
 
     fn decide_policy(&self) -> Result<String, String> {
         crate::story::check_story_task()
-    }
-
-    fn check_draft(&self) -> Result<String, String> {
-        crate::story::check_story_only()
     }
 }
 
