@@ -1,4 +1,10 @@
 ## 2026-03-10 - 작업한일
+- `src/story.rs`의 story 초기화/초안 생성 경로를 `.../templates/draft_item.yaml`과 `.project/draft_item.yaml` 기준으로 바꿔 구형 `draft.yaml` 산출물을 제거함.
+- `assets/web/src/server/orc.ts`의 draft 폼 템플릿 로더를 `.../templates/draft_item.yaml`로 전환해 web 편집 기준 템플릿을 단일 item 스키마와 맞춤.
+- `assets/presets/*/prompts/build-funciton.txt`의 단일 draft 템플릿 참조를 `draft_item.yaml`으로 수정하고, 더 이상 쓰이지 않는 `.../templates/draft.yaml` 파일들을 삭제함.
+- 검증은 `cargo test` 전체 통과, `.../assets/web`에서 `npm exec -- tsc --noEmit -p tsconfig.json` 통과로 확인함.
+
+## 2026-03-10 - 작업한일
 - `src/chat.rs`에 60초 장기 대기 heartbeat를 추가해 LLM 실행이 길어질 때 `[orc-status]` 상태를 stderr, chat log, tmux owner pane으로 함께 전달하도록 구현함.
 - `src/code.rs`의 새 세션/tmux worker 대기에 같은 heartbeat를 추가하고, tmux worker는 최근 stdout/stderr 한 줄까지 parent pane으로 전달해 현재 병목 지점을 바로 확인할 수 있게 함.
 - `src/main.rs`의 병렬 feedback 생성 경로에서 120초 고정 timeout을 제거하고 설정 기반 timeout으로 바꿔 조기 실패를 줄였으며, `cargo test` 전체 통과로 검증함.
@@ -2668,3 +2674,23 @@
 - `/home/tree/ai/codex/AGENTS.override.md` 안의 중복 규칙을 통합해 금지어 출력 게이트, `current.png` 고정 경로 규칙, ORC 개선 로그 규칙을 각각 단일 섹션으로 정리함.
 - `/home/tree/ai/skills/orc-cli-workflow/SKILL.md` 안의 반복 문구를 공통 bullet로 합치고, `#개선필요` 설명 중복을 제거함.
 - 검증: 중복 섹션명 제거 확인, `orc-cli-workflow` 중복 문구 0회 확인, `cargo test`.
+
+## 2026-03-11 - 작업한일
+- `init_code_project`와 bootstrap의 빈 폴더 판정을 공용 helper로 맞춰 `.project`, `todo.md` 같은 ORC 운영 메타 파일만 남은 폴더를 `empty workspace`로 처리하도록 수정함.
+- 메타 파일만 있는 임시 디렉터리에서 `orc init_code_project -a "sample rust cli app"`가 `empty workspace: create project.md`로 분기하는 실행 경로를 다시 확인함.
+- 검증: `cargo test`, `cargo install --path /home/tree/project/rust-orc`.
+
+## 2026-03-11 - 작업한일
+- `impl_code_draft` 병렬 worker의 상태 저장을 직렬화하고 worker별로 `worked -> complete|error`를 즉시 반영하도록 수정해, 실패 item이 `worked`에 남지 않게 보정함.
+- `check_code_draft`는 LLM follow-up timeout 시에도 fallback `report.md`를 생성하도록 바꾸고, `rc` web smoke 기본 절차는 로그인 셀렉터 대신 `body` 대기로 시작하도록 조정함.
+- 검증: `cargo test`, `PageEditor`에서 `cargo run --bin orc -- impl_code_draft`(5초 timeout으로 7개 worker 전부 `error` 기록 확인 후 상태 복원), `cargo run --bin orc -- check_code_draft -a`(`report.md` fallback 생성 확인 후 파일 복원), `cargo run --bin orc -- clit test -p . -m "PageEditor build verification"`(`web_smoke_check`, `agent-browser wait "body"` 확인 후 rc 로그 복원).
+
+## 2026-03-11 - 작업한일
+- `rc clit test`의 codex plan/checklist 생성과 step 실행에 15초 heartbeat를 추가해 장시간 점검 중 `rc-status`/`step~` 진행 상태를 출력하고 `.project/log.md`에도 남기도록 수정함.
+- `orc clit test` forwarding 경로에도 15초 heartbeat를 추가해 `cargo run --bin rc` 대기 구간이 hang처럼 보이지 않도록 보강함.
+- 검증: `cargo test`, `cargo build --bin rc`, `cargo build --bin orc`, 느린 Python 대상에서 `target/debug/rc clit test` 15초 heartbeat(`step~ ... elapsed=15s`) 확인, `target/debug/orc clit test` 15초 heartbeat(`scope=clit`, `step~ ... elapsed=15s`) 확인.
+
+## 2026-03-12 - 작업한일
+- web 음성 입력 훅이 누적 speech result 배열의 겹치는 transcript segment를 병합하도록 수정해, 동일 어절 반복 없이 input/textarea 값이 한 문장으로 반영되게 함.
+- Playwright 음성 mock helper를 multi-result emission까지 다루도록 확장하고, detail edit/check 경로의 voice input 회귀 테스트에 중복 어절 재현과 임시 project 정리 흐름을 추가함.
+- 검증: `cd assets/web && npm run test:e2e -- --grep "voice input"`, `cd assets/web && npx tsc --noEmit`, `cargo test`.

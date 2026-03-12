@@ -342,16 +342,17 @@ pub(crate) fn run_codex_exec_capture_in_dir(dir: &Path, prompt: &str) -> Result<
     run_codex_exec_capture_in_dir_with_timeout(dir, prompt, codex_exec_timeout_sec())
 }
 
-pub(crate) fn run_codex_exec_capture_in_dir_with_timeout(
+fn run_codex_exec_capture_in_dir_with_attempts(
     dir: &Path,
     prompt: &str,
     timeout_sec: u64,
+    total_attempts: u32,
 ) -> Result<String, String> {
     let prompt = normalize_exec_prompt(prompt);
     append_chat_log(dir, "LLM_PROMPT", &prompt);
     let model_bin = crate::default_model_bin();
     let dangerous = crate::model_supports_dangerous_flag(&model_bin);
-    let total_attempts = llm_retry_count();
+    let total_attempts = total_attempts.max(1);
     let mut last_error = "unknown llm error".to_string();
     for attempt in 1..=total_attempts {
         if should_use_tmux_for_llm() {
@@ -413,6 +414,22 @@ pub(crate) fn run_codex_exec_capture_in_dir_with_timeout(
     }
     append_chat_log(dir, "LLM_ERROR", &last_error);
     Err(last_error)
+}
+
+pub(crate) fn run_codex_exec_capture_in_dir_with_timeout(
+    dir: &Path,
+    prompt: &str,
+    timeout_sec: u64,
+) -> Result<String, String> {
+    run_codex_exec_capture_in_dir_with_attempts(dir, prompt, timeout_sec, llm_retry_count())
+}
+
+pub(crate) fn run_codex_exec_capture_in_dir_once_with_timeout(
+    dir: &Path,
+    prompt: &str,
+    timeout_sec: u64,
+) -> Result<String, String> {
+    run_codex_exec_capture_in_dir_with_attempts(dir, prompt, timeout_sec, 1)
 }
 
 pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, String> {

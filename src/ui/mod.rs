@@ -1806,22 +1806,7 @@ pub(crate) fn apply_bootstrap_by_spec(
 }
 
 fn is_bootstrap_target_empty(project_root: &Path) -> Result<bool, String> {
-    let entries = fs::read_dir(project_root)
-        .map_err(|e| format!("failed to read {}: {}", project_root.display(), e))?;
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("failed to read dir entry: {}", e))?;
-        let name = entry.file_name().to_string_lossy().to_string();
-        // Internal metadata/docs folders should not block initial bootstrap.
-        if name == ".project" || name == "project" || name == ".agents" {
-            continue;
-        }
-        // Hidden entries are not treated as visible project files.
-        if name.starts_with('.') {
-            continue;
-        }
-        return Ok(false);
-    }
-    Ok(true)
+    crate::is_effectively_empty_dir(project_root)
 }
 
 fn run_bootstrap_llm_prepare(

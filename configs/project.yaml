@@ -1,4 +1,4 @@
-recentActivepane: jecM
+recentActivepane: CbgR
 projects:
   - id: CbgR
     name: web/next
@@ -6,7 +6,7 @@ projects:
     description: monorepo template package
     created_at: "1772888984"
     updated_at: "1772963389"
-    selected: false
+    selected: true
     project_type: mono
   - id: Crqr
     name: blender-bots
@@ -398,5 +398,21 @@ projects:
     description: voice input verification
     created_at: "1773140597"
     updated_at: "1773140597"
-    selected: true
+    selected: false
     project_type: code
+  - id: m6tH
+    name: web/PageEditor
+    path: /home/tree/home/apps/web/PageEditor
+    description: monorepo app package
+    created_at: "1773300989"
+    updated_at: "1773300989"
+    selected: false
+    project_type: mono
+  - id: Vcaq
+    name: web/community
+    path: /home/tree/home/template/web/community
+    description: monorepo template package
+    created_at: "1773300989"
+    updated_at: "1773300989"
+    selected: false
+    project_type: mono

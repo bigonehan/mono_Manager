@@ -11,11 +11,12 @@ use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::{IsTerminal, Read};
+use std::io::{IsTerminal, Read, Write};
 use std::net::{IpAddr, UdpSocket};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::{Command, ExitStatus, Stdio};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const FEEDBACK_FILE: &str = ".project/feedback.md";
 const PLAN_FILE: &str = "plan.yaml";
@@ -25,6 +26,7 @@ const EXECUTION_RECORD_FILE: &str = ".rc-execution-records.jsonl";
 const RUN_LOCK_FILE: &str = ".rc-run.lock";
 const PROJECT_DIR: &str = ".project";
 const PROJECT_LOG_FILE: &str = ".project/log.md";
+const STEP_HEARTBEAT_SEC: u64 = 15;
 
 #[derive(Debug, Parser)]
 #[command(name = "rc")]
@@ -186,6 +188,13 @@ struct DraftProcedure {
 struct StepOutcome {
     messages: Vec<String>,
     errors: Vec<String>,
+}
+
+#[derive(Debug)]
+struct CapturedCommandOutput {
+    status: ExitStatus,
+    stdout: String,
+    stderr: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -576,24 +585,27 @@ fn run_codex_plan_prompt(prompt: &str) -> Result<String> {
     } else {
         " --dangerously-bypass-approvals-and-sandbox"
     };
-    let output = Command::new("bash")
-        .args([
-            "-lc",
-            &format!(
-                "timeout 20 codex exec{} {}",
-                danger_flag,
-                shell_quote(prompt)
-            ),
-        ])
-        .output()
-        .with_context(|| "failed to execute codex")?;
+    let mut command = Command::new("bash");
+    command.args([
+        "-lc",
+        &format!(
+            "timeout 20 codex exec{} {}",
+            danger_flag,
+            shell_quote(prompt)
+        ),
+    ]);
+    let output = run_command_capture_with_heartbeat(command, "codex-plan", |elapsed_sec| {
+        format_rc_phase_heartbeat(
+            "build_plan",
+            "waiting for codex plan generation",
+            elapsed_sec,
+        )
+    })
+    .with_context(|| "failed to execute codex")?;
     if !output.status.success() {
-        bail!(
-            "codex plan generation failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+        bail!("codex plan generation failed: {}", output.stderr.trim());
     }
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stdout = output.stdout.trim().to_string();
     if stdout.is_empty() {
         bail!("codex plan generation returned empty output");
     }
@@ -602,6 +614,65 @@ fn run_codex_plan_prompt(prompt: &str) -> Result<String> {
 
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn format_rc_phase_heartbeat(phase: &str, detail: &str, elapsed_sec: u64) -> String {
+    format!(
+        "rc-status phase={} elapsed={}s detail={}",
+        phase,
+        elapsed_sec,
+        trim_heartbeat_command(detail)
+    )
+}
+
+fn run_command_capture_with_heartbeat<F>(
+    mut command: Command,
+    runtime_name: &str,
+    mut heartbeat_message: F,
+) -> Result<CapturedCommandOutput>
+where
+    F: FnMut(u64) -> String,
+{
+    let runtime_dir = Path::new(PROJECT_DIR).join("runtime");
+    fs::create_dir_all(&runtime_dir)
+        .with_context(|| format!("failed to create {}", runtime_dir.display()))?;
+    let token = format!("{}-{}", std::process::id(), now_unix_ts());
+    let stdout_path = runtime_dir.join(format!("{runtime_name}-{token}.stdout.log"));
+    let stderr_path = runtime_dir.join(format!("{runtime_name}-{token}.stderr.log"));
+    let stdout_file = fs::File::create(&stdout_path)
+        .with_context(|| format!("failed to create {}", stdout_path.display()))?;
+    let stderr_file = fs::File::create(&stderr_path)
+        .with_context(|| format!("failed to create {}", stderr_path.display()))?;
+    command.stdout(Stdio::from(stdout_file));
+    command.stderr(Stdio::from(stderr_file));
+    let mut child = command.spawn().with_context(|| "failed to spawn command")?;
+    let started = Instant::now();
+    let mut next_report_sec = STEP_HEARTBEAT_SEC;
+    let status = loop {
+        match child.try_wait().with_context(|| "failed while waiting command")? {
+            Some(status) => break status,
+            None => {
+                let elapsed_sec = started.elapsed().as_secs();
+                if elapsed_sec >= next_report_sec {
+                    let status = heartbeat_message(elapsed_sec);
+                    println!("{}", status);
+                    let _ = std::io::stdout().flush();
+                    let _ = append_project_log(&format!("heartbeat: {}\n", status));
+                    next_report_sec += STEP_HEARTBEAT_SEC;
+                }
+                thread::sleep(Duration::from_millis(250));
+            }
+        }
+    };
+    let stdout = fs::read_to_string(&stdout_path).unwrap_or_default();
+    let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
+    let _ = fs::remove_file(&stdout_path);
+    let _ = fs::remove_file(&stderr_path);
+    Ok(CapturedCommandOutput {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 fn fallback_plan_body(
@@ -666,6 +737,16 @@ fn build_web_procedure(
     let agent = &config.agent_browser_command;
     let requested_url = requested_web_url(target_path, mode, config);
     let url = browser_reachable_url(&requested_url);
+    let login_mode = mode.to_ascii_lowercase().contains("login");
+    let wait_selector = extract_action_value(mode, "selector")
+        .or_else(|| extract_action_value(mode, "wait"))
+        .unwrap_or_else(|| {
+            if login_mode {
+                ".auth-card:nth-of-type(1) input[placeholder='user id']".to_string()
+            } else {
+                "body".to_string()
+            }
+        });
     let mut steps = vec![
         Step {
             command_template: format!(
@@ -687,10 +768,7 @@ fn build_web_procedure(
             responses: Vec::new(),
         },
         Step {
-            command_template: browser::wait_for_selector_command(
-                agent,
-                ".auth-card:nth-of-type(1) input[placeholder='user id']",
-            ),
+            command_template: browser::wait_for_selector_command(agent, &wait_selector),
             responses: Vec::new(),
         },
         Step {
@@ -698,7 +776,7 @@ fn build_web_procedure(
             responses: Vec::new(),
         },
     ];
-    if mode.to_ascii_lowercase().contains("login") {
+    if login_mode {
         steps.extend(login_steps(agent));
     }
     if let Some(label) = extract_action_value(mode, "click") {
@@ -715,8 +793,16 @@ fn build_web_procedure(
     }
     steps.push(Step { command_template: format!("{}; if [ -f .rc-web-server.pid ]; then kill $(cat .rc-web-server.pid) >/dev/null 2>&1 || true; fi", browser::screenshot_and_close_command(agent)), responses: Vec::new() });
     DraftProcedure {
-        name: "web_login_check".to_string(),
-        expected: "user can log in through the UI".to_string(),
+        name: if login_mode {
+            "web_login_check".to_string()
+        } else {
+            "web_smoke_check".to_string()
+        },
+        expected: if login_mode {
+            "user can log in through the UI".to_string()
+        } else {
+            "page loads through the UI".to_string()
+        },
         steps,
     }
 }
@@ -920,7 +1006,7 @@ fn run_check(
                 format!("{} -> {}", procedure.name, step.command_template),
                 true,
             );
-            let outcome = run_step(target_path, step)?;
+            let outcome = run_step(target_path, &procedure.name, step)?;
             if debug_enabled(config) {
                 append_project_log(&format!(
                     "## {}\n- command: {}\n- messages: {}\n- errors: {}\n",
@@ -945,6 +1031,24 @@ fn run_check(
         }
     }
     Ok(())
+}
+
+fn format_step_heartbeat(procedure_name: &str, command: &str, elapsed_sec: u64) -> String {
+    format!(
+        "step~ procedure={} elapsed={}s command={}",
+        procedure_name,
+        elapsed_sec,
+        trim_heartbeat_command(command)
+    )
+}
+
+fn trim_heartbeat_command(command: &str) -> String {
+    let normalized = command.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.len() <= 160 {
+        normalized
+    } else {
+        format!("{}...", &normalized[..157])
+    }
 }
 
 fn get_current_state(target_path: &Path, runner: &RunnerKind, config: &Config) -> Result<String> {
@@ -1011,14 +1115,23 @@ fn append_project_log(entry: &str) -> Result<()> {
     Ok(())
 }
 
-fn run_step(target_path: &Path, step: &Step) -> Result<StepOutcome> {
-    let output = Command::new("bash")
-        .args(["-lc", &step.command_template])
-        .current_dir(target_path)
-        .output()
-        .with_context(|| format!("failed to execute step `{}`", step.command_template))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+fn now_unix_ts() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|v| v.as_secs())
+        .unwrap_or(0)
+}
+
+fn run_step(target_path: &Path, procedure_name: &str, step: &Step) -> Result<StepOutcome> {
+    let mut command = Command::new("bash");
+    command.args(["-lc", &step.command_template]);
+    command.current_dir(target_path);
+    let output = run_command_capture_with_heartbeat(command, "step", |elapsed_sec| {
+        format_step_heartbeat(procedure_name, &step.command_template, elapsed_sec)
+    })
+    .with_context(|| format!("failed to execute step `{}`", step.command_template))?;
+    let stdout = output.stdout;
+    let stderr = output.stderr;
     let mut messages = Vec::new();
     let mut errors = Vec::new();
     if !stdout.trim().is_empty() {
@@ -1233,24 +1346,27 @@ fn run_codex_checklist_prompt(prompt: &str) -> Result<String> {
     } else {
         " --dangerously-bypass-approvals-and-sandbox"
     };
-    let output = Command::new("bash")
-        .args([
-            "-lc",
-            &format!(
-                "timeout 20 codex exec{} {}",
-                danger_flag,
-                shell_quote(prompt)
-            ),
-        ])
-        .output()
-        .with_context(|| "failed to execute codex checklist prompt")?;
+    let mut command = Command::new("bash");
+    command.args([
+        "-lc",
+        &format!(
+            "timeout 20 codex exec{} {}",
+            danger_flag,
+            shell_quote(prompt)
+        ),
+    ]);
+    let output = run_command_capture_with_heartbeat(command, "codex-checklist", |elapsed_sec| {
+        format_rc_phase_heartbeat(
+            "checklist",
+            "waiting for codex checklist generation",
+            elapsed_sec,
+        )
+    })
+    .with_context(|| "failed to execute codex checklist prompt")?;
     if !output.status.success() {
-        bail!(
-            "codex checklist generation failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+        bail!("codex checklist generation failed: {}", output.stderr.trim());
     }
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stdout = output.stdout.trim().to_string();
     if stdout.is_empty() {
         bail!("codex checklist generation returned empty output");
     }
@@ -1509,6 +1625,38 @@ mod tests {
     }
 
     #[test]
+    fn builds_generic_smoke_drafts_for_web_mode_without_login_selector() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts":{"dev":"vite --host 0.0.0.0 --port 5173"}}"#,
+        )
+        .expect("write");
+        let config = load_config().expect("config");
+        let drafts = build_drafts(
+            dir.path(),
+            "PageEditor build verification",
+            &RunnerKind::Web,
+            HeadMode::Off,
+            &config,
+        )
+        .expect("drafts");
+        assert_eq!(drafts.procedures[0].name, "web_smoke_check");
+        assert_eq!(
+            drafts.procedures[0].expected,
+            "page loads through the UI"
+        );
+        assert!(drafts.procedures[0]
+            .steps
+            .iter()
+            .any(|step| step.command_template == "agent-browser wait \"body\""));
+        assert!(!drafts.procedures[0].steps.iter().any(|step| {
+            step.command_template
+                .contains(".auth-card:nth-of-type(1) input[placeholder='user id']")
+        }));
+    }
+
+    #[test]
     fn rewrites_loopback_url_for_browser_access() {
         assert_eq!(
             rewrite_loopback_url("http://127.0.0.1:3000/login", "172.21.188.149"),
@@ -1541,6 +1689,14 @@ mod tests {
         assert!(body.contains("# 결과"));
         assert!(body.contains("# 미해결"));
         assert!(body.contains("# 보완"));
+    }
+
+    #[test]
+    fn formats_step_heartbeat_with_elapsed_seconds() {
+        let line = format_step_heartbeat("web_smoke_check", "bun run dev", 30);
+        assert!(line.contains("procedure=web_smoke_check"));
+        assert!(line.contains("elapsed=30s"));
+        assert!(line.contains("command=bun run dev"));
     }
 
     #[test]

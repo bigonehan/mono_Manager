@@ -58,10 +58,10 @@ pub(crate) fn init_story_project(args: &[String]) -> Result<String, String> {
     ensure_story_memo_md()?;
     ensure_story_plan_yaml()?;
     ensure_story_drafts_yaml()?;
-    ensure_story_draft_yaml()?;
+    ensure_story_draft_item_yaml()?;
 
     Ok(format!(
-        "mode={:?} | init_story_project completed: .project/project.md/.project/plan.yaml/.project/drafts.yaml/.project/draft.yaml",
+        "mode={:?} | init_story_project completed: .project/project.md/.project/plan.yaml/.project/drafts.yaml/.project/draft_item.yaml",
         MODE_LIST
     ))
 }
@@ -78,7 +78,7 @@ pub(crate) fn add_story_plan(args: &[String]) -> Result<String, String> {
 
 pub(crate) fn create_story_draft() -> Result<String, String> {
     ensure_story_drafts_yaml()?;
-    ensure_story_draft_yaml()?;
+    ensure_story_draft_item_yaml()?;
     Ok("create_story_draft completed".to_string())
 }
 
@@ -246,12 +246,12 @@ fn ensure_story_drafts_yaml() -> Result<(), String> {
     write_file(&path, &body)
 }
 
-fn ensure_story_draft_yaml() -> Result<(), String> {
-    let path = Path::new(".project").join("draft.yaml");
+fn ensure_story_draft_item_yaml() -> Result<(), String> {
+    let path = Path::new(".project").join("draft_item.yaml");
     if path.exists() {
         return Ok(());
     }
-    let body = read_story_template("draft.yaml")?;
+    let body = read_story_template("draft_item.yaml")?;
     write_file(&path, &body)
 }
 

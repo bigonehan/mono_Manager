@@ -67,6 +67,38 @@ function getJoinedTranscript(baseValue: string, nextTranscript: string): string 
   return [baseValue.trim(), nextTranscript.trim()].filter(Boolean).join(" ").trim();
 }
 
+function normalizeTranscript(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function getTranscriptOverlap(current: string, next: string): number {
+  const maxLength = Math.min(current.length, next.length);
+  for (let length = maxLength; length > 0; length -= 1) {
+    if (current.slice(-length) === next.slice(0, length)) {
+      return length;
+    }
+  }
+  return 0;
+}
+
+function mergeTranscriptSegments(segments: string[]): string {
+  let merged = "";
+  for (const segment of segments) {
+    const next = normalizeTranscript(segment);
+    if (!next) continue;
+    if (!merged) {
+      merged = next;
+      continue;
+    }
+    if (merged.endsWith(next)) {
+      continue;
+    }
+    const overlap = getTranscriptOverlap(merged, next);
+    merged = normalizeTranscript(`${merged}${next.slice(overlap)}`);
+  }
+  return merged;
+}
+
 function setElementValue(element: VoiceTargetElement, nextValue: string): void {
   const prototype =
     element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -95,7 +127,6 @@ export function useVoiceInput<T extends VoiceTargetElement>({
 }) {
   const recognitionRef = React.useRef<BrowserSpeechRecognition | null>(null);
   const baseValueRef = React.useRef("");
-  const transcriptRef = React.useRef("");
   const [supported, setSupported] = React.useState(false);
   const [listening, setListening] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -124,22 +155,17 @@ export function useVoiceInput<T extends VoiceTargetElement>({
       setListening(false);
     };
     recognition.onresult = (event) => {
-      let interim = "";
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        const transcript = result[0]?.transcript?.trim() ?? "";
-        if (!transcript) continue;
-        if (result.isFinal) {
-          transcriptRef.current = [transcriptRef.current, transcript].filter(Boolean).join(" ").trim();
-        } else {
-          interim = [interim, transcript].filter(Boolean).join(" ").trim();
-        }
-      }
       const element = elementRef.current;
       if (!element) return;
+      const segments: string[] = [];
+      for (let index = 0; index < event.results.length; index += 1) {
+        const transcript = event.results[index]?.[0]?.transcript ?? "";
+        if (normalizeTranscript(transcript).length === 0) continue;
+        segments.push(transcript);
+      }
       setElementValue(
         element,
-        getJoinedTranscript(baseValueRef.current, [transcriptRef.current, interim].filter(Boolean).join(" ").trim())
+        getJoinedTranscript(baseValueRef.current, mergeTranscriptSegments(segments))
       );
     };
     recognitionRef.current = recognition;
@@ -179,7 +205,6 @@ export function useVoiceInput<T extends VoiceTargetElement>({
       return;
     }
     baseValueRef.current = element.value ?? "";
-    transcriptRef.current = "";
     setError("");
     try {
       recognition.lang =

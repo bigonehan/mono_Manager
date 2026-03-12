@@ -1,8 +1,29 @@
 import type { Page } from "@playwright/test";
 
-export async function installMockSpeechRecognition(page: Page, transcripts: string[]): Promise<void> {
-  await page.addInitScript((queuedTranscripts: string[]) => {
+type MockSpeechRecognitionResultInput =
+  | string
+  | {
+      transcript: string;
+      isFinal?: boolean;
+    };
+
+type MockSpeechRecognitionEmission = string | MockSpeechRecognitionResultInput[];
+
+export async function installMockSpeechRecognition(
+  page: Page,
+  transcripts: MockSpeechRecognitionEmission[]
+): Promise<void> {
+  await page.addInitScript((queuedTranscripts: MockSpeechRecognitionEmission[]) => {
     let transcriptIndex = 0;
+
+    function toResults(entry: MockSpeechRecognitionEmission): Array<{ transcript: string; isFinal: boolean }> {
+      if (!Array.isArray(entry)) {
+        return [{ transcript: entry, isFinal: true }];
+      }
+      return entry.map((value) =>
+        typeof value === "string" ? { transcript: value, isFinal: true } : { transcript: value.transcript, isFinal: value.isFinal !== false }
+      );
+    }
 
     class MockSpeechRecognition {
       continuous = true;
@@ -15,20 +36,25 @@ export async function installMockSpeechRecognition(page: Page, transcripts: stri
 
       start() {
         if (this.onstart) this.onstart();
-        const transcript = queuedTranscripts[Math.min(transcriptIndex, queuedTranscripts.length - 1)] ?? "";
+        const transcriptEntry = queuedTranscripts[Math.min(transcriptIndex, queuedTranscripts.length - 1)] ?? "";
         transcriptIndex += 1;
         setTimeout(() => {
           if (this.onresult) {
+            const results = toResults(transcriptEntry);
+            const eventResults = results.reduce<Record<number, { 0: { transcript: string }; isFinal: boolean; length: number }> & { length: number }>(
+              (acc, result, index) => {
+                acc[index] = {
+                  0: { transcript: result.transcript },
+                  isFinal: result.isFinal,
+                  length: 1
+                };
+                return acc;
+              },
+              { length: results.length }
+            );
             this.onresult({
               resultIndex: 0,
-              results: {
-                0: {
-                  0: { transcript },
-                  isFinal: true,
-                  length: 1
-                },
-                length: 1
-              }
+              results: eventResults
             });
           }
           if (this.onend) this.onend();

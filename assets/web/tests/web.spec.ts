@@ -202,35 +202,47 @@ test("web ui: voice input updates single-line and multiline text fields", async 
   fs.rmSync(tmpPath, { recursive: true, force: true });
   fs.mkdirSync(tmpPath, { recursive: true });
 
-  await installMockSpeechRecognition(page, ["테스트 음성 입력", "테스트 음성 입력"]);
+  await installMockSpeechRecognition(page, [["이 파일은", "파일은", "파일은 조금 더 다듬자"], "테스트 음성 입력"]);
 
-  const createRes = await request.post("http://127.0.0.1:4175/api/projects", {
-    data: {
-      name: unique,
-      description: "voice input verification",
-      path: tmpPath,
-      spec: "react, voice",
-      project_type: "code"
+  let projectId = "";
+  try {
+    const createRes = await request.post("http://127.0.0.1:4175/api/projects", {
+      data: {
+        name: unique,
+        description: "voice input verification",
+        path: tmpPath,
+        spec: "react, voice",
+        project_type: "code"
+      }
+    });
+    expect(createRes.ok()).toBeTruthy();
+    const createBody = (await createRes.json()) as { project?: { id?: string } };
+    projectId = createBody.project?.id ?? "";
+
+    await page.goto("/");
+    const card = page.locator(`[data-testid^="project-item-"]`, { hasText: unique }).first();
+    await expect(card).toBeVisible();
+
+    await card.click({ force: true });
+    await expect(page.getByTestId("project-item-edit")).toBeVisible();
+    await page.getByTestId("project-item-edit").click({ force: true });
+    await expect(page.getByTestId("edit-goal-voice")).toBeEnabled();
+    await page.getByTestId("edit-goal-voice").click();
+    await expect(page.getByTestId("edit-goal")).toHaveValue("init 이 파일은 조금 더 다듬자");
+    await page.getByRole("button", { name: /cancel/i }).click();
+
+    await page.getByTestId("tab-detail").click({ force: true });
+    await expect(page.getByTestId("check-feedback-input-voice")).toBeEnabled();
+    await page.getByTestId("check-feedback-input-voice").click();
+    await expect(page.getByTestId("check-feedback-input")).toHaveValue("테스트 음성 입력");
+  } finally {
+    if (projectId) {
+      await request.post("http://127.0.0.1:4175/api/project-delete", {
+        data: { id: projectId }
+      });
     }
-  });
-  expect(createRes.ok()).toBeTruthy();
-
-  await page.goto("/");
-  const card = page.locator(`[data-testid^="project-item-"]`, { hasText: unique }).first();
-  await expect(card).toBeVisible();
-
-  await card.click({ force: true });
-  await expect(page.getByTestId("project-item-edit")).toBeVisible();
-  await page.getByTestId("project-item-edit").click({ force: true });
-  await expect(page.getByTestId("edit-goal-voice")).toBeEnabled();
-  await page.getByTestId("edit-goal-voice").click();
-  await expect(page.getByTestId("edit-goal")).toHaveValue("init 테스트 음성 입력");
-  await page.getByRole("button", { name: /cancel/i }).click();
-
-  await page.getByTestId("tab-detail").click({ force: true });
-  await expect(page.getByTestId("check-feedback-input-voice")).toBeEnabled();
-  await page.getByTestId("check-feedback-input-voice").click();
-  await expect(page.getByTestId("check-feedback-input")).toHaveValue("테스트 음성 입력");
+    fs.rmSync(tmpPath, { recursive: true, force: true });
+  }
 });
 
 test("web ui: auto modal starts immediately, locks current detail, and keeps project auto state while browsing", async ({

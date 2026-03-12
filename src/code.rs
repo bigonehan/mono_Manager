@@ -1,11 +1,13 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -813,21 +815,20 @@ pub(crate) async fn impl_code_draft() -> Result<String, String> {
         .filter(|item| item.state == "planned")
         .map(|item| item.name.clone())
         .collect();
-    if drafts.draft.is_empty() || planned_names.is_empty() {
-        return Ok("impl_code_draft skipped: no drafts.yaml.planned item".to_string());
+    let target_names = collect_impl_target_names(&drafts);
+    if drafts.draft.is_empty() || target_names.is_empty() {
+        return Ok("impl_code_draft skipped: no draft item in planned/worked state".to_string());
     }
 
-    for name in &planned_names {
-        draft_item_state_change(&mut drafts, name, "worked")?;
-        plan_draft_state_change(&mut plan, name, "worked")?;
+    if planned_names.is_empty() {
+        append_check_process_status(
+            "impl_code_draft",
+            &format!("resume existing worked items: {}", target_names.join(", ")),
+        );
     }
-    sync_plan_doc(&mut plan);
-    sync_drafts_doc(&mut drafts);
-    save_plan_doc(&plan)?;
-    save_drafts_doc(&drafts)?;
 
     if let Some(fast_path) =
-        try_complete_impl_from_existing_project(&mut plan, &mut drafts, &planned_names)?
+        try_complete_impl_from_existing_project(&mut plan, &mut drafts, &target_names)?
     {
         if manual_web_check_mode_enabled() {
             append_check_process_status(
@@ -846,30 +847,20 @@ pub(crate) async fn impl_code_draft() -> Result<String, String> {
         ));
     }
 
-    let worked_items: Vec<DraftItemDoc> = plan
-        .drafts
-        .worked
+    let worked_items: Vec<DraftItemDoc> = target_names
         .iter()
         .filter_map(|name| drafts.draft.iter().find(|v| &v.name == name).cloned())
         .collect();
     debug_log_auto_stage(
         "parallel-start",
-        &format!("parallel execution start: {} item(s)", worked_items.len()),
+        &format!("impl execution start: {} item(s)", worked_items.len()),
     );
     let run_msg = match impl_code_draft_parallel(worked_items).await {
         Ok(run) => {
-            for name in &run.succeeded {
-                draft_item_state_change(&mut drafts, name, "complete")?;
-                plan_draft_state_change(&mut plan, name, "complete")?;
-            }
-            for (name, _) in &run.failed {
-                draft_item_state_change(&mut drafts, name, "error")?;
-                plan_draft_state_change(&mut plan, name, "error")?;
-            }
+            plan = load_plan_doc()?;
+            drafts = load_drafts_doc()?;
             sync_plan_doc(&mut plan);
             sync_drafts_doc(&mut drafts);
-            save_plan_doc(&plan)?;
-            save_drafts_doc(&drafts)?;
             if run.failed.is_empty() {
                 format!(
                     "impl_code_draft parallel completed: {}",
@@ -890,20 +881,6 @@ pub(crate) async fn impl_code_draft() -> Result<String, String> {
             }
         }
         Err(e) => {
-            let current_worked: Vec<String> = drafts
-                .draft
-                .iter()
-                .filter(|item| item.state == "worked")
-                .map(|item| item.name.clone())
-                .collect();
-            for name in current_worked {
-                let _ = draft_item_state_change(&mut drafts, &name, "error");
-                let _ = plan_draft_state_change(&mut plan, &name, "error");
-            }
-            sync_plan_doc(&mut plan);
-            sync_drafts_doc(&mut drafts);
-            let _ = save_plan_doc(&plan);
-            let _ = save_drafts_doc(&drafts);
             write_feedback_md("impl_code_draft failed", &e)?;
             return Err(format!(
                 "impl_code_draft failed after sync; check .project/check-process.md: {}",
@@ -931,6 +908,40 @@ pub(crate) async fn impl_code_draft() -> Result<String, String> {
         "impl_code_draft completed | {} | {}",
         run_msg, check
     ))
+}
+
+fn collect_impl_target_names(drafts: &CodeDraftsDoc) -> Vec<String> {
+    let planned: Vec<String> = drafts
+        .draft
+        .iter()
+        .filter(|item| item.state == "planned")
+        .map(|item| item.name.clone())
+        .collect();
+    if !planned.is_empty() {
+        return planned;
+    }
+    drafts
+        .draft
+        .iter()
+        .filter(|item| item.state == "worked")
+        .map(|item| item.name.clone())
+        .collect()
+}
+
+fn persist_impl_item_state(name: &str, state: &str) -> Result<(), String> {
+    static IMPL_STATE_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _guard = IMPL_STATE_WRITE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| "impl state write lock poisoned".to_string())?;
+    let mut plan = load_plan_doc()?;
+    let mut drafts = load_drafts_doc()?;
+    draft_item_state_change(&mut drafts, name, state)?;
+    plan_draft_state_change(&mut plan, name, state)?;
+    sync_plan_doc(&mut plan);
+    sync_drafts_doc(&mut drafts);
+    save_plan_doc(&plan)?;
+    save_drafts_doc(&drafts)
 }
 
 fn try_complete_impl_from_existing_project(
@@ -965,6 +976,218 @@ struct ImplRunResult {
     failed: Vec<(String, String)>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WorkspaceFileFingerprint {
+    path: String,
+    digest: u64,
+}
+
+fn resolve_impl_code_draft_prompt_path() -> PathBuf {
+    crate::source_root()
+        .join("assets")
+        .join("presets")
+        .join("code")
+        .join("prompts")
+        .join("impl_code_draft.txt")
+}
+
+fn should_ignore_impl_workspace_entry(name: &str, is_dir: bool) -> bool {
+    if name.starts_with('.') {
+        return true;
+    }
+    if is_dir {
+        return matches!(
+            name,
+            ".project" | ".agents" | ".git" | ".jj" | "node_modules" | "target" | "dist" | "build" | ".next"
+        );
+    }
+    matches!(name, "todo.md" | "input.md" | "report.md")
+}
+
+fn collect_impl_workspace_fingerprints(root: &Path) -> Result<Vec<WorkspaceFileFingerprint>, String> {
+    fn walk(
+        base: &Path,
+        dir: &Path,
+        out: &mut Vec<WorkspaceFileFingerprint>,
+        depth: usize,
+    ) -> Result<(), String> {
+        if depth > 6 || out.len() >= 256 {
+            return Ok(());
+        }
+        let entries =
+            fs::read_dir(dir).map_err(|e| format!("failed to read {}: {}", dir.display(), e))?;
+        for entry in entries {
+            if out.len() >= 256 {
+                break;
+            }
+            let entry = entry.map_err(|e| format!("failed to read dir entry: {}", e))?;
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let file_type = entry
+                .file_type()
+                .map_err(|e| format!("failed to read file type for {}: {}", path.display(), e))?;
+            if should_ignore_impl_workspace_entry(&name, file_type.is_dir()) {
+                continue;
+            }
+            if file_type.is_dir() {
+                walk(base, &path, out, depth + 1)?;
+                continue;
+            }
+            let rel = path
+                .strip_prefix(base)
+                .map(|v| v.display().to_string())
+                .unwrap_or_else(|_| path.display().to_string());
+            let bytes =
+                fs::read(&path).map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            rel.hash(&mut hasher);
+            bytes.hash(&mut hasher);
+            out.push(WorkspaceFileFingerprint {
+                path: rel,
+                digest: hasher.finish(),
+            });
+        }
+        Ok(())
+    }
+
+    let mut out = Vec::new();
+    walk(root, root, &mut out, 0)?;
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(out)
+}
+
+fn diff_impl_workspace_fingerprints(
+    before: &[WorkspaceFileFingerprint],
+    after: &[WorkspaceFileFingerprint],
+) -> Vec<String> {
+    let before_map: BTreeMap<String, u64> = before
+        .iter()
+        .map(|item| (item.path.clone(), item.digest))
+        .collect();
+    let after_map: BTreeMap<String, u64> = after
+        .iter()
+        .map(|item| (item.path.clone(), item.digest))
+        .collect();
+    let mut changed = Vec::new();
+    for path in before_map.keys().chain(after_map.keys()) {
+        if changed.iter().any(|existing| existing == path) {
+            continue;
+        }
+        if before_map.get(path) != after_map.get(path) {
+            changed.push(path.clone());
+        }
+    }
+    changed
+}
+
+fn format_impl_workspace_files(files: &[WorkspaceFileFingerprint]) -> String {
+    if files.is_empty() {
+        "- (none)".to_string()
+    } else {
+        files.iter()
+            .map(|item| format!("- {}", item.path))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+fn build_impl_code_draft_prompt(
+    project_root: &Path,
+    items: &[DraftItemDoc],
+) -> Result<String, String> {
+    let prompt_path = resolve_impl_code_draft_prompt_path();
+    let prompt_template = fs::read_to_string(&prompt_path)
+        .map_err(|e| format!("failed to read {}: {}", prompt_path.display(), e))?;
+    let project_md_path = project_root.join(crate::PROJECT_MD_PATH);
+    let project_md = fs::read_to_string(&project_md_path)
+        .map_err(|e| format!("failed to read {}: {}", project_md_path.display(), e))?;
+    let plan_yaml_path = project_root.join(".project").join("plan.yaml");
+    let plan_yaml = fs::read_to_string(&plan_yaml_path)
+        .map_err(|e| format!("failed to read {}: {}", plan_yaml_path.display(), e))?;
+    let input_md_path = project_root.join(crate::INPUT_MD_PATH);
+    let input_md = fs::read_to_string(&input_md_path).unwrap_or_default();
+    let draft_yaml = serde_yaml::to_string(items)
+        .map_err(|e| format!("failed to encode impl draft items: {}", e))?;
+    let workspace_files = collect_impl_workspace_fingerprints(project_root)?;
+    Ok(format!(
+        "{}\n\n추가 구현 규칙:\n- 현재 작업 디렉터리 `{}` 안에서 직접 구현한다.\n- 입력으로 전달된 draft_item의 `scope` 파일을 실제로 수정/생성한다.\n- `draft_item.scope` 값이 파일 경로가 아니면 feature 식별자로 보고 필요한 파일 경로를 스스로 정해 생성/수정한다.\n- 실제 앱 파일을 반드시 생성/수정한다. `.project`, `todo.md`, `input.md`, `report.md`만 바꾸고 끝내면 실패다.\n- 상태/파일 변경이 실제 화면이나 실행 경로로 이어지도록 구현한다.\n- 응답 마지막에는 아래 형식만 추가한다.\nmodified_files:\n- <relative/path>\nconstraints: ok|fail\n\nproject.md:\n{}\n\nplan.yaml:\n{}\n\ninput.md:\n{}\n\ncurrent workspace files:\n{}\n\ndraft_items:\n```yaml\n{}\n```",
+        prompt_template,
+        project_root.display(),
+        project_md,
+        plan_yaml,
+        if input_md.trim().is_empty() {
+            "(missing or empty)".to_string()
+        } else {
+            input_md
+        },
+        format_impl_workspace_files(&workspace_files),
+        draft_yaml
+    ))
+}
+
+fn parse_impl_modified_files(output: &str) -> Vec<String> {
+    let mut files = Vec::new();
+    let mut in_block = false;
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case("modified_files:") {
+            in_block = true;
+            continue;
+        }
+        if !in_block {
+            continue;
+        }
+        if let Some(path) = trimmed.strip_prefix("- ") {
+            let mut normalized = path
+                .trim()
+                .trim_matches('`')
+                .trim_matches('"')
+                .trim_matches('\'')
+                .replace('\\', "/");
+            while normalized.starts_with("./") {
+                normalized = normalized[2..].to_string();
+            }
+            if !normalized.is_empty() && !files.iter().any(|existing| existing == &normalized) {
+                files.push(normalized);
+            }
+            continue;
+        }
+        if trimmed.is_empty() {
+            continue;
+        }
+        break;
+    }
+    files
+}
+
+fn collect_reported_impl_changed_files(
+    root: &Path,
+    before: &[WorkspaceFileFingerprint],
+    output: &str,
+) -> Result<Vec<String>, String> {
+    let reported = parse_impl_modified_files(output);
+    if reported.is_empty() {
+        return Err("missing final `modified_files` list".to_string());
+    }
+    let before_map: BTreeMap<String, u64> = before
+        .iter()
+        .map(|item| (item.path.clone(), item.digest))
+        .collect();
+    let after = collect_impl_workspace_fingerprints(root)?;
+    let after_map: BTreeMap<String, u64> = after
+        .iter()
+        .map(|item| (item.path.clone(), item.digest))
+        .collect();
+    let changed: Vec<String> = reported
+        .into_iter()
+        .filter(|path| before_map.get(path) != after_map.get(path))
+        .collect();
+    if changed.is_empty() {
+        return Err("reported modified_files did not change workspace outside ORC metadata".to_string());
+    }
+    Ok(changed)
+}
+
 async fn impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<ImplRunResult, String> {
     if items.is_empty() {
         return Ok(ImplRunResult {
@@ -972,63 +1195,97 @@ async fn impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<ImplRunRes
             failed: Vec::new(),
         });
     }
-    let prompt_path = Path::new("assets")
-        .join("code")
-        .join("prompts")
-        .join("impl_code_draft.txt");
-    let prompt_template = fs::read_to_string(&prompt_path).unwrap_or_else(|_| {
-        "impl_code_draft prompt\n- draft_item을 구현하고 제약 만족 여부를 보고한다.".to_string()
-    });
-    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
+    let cwd = env::current_dir().map_err(|e| format!("failed to read cwd: {}", e))?;
     let llm_timeout_sec = impl_draft_llm_timeout_sec();
+    let before = std::sync::Arc::new(collect_impl_workspace_fingerprints(&cwd)?);
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
     let mut handles = Vec::new();
+    let mut succeeded = Vec::new();
+    let mut failed = Vec::new();
     for item in items {
         let permit_pool = semaphore.clone();
-        let prompt_template = prompt_template.clone();
+        let item_cwd = cwd.clone();
+        let baseline = before.clone();
         handles.push(tokio::spawn(async move {
             let _permit = permit_pool
                 .acquire_owned()
                 .await
-                .map_err(|e| format!("semaphore acquire failed: {}", e))?;
-            let raw = serde_yaml::to_string(&item)
-                .map_err(|e| format!("failed to encode draft item {}: {}", item.name, e))?;
-            let prompt = format!(
-                "{}\n\n```yaml\n{}\n```\n\n위 draft_item을 구현하고 constraints 만족 여부를 마지막 줄에 `constraints: ok|fail`로 출력한다.",
-                prompt_template, raw
+                .map_err(|e| format!("semaphore acquire failed for {}: {}", item.name, e))?;
+            let prompt = build_impl_code_draft_prompt(&item_cwd, &[item.clone()])?;
+            persist_impl_item_state(&item.name, "worked")?;
+            append_check_process_status(
+                "impl_code_draft",
+                &format!(
+                    "impl prompt prepared | prompt={} | item={}",
+                    resolve_impl_code_draft_prompt_path().display(),
+                    item.name
+                ),
             );
-            let name = item.name.clone();
-            let output = tokio::task::spawn_blocking(move || {
-                crate::run_codex_exec_capture_with_timeout(&prompt, llm_timeout_sec)
+            let item_name = item.name.clone();
+            let run_cwd = item_cwd.clone();
+            let prompt_for_exec = prompt.clone();
+            let run_result = tokio::task::spawn_blocking(move || {
+                crate::chat::run_codex_exec_capture_in_dir_once_with_timeout(
+                    &run_cwd,
+                    &prompt_for_exec,
+                    llm_timeout_sec,
+                )
             })
-                .await
-                .map_err(|e| format!("spawn blocking join failed for {}: {}", name, e))??;
-            let tail = output.lines().last().unwrap_or("").to_ascii_lowercase();
-            if tail.contains("constraints: fail") {
-                return Err(format!("{}: constraints reported fail", item.name));
+            .await
+            .map_err(|e| format!("spawn blocking join failed for {}: {}", item_name, e))
+            .and_then(|result| result);
+            let output = match run_result {
+                Ok(output) => output,
+                Err(err) => {
+                    let _ = persist_impl_item_state(&item_name, "error");
+                    return Err(format!("{}: {}", item_name, err));
+                }
+            };
+            let lowered = output.to_ascii_lowercase();
+            if lowered.contains("constraints: fail") {
+                let _ = persist_impl_item_state(&item_name, "error");
+                return Err(format!("{}: constraints reported fail", item_name));
             }
+            if !lowered.lines().any(|line| line.trim() == "constraints: ok") {
+                let _ = persist_impl_item_state(&item_name, "error");
+                return Err(format!(
+                    "{}: missing final `constraints: ok` marker",
+                    item_name
+                ));
+            }
+            let changed = match collect_reported_impl_changed_files(&item_cwd, &baseline, &output) {
+                Ok(changed) => changed,
+                Err(err) => {
+                    let _ = persist_impl_item_state(&item_name, "error");
+                    return Err(format!("{}: {}", item_name, err));
+                }
+            };
+            persist_impl_item_state(&item.name, "complete")?;
+            append_check_process_status(
+                "impl_code_draft",
+                &format!("workspace files changed: {} | item={}", changed.join(", "), item.name),
+            );
             Ok::<String, String>(item.name)
         }));
     }
-    let mut done = Vec::new();
-    let mut failed: Vec<(String, String)> = Vec::new();
     for handle in handles {
         match handle
             .await
             .map_err(|e| format!("parallel task join failed: {}", e))?
         {
-            Ok(name) => done.push(name),
+            Ok(name) => succeeded.push(name),
             Err(err) => {
                 let name = err
                     .split_once(':')
                     .map(|(left, _)| left.trim().to_string())
-                    .filter(|v| !v.is_empty())
+                    .filter(|value| !value.is_empty())
                     .unwrap_or_else(|| "unknown".to_string());
                 failed.push((name, err));
             }
         }
     }
     Ok(ImplRunResult {
-        succeeded: done,
+        succeeded,
         failed,
     })
 }
@@ -1607,7 +1864,16 @@ pub(crate) fn check_code_draft(_auto_yes: bool) -> Result<String, String> {
     {
         "NO_CHANGE (fast-path)".to_string()
     } else {
-        crate::run_check_code_after_draft_changes(&list, "check_code_draft")?
+        match crate::run_check_code_after_draft_changes(&list, "check_code_draft") {
+            Ok(result) => result,
+            Err(err) => {
+                append_check_process_status(
+                    "check_code_draft",
+                    &format!("fallback report generation after follow-up failure: {}", err),
+                );
+                format!("CHECK_CODE_FALLBACK: {}", err)
+            }
+        }
     };
     let report = Path::new("report.md");
     let issues = collect_check_draft_issues(&follow, &test_result);
@@ -2363,9 +2629,7 @@ fn ask_yes_no(prompt: &str) -> Result<bool, String> {
 
 fn is_current_dir_empty() -> Result<bool, String> {
     let cwd = env::current_dir().map_err(|e| format!("failed to read cwd: {}", e))?;
-    let mut entries =
-        fs::read_dir(&cwd).map_err(|e| format!("failed to read {}: {}", cwd.display(), e))?;
-    Ok(entries.next().is_none())
+    crate::is_effectively_empty_dir(&cwd)
 }
 
 fn ensure_project_dir() -> Result<PathBuf, String> {
@@ -2624,11 +2888,34 @@ fn extract_domain_subsection_items(
 #[cfg(test)]
 mod tests {
     use super::{
-        change_state_plan, draft_item_state_change, extract_domain_subsection_items,
-        extract_domains_from_project_md, plan_draft_state_change, sync_plan_with_draft_items,
-        verify_draft_artifacts, verify_plan_artifacts, CodeDraftsDoc, CodePlanDoc, DraftItemDoc,
+        build_impl_code_draft_prompt, change_state_plan, collect_impl_workspace_fingerprints,
+        collect_impl_target_names, collect_reported_impl_changed_files,
+        diff_impl_workspace_fingerprints, draft_item_state_change,
+        parse_impl_modified_files,
+        extract_domain_subsection_items, extract_domains_from_project_md,
+        plan_draft_state_change, sync_plan_with_draft_items, verify_draft_artifacts,
+        verify_plan_artifacts, CodeDraftsDoc, CodePlanDoc, DraftItemDoc,
         WorkflowEvidenceSnapshot,
     };
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn make_temp_dir(prefix: &str) -> PathBuf {
+        let base = std::env::temp_dir();
+        let uniq = format!(
+            "{}_{}_{}",
+            prefix,
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        let dir = base.join(uniq);
+        fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
 
     #[test]
     fn extract_domains_from_project_md_reads_new_domain_headers() {
@@ -2734,6 +3021,127 @@ name : sample
         sync_plan_with_draft_items(&mut plan, &drafts);
         assert!(plan.drafts.complete.iter().any(|v| v == "ui"));
         assert!(!plan.drafts.planned.iter().any(|v| v == "ui"));
+    }
+
+    #[test]
+    fn collect_impl_target_names_falls_back_to_worked_items() {
+        let drafts = CodeDraftsDoc {
+            draft: vec![
+                DraftItemDoc {
+                    name: "shell".to_string(),
+                    state: "worked".to_string(),
+                    ..DraftItemDoc::default()
+                },
+                DraftItemDoc {
+                    name: "sidebar".to_string(),
+                    state: "worked".to_string(),
+                    ..DraftItemDoc::default()
+                },
+            ],
+        };
+        assert_eq!(
+            collect_impl_target_names(&drafts),
+            vec!["shell".to_string(), "sidebar".to_string()]
+        );
+    }
+
+    #[test]
+    fn collect_impl_workspace_fingerprints_ignores_orc_metadata() {
+        let root = make_temp_dir("orc_impl_fingerprint_ignore");
+        fs::create_dir_all(root.join(".project")).expect("create .project");
+        fs::create_dir_all(root.join("src")).expect("create src");
+        fs::write(root.join("todo.md"), "# problem\n").expect("write todo");
+        fs::write(root.join("input.md"), "# feature\n").expect("write input");
+        fs::write(root.join(".gitignore"), "node_modules\n").expect("write gitignore");
+        fs::write(root.join("src").join("app.tsx"), "export default function App() { return null; }\n")
+            .expect("write app file");
+
+        let files = collect_impl_workspace_fingerprints(&root).expect("collect fingerprints");
+        let paths: Vec<String> = files.into_iter().map(|item| item.path).collect();
+        assert_eq!(paths, vec!["src/app.tsx".to_string()]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn diff_impl_workspace_fingerprints_detects_created_user_file() {
+        let root = make_temp_dir("orc_impl_fingerprint_diff");
+        let before = collect_impl_workspace_fingerprints(&root).expect("before fingerprints");
+        fs::create_dir_all(root.join("src")).expect("create src");
+        fs::write(root.join("src").join("app.tsx"), "export const ready = true;\n")
+            .expect("write app file");
+        let after = collect_impl_workspace_fingerprints(&root).expect("after fingerprints");
+        let changed = diff_impl_workspace_fingerprints(&before, &after);
+        assert_eq!(changed, vec!["src/app.tsx".to_string()]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn parse_impl_modified_files_reads_final_list() {
+        let output = "done\nmodified_files:\n- src/app.tsx\n- ./src/routes.ts\nconstraints: ok\n";
+        assert_eq!(
+            parse_impl_modified_files(output),
+            vec!["src/app.tsx".to_string(), "src/routes.ts".to_string()]
+        );
+    }
+
+    #[test]
+    fn collect_reported_impl_changed_files_filters_to_real_changes() {
+        let root = make_temp_dir("orc_impl_reported_changes");
+        fs::create_dir_all(root.join("src")).expect("create src");
+        fs::write(root.join("src").join("app.tsx"), "export const ready = false;\n")
+            .expect("write app file");
+        let before = collect_impl_workspace_fingerprints(&root).expect("before fingerprints");
+        fs::write(root.join("src").join("app.tsx"), "export const ready = true;\n")
+            .expect("rewrite app file");
+
+        let changed = collect_reported_impl_changed_files(
+            &root,
+            &before,
+            "modified_files:\n- src/app.tsx\nconstraints: ok\n",
+        )
+        .expect("detect changed file");
+        assert_eq!(changed, vec!["src/app.tsx".to_string()]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn build_impl_code_draft_prompt_includes_project_artifacts() {
+        let root = make_temp_dir("orc_impl_prompt");
+        fs::create_dir_all(root.join(".project")).expect("create .project");
+        fs::write(
+            root.join(".project").join("project.md"),
+            "# info\nname : sample\n\n# features\n- demo\n\n# rules\n- keep it small\n\n# constraints\n- no mocks\n\n# domains\n## app\n### states\n- draft\n### action\n- implement\n### rules\n- keep boundaries\n",
+        )
+        .expect("write project.md");
+        fs::write(
+            root.join(".project").join("plan.yaml"),
+            "goal: demo\ndomains:\n- app\ndrafts:\n  planned:\n  - demo\n  worked:\n  - demo\n  complete: []\n  error: []\n",
+        )
+        .expect("write plan.yaml");
+        fs::write(
+            root.join("input.md"),
+            "# demo\n- keep it small\n> build app\n",
+        )
+        .expect("write input.md");
+        let item = DraftItemDoc {
+            name: "demo".to_string(),
+            scope: vec!["page_editor_core_shell".to_string()],
+            rule: vec!["render shell".to_string()],
+            step: vec!["build app".to_string()],
+            ..DraftItemDoc::default()
+        };
+
+        let prompt = build_impl_code_draft_prompt(&root, &[item]).expect("build prompt");
+        assert!(prompt.contains("project.md:\n# info"));
+        assert!(prompt.contains("plan.yaml:\ngoal: demo"));
+        assert!(prompt.contains("input.md:\n# demo"));
+        assert!(prompt.contains("feature 식별자로 보고 필요한 파일 경로를 스스로 정해 생성/수정한다."));
+        assert!(prompt.contains("입력으로 전달된 draft_item의 `scope` 파일을 실제로 수정/생성한다."));
+
+        let _ = fs::remove_dir_all(root);
     }
 }
 

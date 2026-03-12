@@ -29,7 +29,7 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const REGISTRY_PATH: &str = "configs/project.yaml";
 const EXEC_LOG_PATH: &str = ".project/log.md";
@@ -42,6 +42,36 @@ const PROJECT_FEEDBACK_MD_PATH: &str = ".project/feedback.md";
 const PROJECT_SCREENSHOT_DIR_PATH: &str = ".project/screenshot";
 const TASK_SESSION_MARKER_PATH: &str = ".project/.task-session-key";
 const TASK_SESSION_KEY_ENV: &str = "ORC_TASK_SESSION_KEY";
+const RC_FORWARD_HEARTBEAT_SEC: u64 = 15;
+
+fn is_orc_workspace_runtime_entry(name: &str) -> bool {
+    matches!(
+        name,
+        ".project"
+            | ".agents"
+            | "project"
+            | "todo.md"
+            | "plan.md"
+            | "input.md"
+            | "report.md"
+            | "drafts_list.yaml"
+    ) || name.starts_with('.')
+}
+
+pub(crate) fn is_effectively_empty_dir(dir: &Path) -> Result<bool, String> {
+    let entries =
+        fs::read_dir(dir).map_err(|e| format!("failed to read {}: {}", dir.display(), e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("failed to read dir entry: {}", e))?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        // ORC runtime metadata/docs should not force workspace-load mode.
+        if is_orc_workspace_runtime_entry(&name) {
+            continue;
+        }
+        return Ok(false);
+    }
+    Ok(true)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ProjectRecord {
@@ -471,7 +501,28 @@ pub(crate) fn run_rc_forward(tail: &[String]) -> Result<String, String> {
     args.push("clit".to_string());
     args.extend(tail.iter().cloned());
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
-    let output = Command::new("cargo")
+    let wait_stop = Arc::new(AtomicBool::new(false));
+    let heartbeat_tail = tail.to_vec();
+    let heartbeat_stop = Arc::clone(&wait_stop);
+    let heartbeat = thread::spawn(move || {
+        let started = Instant::now();
+        let mut next_report_sec = RC_FORWARD_HEARTBEAT_SEC;
+        while !heartbeat_stop.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(250));
+            if heartbeat_stop.load(Ordering::Relaxed) {
+                break;
+            }
+            let elapsed_sec = started.elapsed().as_secs();
+            if elapsed_sec >= next_report_sec {
+                let status = format_rc_forward_heartbeat(&heartbeat_tail, elapsed_sec);
+                println!("{}", status);
+                let _ = io::stdout().flush();
+                let _ = append_check_process_status("clit", &status);
+                next_report_sec += RC_FORWARD_HEARTBEAT_SEC;
+            }
+        }
+    });
+    let status = Command::new("cargo")
         .args([
             "run",
             "--manifest-path",
@@ -481,25 +532,43 @@ pub(crate) fn run_rc_forward(tail: &[String]) -> Result<String, String> {
             "--",
         ])
         .args(&args)
-        .output()
-        .map_err(|e| format!("failed to execute integrated rc: {}", e))?;
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if stdout.is_empty() {
-            Ok("rc command completed".to_string())
-        } else {
-            Ok(stdout)
-        }
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .map_err(|e| format!("failed to execute integrated rc: {}", e));
+    wait_stop.store(true, Ordering::Relaxed);
+    let _ = heartbeat.join();
+    let status = status?;
+    if status.success() {
+        Ok(format!("rc command completed: {}", tail.join(" ")))
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if stderr.is_empty() {
-            Err(format!(
-                "rc command failed (exit={:?})",
-                output.status.code()
-            ))
-        } else {
-            Err(stderr)
-        }
+        Err(format!(
+            "rc command failed (exit={:?}) for {}",
+            status.code(),
+            tail.join(" ")
+        ))
+    }
+}
+
+fn format_rc_forward_heartbeat(tail: &[String], elapsed_sec: u64) -> String {
+    let detail = if tail.is_empty() {
+        "(none)".to_string()
+    } else {
+        tail.join(" ")
+    };
+    format!(
+        "[orc-status] scope=clit elapsed={}s detail=waiting for rc {}",
+        elapsed_sec,
+        trim_rc_forward_detail(&detail)
+    )
+}
+
+fn trim_rc_forward_detail(detail: &str) -> String {
+    let normalized = detail.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.len() <= 160 {
+        normalized
+    } else {
+        format!("{}...", &normalized[..157])
     }
 }
 
@@ -3181,10 +3250,11 @@ pub(crate) fn read_project_info() -> Result<String, String> {
 }
 
 fn check_code_timeout_sec() -> u64 {
-    load_app_config()
-        .as_ref()
-        .map_or(300, config::AppConfig::default_timeout_sec)
-        .max(30)
+    env::var("ORC_CHECK_CODE_TIMEOUT_SEC")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(30)
 }
 
 fn parallel_feedback_timeout_sec() -> u64 {
@@ -4048,9 +4118,35 @@ name : sample
     }
 
     #[test]
+    fn effectively_empty_dir_ignores_orc_runtime_docs() {
+        let root = make_temp_dir("orc_effective_empty");
+        fs::create_dir_all(root.join(".project")).expect("create .project");
+        fs::write(root.join("todo.md"), "# problem\n").expect("write todo.md");
+        fs::write(root.join(".gitignore"), "target/\n").expect("write .gitignore");
+
+        assert!(is_effectively_empty_dir(&root).expect("effective empty dir"));
+
+        fs::write(root.join("README.md"), "real project file\n").expect("write README.md");
+        assert!(!is_effectively_empty_dir(&root).expect("non-empty dir"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn build_parallel_clit_mode_includes_finished_items_and_failures() {
         let mode = build_parallel_clit_mode(&["api".to_string(), "ui".to_string()], 1);
         assert!(mode.contains("api, ui"));
         assert!(mode.contains("failed: 1"));
+    }
+
+    #[test]
+    fn format_rc_forward_heartbeat_includes_tail_args() {
+        let line = format_rc_forward_heartbeat(
+            &["test".to_string(), "-p".to_string(), ".".to_string()],
+            30,
+        );
+        assert!(line.contains("scope=clit"));
+        assert!(line.contains("elapsed=30s"));
+        assert!(line.contains("waiting for rc test -p ."));
     }
 }

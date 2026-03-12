@@ -285,8 +285,8 @@ export function loadDraftFormTemplate(rawType: unknown): {
   fields: Array<{ key: string; value: string }>;
 } {
   const profile = normalizeProfileType(rawType);
-  const draftTemplatePath = path.join(profileAssetsDir(profile), "templates", "draft.yaml");
-  const raw = safeReadFile(draftTemplatePath);
+  const draftItemTemplatePath = path.join(profileAssetsDir(profile), "templates", "draft_item.yaml");
+  const raw = safeReadFile(draftItemTemplatePath);
   if (!raw.trim()) {
     return { profile, modalName: `edit_${profile}_drafts`, raw: "", fields: [] };
   }

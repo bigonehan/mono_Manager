@@ -1,4 +1,5 @@
-- [ ] 프로젝트 생성/수정/삭제 요청 -> registry/project 파일 반영 : 프로젝트 관리 API가 입력값을 파일 상태로 정확히 반영한다
-- [ ] project.md/rules/constraints/features 변경 요청 -> .project 문서 갱신 : 상세 편집 UI에서 변경한 값이 저장 후 재조회 시 일치한다
-- [ ] draft 실행 액션(create/add/impl/check) -> drafts/feature/report 갱신 : 실행 버튼이 실제 orc 함수 호출로 산출물을 만든다
-- [ ] 계획/초안 상태 동기화 요청 -> plan.yaml/drafts_list.yaml 상태 일치 : planned/worked/complete가 문서 간 충돌 없이 호환된다
+- [ ] impl_code_draft 병렬 worker timeout/실패 -> .project/plan.yaml/.project/drafts.yaml 상태 전이 일치 : worker별 상태 기록이 중간 덮어쓰기 없이 보존된다
+- [ ] impl fast-path test 실행 -> 완료 판정이 실행 상태 기반으로 수렴 : test stdout substring 휴리스틱 없이 complete 전이를 결정한다
+- [ ] web smoke 실행 -> 실제 dev server URL/selector 탐지 : 고정 포트와 로그인 전용 selector 없이 앱 유형별 검증 경로를 따른다
+- [ ] cargo test 실행 -> Rust 단위 테스트 통과 : 현재 구조 점검 이후 기본 회귀가 유지된다
+- [ ] voice input 중복 어절 재현 -> input/textarea 값이 중복 없이 반영 : 누적 speech result 배열에서도 단일 문장으로 보인다
