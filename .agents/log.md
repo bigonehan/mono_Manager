@@ -218,6 +218,11 @@
 
 ## 2026-03-09 - 작업한일
 - `plan.yaml`의 draft 상태 집합을 `planned/worked/complete/error`로 유지하고, `drafts.yaml`은 top-level 상태 리스트를 제거한 뒤 `draft` 항목마다 `state`를 직접 가지도록 구조를 변경함.
+
+## 2026-03-14 - 작업한일
+- `src/code.rs`의 `check_code_draft`에 root `drafts.yaml`의 `runner/procedures/steps` runtime 절차 실행을 통합해 `report.md`와 `.project/feedback.md`에 `runtime_check` 결과가 함께 기록되도록 확장함.
+- `src/code.rs` 테스트에 root runtime draft 성공/실패, report/feedback 반영 회귀 케이스를 추가해 기존 `.project/drafts.yaml` 기반 check와 새 root `drafts.yaml` 연동이 함께 검증되도록 보강함.
+- 저장소 루트 `.project/scenario.md`를 validator 형식으로 정리하고, 검증은 `cargo test` 전체 통과와 `.../rust-capture`에서 실제 `cargo run --manifest-path .../rust-orc/Cargo.toml --bin orc -- check_code_draft` 실행으로 확인함.
 - `src/code.rs`에 `draft_item_state_change()`와 `plan_draft_state_change()`를 추가하고, `impl_code_draft`가 병렬 처리 중 각 draft item의 `state`를 갱신한 뒤 같은 이름의 plan 상태를 동기화하도록 수정함.
 - tmux/new-session 완료 판정이 종료 코드만 보지 않도록 `plan.yaml`과 `drafts.yaml` 상태 검증을 worker 실행 성공 조건에 연결함.
 - `src/web_api/mod.rs`의 프로젝트 상태 판정도 `draft_item.state` 기준으로 계산하도록 맞췄고, `cargo test` 27건 통과 후 설치형 `orc`를 재설치함.
@@ -2694,3 +2699,26 @@
 - web 음성 입력 훅이 누적 speech result 배열의 겹치는 transcript segment를 병합하도록 수정해, 동일 어절 반복 없이 input/textarea 값이 한 문장으로 반영되게 함.
 - Playwright 음성 mock helper를 multi-result emission까지 다루도록 확장하고, detail edit/check 경로의 voice input 회귀 테스트에 중복 어절 재현과 임시 project 정리 흐름을 추가함.
 - 검증: `cd assets/web && npm run test:e2e -- --grep "voice input"`, `cd assets/web && npx tsc --noEmit`, `cargo test`.
+
+## 2026-03-14 - 작업한일
+- `run_codex_exec_capture`와 bootstrap in-dir 실행에 prompt 이름 기반 `LLM_START`/`LLM_WAIT` tracing을 추가해 `check-process.md`, `chat.log`, 콘솔에서 `infer_code_spec`, `add_detail_project_code`, `bootstrap_code_project` 병목 단계를 바로 추적할 수 있게 함.
+- React/Vite bootstrap timeout 시 artifact recovery와 최소 scaffold fallback(`package.json`, `index.html`, `src/main.jsx`, `src/App.jsx`, `vite.config.js`)을 적용해 `/home/tree/temp`의 `orc auto "react todo"`가 init 단계를 넘길 수 있게 보강함.
+- `add_code_plan` task session prompt를 제거하고, `rc` web runner의 localhost/host 노출 URL 판단, `nohup` 기반 dev server 유지, Vite 기본 `localhost:5173` URL을 반영해 `orc clit test` screenshot 경로를 정상화함.
+- 검증: `cargo test`, `cargo install --path /home/tree/project/rust-orc`, `cd /home/tree/temp && npm install`, `cd /home/tree/temp && orc clit test -p . -m "react todo screenshot verification"`, `file /home/tree/temp/rc-web.png`.
+
+## 2026-03-14 - 작업한일
+- 전역 override와 skill 문서를 갱신해 `orc-cli-workflow`의 check 단계를 `feedback-followup-agent` 호출 단계로 재정의함.
+- `feedback-followup-agent`는 `check-code` + `orc-cli-workflow` 사용, 코드 체크 수행, `.project/feedback.md` 갱신, feedback 기반 새 `plan.md` 작성 후 문제 해결을 전담하도록 명시함.
+- 검증: 관련 문서에서 `check-code`, `orc-cli-workflow`, `plan.md`, `feedback.md`, `orc send-tmux` 강제 문구 검색 확인.
+
+## 2026-03-14 - 작업한일
+- `/home/tree/temp`의 `orc auto "react todo"` 경로를 정리해 message-mode retry 순서, errored draft 복구, JS fast-path, placeholder 판정이 함께 동작하도록 수정함.
+- `add_detail_project_code`/`build_input_md_auto` 프롬프트를 보강해 `react todo` 요청이 `project.md`/`input.md`에서 bootstrap-only로 축소되지 않게 했고, `impl_code_draft`가 실제 todo UI 산출물을 만든 뒤 retry fast-path로 clean exit되게 함.
+- `rc` browser screenshot 절차는 절대경로 `rc-web.png` 저장과 failure 전파를 추가해, `orc clit test -p . -m "react todo screenshot verification"`가 실제 PNG 스크린샷 파일 생성까지 검증하도록 고침.
+- 검증: `cargo test`, `cargo install --path /home/tree/project/rust-orc`, fresh `/home/tree/temp`에서 `orc auto "react todo"`, `orc clit test -p . -m "react todo screenshot verification"`, `file /home/tree/temp/rc-web.png`.
+
+## 2026-03-17 - 작업한일
+- `src/story.rs`를 삭제하고 `src/main.rs`의 `mod story;` 선언을 제거해 story 모듈 진입점을 완전히 제거함.
+- `src/profile/mod.rs`에서 Story profile/provider/service 구현과 `story` 프로파일 해석 분기를 제거해 `code` 중심으로 정리함.
+- `src/cli.rs`의 프로파일 안내 문구에서 `story`를 제거하고, `src/web_api/mod.rs`의 `ProjectType`에서 `story` alias를 제거함.
+- `rg -n "\\bstory\\b|Story|assets/story" src README.md` 재검증 결과 source 범위에서 story 참조 0건을 확인함.

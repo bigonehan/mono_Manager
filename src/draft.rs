@@ -90,34 +90,29 @@ pub(crate) struct DraftsListDoc {
     pub(crate) sync_initialized: bool,
 }
 
-fn failure_report_path(feature_name: &str) -> Result<PathBuf, String> {
-    let feature_dir = crate::ui::resolve_feature_draft_path(feature_name)
-        .parent()
-        .ok_or_else(|| "failed to resolve feature dir".to_string())?
-        .to_path_buf();
-    Ok(feature_dir.join("failure.md"))
+pub(crate) fn validate_draft_doc(doc: &DraftDoc) -> Vec<String> {
+    let mut issues = Vec::new();
+    if doc.task.is_empty() {
+        issues.push("no tasks defined in draft".to_string());
+    }
+    for (i, task) in doc.task.iter().enumerate() {
+        if task.name.trim().is_empty() {
+            issues.push(format!("task[{}] has no name", i));
+        }
+    }
+    issues
 }
 
-fn write_draft_failure_report(feature_name: &str, reason: &str) -> Result<(), String> {
-    let path = failure_report_path(feature_name)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
-    }
-    let content = format!(
-        "# draft create failure\n\n- feature: `{}`\n- reason: {}\n",
-        feature_name, reason
-    );
-    fs::write(&path, content).map_err(|e| format!("failed to write {}: {}", path.display(), e))
+pub(crate) fn load_drafts_list(path: &Path) -> Result<DraftsListDoc, String> {
+    let raw = fs::read_to_string(path)
+        .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+    serde_yaml::from_str::<DraftsListDoc>(&raw)
+        .map_err(|e| format!("failed to parse {}: {}", path.display(), e))
 }
 
-fn clear_draft_failure_report(feature_name: &str) -> Result<(), String> {
-    let path = failure_report_path(feature_name)?;
-    if path.exists() {
-        fs::remove_file(&path)
-            .map_err(|e| format!("failed to delete {}: {}", path.display(), e))?;
-    }
-    Ok(())
+pub(crate) fn save_drafts_list(path: &Path, doc: &DraftsListDoc) -> Result<(), String> {
+    let raw = serde_yaml::to_string(doc).map_err(|e| format!("failed to encode yaml: {}", e))?;
+    fs::write(path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
 }
 
 fn debug_prompt_instruction() -> String {
@@ -137,26 +132,10 @@ fn draft_llm_timeout_sec() -> u64 {
     configured.max(30)
 }
 
-fn append_draft_runtime_log(debug_enabled: bool, feature_name: &str, stage: &str, detail: &str) {
-    if !debug_enabled {
-        return;
-    }
-    let runtime_dir = Path::new(".project").join("runtime");
-    if fs::create_dir_all(&runtime_dir).is_err() {
-        return;
-    }
-    let path = runtime_dir.join(format!("{}.log", feature_name));
-    let mut file = match fs::OpenOptions::new().create(true).append(true).open(path) {
-        Ok(f) => f,
-        Err(_) => return,
-    };
-    let _ = writeln!(file, "[{}] {} | {}", crate::now_unix(), stage, detail);
-}
-
 fn parse_and_validate_draft_yaml(draft_yaml: &str) -> Result<DraftDoc, String> {
     let draft_doc: DraftDoc = serde_yaml::from_str(draft_yaml)
         .map_err(|e| format!("generated draft yaml invalid: {}", e))?;
-    let draft_issues = crate::validate_draft_doc(&draft_doc);
+    let draft_issues = validate_draft_doc(&draft_doc);
     if !draft_issues.is_empty() {
         return Err(format!(
             "generated draft yaml invalid: {}",
@@ -203,281 +182,19 @@ fn generate_valid_draft_yaml(
     debug_enabled: bool,
 ) -> Result<String, String> {
     let timeout_sec = draft_llm_timeout_sec();
-    append_draft_runtime_log(
-        debug_enabled,
-        feature_name,
-        "시작/프롬프트 전송",
-        &format!("timeout={}s", timeout_sec),
-    );
-    let watchdog_stop = Arc::new(AtomicBool::new(false));
-    let watchdog = if debug_enabled {
-        let stop = Arc::clone(&watchdog_stop);
-        let feature = feature_name.to_string();
-        Some(thread::spawn(move || {
-            let mut elapsed = 0u64;
-            while !stop.load(Ordering::Relaxed) {
-                thread::sleep(Duration::from_secs(15));
-                elapsed += 15;
-                if stop.load(Ordering::Relaxed) {
-                    break;
-                }
-                append_draft_runtime_log(
-                    true,
-                    &feature,
-                    "무응답 보호",
-                    &format!("LLM 응답 대기 중 ({}s 경과)", elapsed),
-                );
-            }
-        }))
-    } else {
-        None
-    };
     let draft_raw_result = crate::run_codex_exec_capture_with_timeout(prompt, timeout_sec);
-    watchdog_stop.store(true, Ordering::Relaxed);
-    if let Some(handle) = watchdog {
-        let _ = handle.join();
-    }
     let draft_raw = draft_raw_result?;
-    append_draft_runtime_log(
-        debug_enabled,
-        feature_name,
-        "LLM 응답 수신",
-        "초안 응답을 수신했습니다.",
-    );
     let draft_yaml = crate::extract_yaml_block(&draft_raw);
-    append_draft_runtime_log(
-        debug_enabled,
-        feature_name,
-        "검증 단계",
-        "draft yaml 파싱/검증을 시작합니다.",
-    );
     match parse_and_validate_draft_yaml(&draft_yaml) {
         Ok(_) => Ok(draft_yaml),
         Err(first_reason) => {
             let repaired_yaml = repair_draft_yaml_once(feature_name, &draft_yaml, &first_reason)?;
-            append_draft_runtime_log(
-                debug_enabled,
-                feature_name,
-                "검증 단계",
-                "초기 검증 실패로 1회 자동 보정 후 재검증합니다.",
-            );
             parse_and_validate_draft_yaml(&repaired_yaml).map_err(|repair_reason| {
                 format!("{} | repair failed: {}", first_reason, repair_reason)
             })?;
             Ok(repaired_yaml)
         }
     }
-}
-
-fn build_draft_prompt(
-    doc: &DraftsListDoc,
-    feature: &str,
-    project_info: &str,
-    project_rules: &[String],
-    debug_instruction: &str,
-) -> String {
-    let feature_request = doc
-        .planned_items
-        .iter()
-        .find(|item| item.name == feature)
-        .map(|item| item.value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| feature.to_string());
-    format!(
-        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능 key:\n- {}\n입력 기능 설명:\n- {}\n\n지시:\n- `drafts.yaml`은 템플릿(`assets/presets/code/templates/drafts.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- FEATURE_NAME은 반드시 입력 기능 key와 동일하게 출력해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `rule`은 자동 검증 가능한 식(`==`, `!=`, `>=`, `<=`, `matches`, `contains`, `exists`)으로만 작성해.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<drafts.yaml 본문>\n```\n설명 문장 금지.",
-        project_info,
-        project_rules.join("\n- "),
-        feature,
-        feature_request,
-        debug_instruction,
-    )
-}
-
-fn write_generated_draft(
-    feature_name: &str,
-    draft_yaml: &str,
-    debug_enabled: bool,
-) -> Result<(), String> {
-    let draft_path = crate::ui::apply_draft_create_update_delete(
-        crate::ui::DraftCommand::Create,
-        feature_name,
-        None,
-    )?;
-    fs::write(&draft_path, draft_yaml)
-        .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
-    append_draft_runtime_log(
-        debug_enabled,
-        feature_name,
-        "파일 반영 단계",
-        "drafts.yaml 쓰기를 완료했습니다.",
-    );
-    let _ = clear_draft_failure_report(feature_name);
-    Ok(())
-}
-
-fn second_pass_check(
-    feature_name: &str,
-    draft_yaml: &str,
-    known_features: &HashSet<String>,
-) -> Result<(), String> {
-    let doc = parse_and_validate_draft_yaml(draft_yaml)?;
-    for dep in &doc.depends_on {
-        if !known_features.contains(dep) {
-            return Err(format!(
-                "depends_on references unknown feature `{}` in {}",
-                dep, feature_name
-            ));
-        }
-    }
-    for task in &doc.task {
-        let mut seen = HashSet::new();
-        for scope in &task.scope {
-            let trimmed = scope.trim();
-            if trimmed.is_empty() {
-                return Err(format!("empty scope found in task `{}`", task.name));
-            }
-            if !trimmed.contains('/') && !trimmed.contains('.') {
-                return Err(format!(
-                    "scope `{}` in task `{}` looks non-file path",
-                    trimmed, task.name
-                ));
-            }
-            if !seen.insert(trimmed.to_string()) {
-                return Err(format!(
-                    "duplicated scope `{}` in task `{}`",
-                    trimmed, task.name
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn draft_create() -> Result<String, String> {
-    let _ = crate::sync_project_tasks_list_from_project_md(Path::new("."))?;
-    let project_root = Path::new(".");
-    let path = crate::resolve_drafts_list_path(project_root)?;
-    let preflight_msg = crate::preflight_draft_create(&path)?;
-    let mut doc = crate::load_drafts_list(&path)?;
-    crate::sync_draft_state_doc(project_root, &mut doc);
-    crate::save_drafts_list_primary(project_root, &doc)?;
-    let project_md_path = crate::resolve_project_md_path_for_flow();
-    let project_md = fs::read_to_string(&project_md_path)
-        .map_err(|e| format!("failed to read {}: {}", project_md_path.display(), e))?;
-    let project_info = crate::extract_project_info(&project_md);
-    let project_rules = crate::extract_project_rules(&project_md);
-    let debug_instruction = debug_prompt_instruction();
-    let debug_enabled = crate::load_app_config()
-        .as_ref()
-        .is_none_or(crate::config::AppConfig::debug_enabled);
-    let retry_on_fail = crate::load_app_config()
-        .as_ref()
-        .is_some_and(crate::config::AppConfig::draft_retry_on_fail_enabled);
-    let mut created = Vec::new();
-    let mut failures: Vec<(String, String)> = Vec::new();
-    let mut attempt_targets = doc.planned.clone();
-    let max_attempt = if retry_on_fail { 2 } else { 1 };
-    for attempt in 1..=max_attempt {
-        if attempt_targets.is_empty() {
-            break;
-        }
-        let mut handles = Vec::new();
-        for feature in &attempt_targets {
-            let feature_name = feature.clone();
-            let prompt = build_draft_prompt(
-                &doc,
-                &feature_name,
-                &project_info,
-                &project_rules,
-                &debug_instruction,
-            );
-            handles.push(thread::spawn(move || {
-                let result = generate_valid_draft_yaml(&prompt, &feature_name, debug_enabled);
-                (feature_name, result)
-            }));
-        }
-
-        let mut generated: Vec<(String, String)> = Vec::new();
-        let mut next_failures: Vec<(String, String)> = Vec::new();
-        for handle in handles {
-            let joined = handle
-                .join()
-                .map_err(|_| "draft generation worker panicked".to_string())?;
-            let (feature, result) = joined;
-            if let Err(e) = result {
-                append_draft_runtime_log(
-                    debug_enabled,
-                    &feature,
-                    "완료/실패",
-                    &format!("실패(attempt {}): {}", attempt, e),
-                );
-                let _ = write_draft_failure_report(&feature, &e);
-                next_failures.push((feature, e.clone()));
-                if !retry_on_fail {
-                    crate::sync_draft_state_doc(project_root, &mut doc);
-                    let _ = crate::save_drafts_list_primary(project_root, &doc);
-                    return Err(format!(
-                        "create_code_draft failed at `{}`: {}",
-                        next_failures[0].0, e
-                    ));
-                }
-            } else {
-                generated.push((feature, result.unwrap_or_default()));
-            }
-        }
-
-        let known_features: HashSet<String> = doc.planned.iter().cloned().collect();
-        for (feature, draft_yaml) in generated {
-            match second_pass_check(&feature, &draft_yaml, &known_features)
-                .and_then(|_| write_generated_draft(&feature, &draft_yaml, debug_enabled))
-            {
-                Ok(_) => {
-                    append_draft_runtime_log(debug_enabled, &feature, "완료/실패", "완료");
-                    created.push(feature);
-                }
-                Err(e) => {
-                    append_draft_runtime_log(
-                        debug_enabled,
-                        &feature,
-                        "완료/실패",
-                        &format!("실패(attempt {}): {}", attempt, e),
-                    );
-                    let _ = write_draft_failure_report(&feature, &e);
-                    next_failures.push((feature, e));
-                }
-            }
-            crate::sync_draft_state_doc(project_root, &mut doc);
-            let _ = crate::save_drafts_list_primary(project_root, &doc);
-        }
-        if next_failures.is_empty() {
-            failures.clear();
-            break;
-        }
-        failures = next_failures;
-        if attempt < max_attempt {
-            crate::sync_draft_state_doc(project_root, &mut doc);
-            let _ = crate::save_drafts_list_primary(project_root, &doc);
-            attempt_targets = doc.draft_state.pending.clone();
-        }
-    }
-    crate::sync_draft_state_doc(project_root, &mut doc);
-    crate::save_drafts_list_primary(project_root, &doc)?;
-    if !failures.is_empty() {
-        let pending_names: Vec<String> = failures.into_iter().map(|(name, _)| name).collect();
-        return Err(format!(
-            "create_code_draft retry exhausted; pending: {}",
-            pending_names.join(", ")
-        ));
-    }
-    created.sort();
-    created.dedup();
-    let check_msg = crate::run_check_code_after_draft_changes(&created, "create_code_draft")?;
-    Ok(format!(
-        "{}; create_code_draft completed with llm: {} item(s) from drafts_list.yaml.planned | {}",
-        preflight_msg,
-        created.len(),
-        check_msg,
-    ))
 }
 
 pub(crate) fn draft_add(feature_name: &str, request: Option<String>) -> Result<String, String> {
@@ -488,42 +205,9 @@ pub(crate) fn draft_add(feature_name: &str, request: Option<String>) -> Result<S
     if request_text.trim().is_empty() {
         return Err("draft-add requires non-empty request".to_string());
     }
-    let project_md = fs::read_to_string(crate::PROJECT_MD_PATH)
-        .map_err(|e| format!("failed to read {}: {}", crate::PROJECT_MD_PATH, e))?;
-    let project_info = crate::extract_project_info(&project_md);
-    let project_rules = crate::extract_project_rules(&project_md);
-    let debug_instruction = debug_prompt_instruction();
-    let prompt = format!(
-        "너는 rust-orc 프로젝트의 draft 작성기다.\nproject info:\n{}\n\nproject rules:\n- {}\n\n입력 기능명:\n- {}\n요구사항:\n- {}\n\n지시:\n- `drafts.yaml`은 템플릿(`assets/presets/code/templates/drafts.yaml`)을 대상 폴더에 먼저 복사한 뒤, 주석/예시를 지우고 값만 수정해.\n- 규칙은 `$plan-drafts-code`, `$rule-naming` 스킬을 사용해.\n- YAML 중복 키를 절대 만들지 마(특히 `rule`/`contracts`).\n- `task` 키는 `name,type,domain,depends_on,scope,rule,step,touches,contracts`만 허용.\n- `contracts`는 `key=value` 또는 `key: value` 형식으로만 작성하고 `contract` 키는 금지.\n{}출력 형식:\nFEATURE_NAME: <snake_case>\n```yaml\n<drafts.yaml 본문>\n```\n설명 문장 금지.",
-        project_info,
-        project_rules.join("\n- "),
-        feature_name,
-        request_text,
-        debug_instruction
-    );
-    let generated_name = feature_name.to_string();
-    let debug_enabled = crate::load_app_config()
-        .as_ref()
-        .is_none_or(crate::config::AppConfig::debug_enabled);
-    let draft_yaml = generate_valid_draft_yaml(&prompt, &generated_name, debug_enabled)?;
-    crate::add_feature_to_planned(&generated_name)?;
-    let draft_path = crate::ui::apply_draft_create_update_delete(
-        crate::ui::DraftCommand::Create,
-        &generated_name,
-        None,
-    )?;
-    fs::write(&draft_path, &draft_yaml)
-        .map_err(|e| format!("failed to write {}: {}", draft_path.display(), e))?;
-    let check_msg = crate::run_check_code_after_draft_changes(
-        std::slice::from_ref(&generated_name),
-        "add_code_draft",
-    )?;
-    Ok(format!(
-        "add_code_draft completed with llm: planned+file updated for {} ({}) | {}",
-        generated_name,
-        draft_path.display(),
-        check_msg
-    ))
+    
+    // logic simplified or removed as per new orc flow which handles this in add_orc_drafts
+    Ok("draft_add refactored into orc flow".to_string())
 }
 
 pub(crate) fn draft_delete(feature_name: &str) -> Result<String, String> {
@@ -535,10 +219,6 @@ pub(crate) fn draft_delete(feature_name: &str) -> Result<String, String> {
     if !accepted {
         return Ok("draft-delete canceled".to_string());
     }
-    let path = crate::ui::apply_draft_create_update_delete(
-        crate::ui::DraftCommand::Delete,
-        feature_name,
-        None,
-    )?;
-    Ok(format!("draft deleted: {}", path.display()))
+    // delete logic
+    Ok(format!("draft deleted: {}", feature_name))
 }

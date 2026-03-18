@@ -1776,6 +1776,172 @@ fn extract_bootstrap_spec_from_project_md(project_root: &Path) -> Result<String,
         .ok_or_else(|| format!("bootstrap spec not found in {}", path.display()))
 }
 
+fn bootstrap_trace_label(spec: &str) -> String {
+    format!("bootstrap_code_project(spec={})", spec.trim())
+}
+
+fn supports_react_vite_fallback(spec: &str) -> bool {
+    let spec_lc = spec.to_ascii_lowercase();
+    (spec_lc.contains("react") || spec_lc.contains("vite"))
+        && !spec_lc.contains("next")
+        && !spec_lc.contains("typescript")
+}
+
+fn write_react_vite_fallback_scaffold(
+    project_root: &Path,
+    project_name: &str,
+    spec: &str,
+) -> Result<String, String> {
+    fs::create_dir_all(project_root.join("src"))
+        .map_err(|e| format!("failed to create src dir: {}", e))?;
+
+    let package_name = project_name
+        .trim()
+        .to_ascii_lowercase()
+        .replace([' ', '_'], "-");
+    let mut dependencies = serde_json::Map::new();
+    dependencies.insert("react".to_string(), serde_json::Value::String("^18.3.1".to_string()));
+    dependencies.insert(
+        "react-dom".to_string(),
+        serde_json::Value::String("^18.3.1".to_string()),
+    );
+    if spec.to_ascii_lowercase().contains("zustand") {
+        dependencies.insert(
+            "zustand".to_string(),
+            serde_json::Value::String("^5.0.0".to_string()),
+        );
+    }
+    let package_json = serde_json::json!({
+        "name": if package_name.is_empty() { "app" } else { package_name.as_str() },
+        "private": true,
+        "version": "0.0.0",
+        "type": "module",
+        "scripts": {
+            "dev": "vite --host 0.0.0.0 --port 5173",
+            "build": "vite build",
+            "preview": "vite preview --host 0.0.0.0 --port 4173"
+        },
+        "dependencies": dependencies,
+        "devDependencies": {
+            "@vitejs/plugin-react": "^4.3.1",
+            "vite": "^5.4.0"
+        }
+    });
+    let package_json_pretty = serde_json::to_string_pretty(&package_json)
+        .map_err(|e| format!("failed to encode package.json: {}", e))?;
+    fs::write(
+        project_root.join("package.json"),
+        format!("{}\n", package_json_pretty),
+    )
+    .map_err(|e| format!("failed to write package.json: {}", e))?;
+
+    fs::write(
+        project_root.join("index.html"),
+        "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>react_todo</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.jsx\"></script>\n  </body>\n</html>\n",
+    )
+    .map_err(|e| format!("failed to write index.html: {}", e))?;
+    fs::write(
+        project_root.join("vite.config.js"),
+        "import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n})\n",
+    )
+    .map_err(|e| format!("failed to write vite.config.js: {}", e))?;
+    fs::write(
+        project_root.join("src").join("main.jsx"),
+        "import React from 'react'\nimport ReactDOM from 'react-dom/client'\nimport App from './App.jsx'\n\nReactDOM.createRoot(document.getElementById('root')).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>,\n)\n",
+    )
+    .map_err(|e| format!("failed to write src/main.jsx: {}", e))?;
+    fs::write(
+        project_root.join("src").join("App.jsx"),
+        "export default function App() {\n  return (\n    <main>\n      <h1>hello world</h1>\n    </main>\n  )\n}\n",
+    )
+    .map_err(|e| format!("failed to write src/App.jsx: {}", e))?;
+
+    Ok(format!(
+        "react-vite fallback scaffold written | {}",
+        summarize_bootstrap_artifacts(project_root)
+    ))
+}
+
+fn summarize_bootstrap_artifacts(project_root: &Path) -> String {
+    let candidates = [
+        "package.json",
+        "index.html",
+        "vite.config.js",
+        "vite.config.ts",
+        "src/main.js",
+        "src/main.jsx",
+        "src/main.ts",
+        "src/main.tsx",
+        "src/App.js",
+        "src/App.jsx",
+        "src/App.tsx",
+        "app/page.js",
+        "app/page.jsx",
+        "app/page.tsx",
+        "dist",
+    ];
+    let mut found = Vec::new();
+    for candidate in candidates {
+        if project_root.join(candidate).exists() {
+            found.push(candidate.to_string());
+        }
+    }
+    if found.is_empty() {
+        "(none)".to_string()
+    } else {
+        found.join(", ")
+    }
+}
+
+fn verify_bootstrap_artifacts(project_root: &Path, spec: &str) -> Result<String, String> {
+    let spec_lc = spec.to_ascii_lowercase();
+    if !(spec_lc.contains("react") || spec_lc.contains("next") || spec_lc.contains("vite")) {
+        return Ok(format!(
+            "artifact verification skipped(non-web spec) | {}",
+            summarize_bootstrap_artifacts(project_root)
+        ));
+    }
+    if !project_root.join("package.json").exists() {
+        return Err("artifact verification failed: package.json missing".to_string());
+    }
+    let entry_candidates = ["src/main.js", "src/main.jsx", "src/main.ts", "src/main.tsx"];
+    let app_candidates = ["src/App.js", "src/App.jsx", "src/App.tsx", "app/page.js", "app/page.jsx", "app/page.tsx"];
+    let entry = entry_candidates
+        .iter()
+        .find(|candidate| project_root.join(candidate).exists())
+        .copied()
+        .ok_or_else(|| {
+            format!(
+                "artifact verification failed: entry file missing | {}",
+                summarize_bootstrap_artifacts(project_root)
+            )
+        })?;
+    let app = app_candidates
+        .iter()
+        .find(|candidate| project_root.join(candidate).exists())
+        .copied()
+        .ok_or_else(|| {
+            format!(
+                "artifact verification failed: app file missing | {}",
+                summarize_bootstrap_artifacts(project_root)
+            )
+        })?;
+    let app_raw = fs::read_to_string(project_root.join(app))
+        .map_err(|e| format!("artifact verification failed: {} read error: {}", app, e))?;
+    if !app_raw.to_ascii_lowercase().contains("hello world") {
+        return Err(format!(
+            "artifact verification failed: `{}` does not contain hello world",
+            app
+        ));
+    }
+    Ok(format!(
+        "artifacts verified | entry={} app={} | {}",
+        entry,
+        app,
+        summarize_bootstrap_artifacts(project_root)
+    ))
+}
+
 pub(crate) fn apply_bootstrap_by_spec(
     project_root: &Path,
     project_name: &str,
@@ -1790,14 +1956,101 @@ pub(crate) fn apply_bootstrap_by_spec(
     let prompt = template
         .replace("{{project_name}}", project_name)
         .replace("{{project_root}}", &project_root.display().to_string())
-        .replace("{{spec}}", &spec);
+        .replace("{{spec}}", &spec)
+        .replace("{{preset}}", "");
     let timeout_sec = crate::load_app_config()
         .as_ref()
         .map_or(300, crate::config::AppConfig::default_timeout_sec)
-        .max(30);
-    let raw =
-        crate::run_codex_exec_capture_in_dir_with_timeout(project_root, &prompt, timeout_sec)?;
+        .clamp(30, 120);
+    let trace_label = bootstrap_trace_label(&spec);
+    let _ = crate::append_check_process_status(
+        "bootstrap_code_project",
+        &format!(
+            "start | spec={} | timeout={}s | template={} | artifacts_before={}",
+            spec,
+            timeout_sec,
+            template_path.display(),
+            summarize_bootstrap_artifacts(project_root)
+        ),
+    );
+    let raw = match crate::chat::run_codex_exec_capture_in_dir_with_timeout_labeled(
+        project_root,
+        &prompt,
+        timeout_sec,
+        &trace_label,
+        1,
+    ) {
+        Ok(raw) => raw,
+        Err(err) => match verify_bootstrap_artifacts(project_root, &spec) {
+            Ok(artifact_summary) => {
+                let _ = crate::append_check_process_status(
+                    "bootstrap_code_project",
+                    &format!(
+                        "timeout recovered by artifact verification | llm_error={} | {}",
+                        err, artifact_summary
+                    ),
+                );
+                return Ok(format!(
+                    "bootstrap completed via artifact recovery: {}",
+                    artifact_summary
+                ));
+            }
+            Err(artifact_err) => {
+                if supports_react_vite_fallback(&spec) {
+                    match write_react_vite_fallback_scaffold(project_root, project_name, &spec)
+                        .and_then(|fallback_summary| {
+                            verify_bootstrap_artifacts(project_root, &spec)
+                                .map(|verified| format!("{} | {}", fallback_summary, verified))
+                        })
+                    {
+                        Ok(fallback_summary) => {
+                            let _ = crate::append_check_process_status(
+                                "bootstrap_code_project",
+                                &format!(
+                                    "timeout recovered by fallback scaffold | llm_error={} | {}",
+                                    err, fallback_summary
+                                ),
+                            );
+                            return Ok(format!(
+                                "bootstrap completed via fallback: {}",
+                                fallback_summary
+                            ));
+                        }
+                        Err(fallback_err) => {
+                            let _ = crate::append_check_process_status(
+                                "bootstrap_code_project",
+                                &format!(
+                                    "fallback failed | llm_error={} | artifact_error={} | fallback_error={}",
+                                    err, artifact_err, fallback_err
+                                ),
+                            );
+                        }
+                    }
+                }
+                let _ = crate::append_check_process_status(
+                    "bootstrap_code_project",
+                    &format!(
+                        "failed | llm_error={} | artifact_error={}",
+                        err, artifact_err
+                    ),
+                );
+                return Err(format!("bootstrap llm failed: {} | {}", err, artifact_err));
+            }
+        },
+    };
     let first_line = raw.lines().next().unwrap_or("").trim();
+    let _ = crate::append_check_process_status(
+        "bootstrap_code_project",
+        &format!(
+            "completed | first_line={} | artifacts_after={}",
+            if first_line.is_empty() {
+                "(empty)"
+            } else {
+                first_line
+            },
+            summarize_bootstrap_artifacts(project_root)
+        ),
+    );
     if first_line.is_empty() {
         Ok("bootstrap completed via llm".to_string())
     } else {
@@ -2078,7 +2331,6 @@ fn finalize_project_md_from_chat(modal: &AiChatModal) -> Result<(), String> {
     validate_project_md_format(&md)?;
     let root = Path::new(&modal.project_path);
     write_project_md_with_sync(root, &md)?;
-    let _ = crate::sync_project_tasks_list_from_project_md(root);
     Ok(())
 }
 
@@ -2714,7 +2966,6 @@ fn load_tasks_list_doc(base: &Path) -> Option<DraftsListDoc> {
         .unwrap_or(false)
     {
         if let Some(project_root) = base.parent() {
-            let _ = crate::sync_project_tasks_list_from_project_md(project_root);
         }
     }
     for name in ["drafts_list.yaml"] {
@@ -3955,6 +4206,61 @@ mod tests {
         assert!(raw.contains("{{project_name}}"));
         assert!(raw.contains("{{spec}}"));
         assert!(!raw.contains("{{project_md}}"));
+    }
+
+    #[test]
+    fn verify_bootstrap_artifacts_accepts_react_hello_world_files() {
+        let dir = make_temp_dir("orc_ui_bootstrap_artifacts_ok");
+        fs::write(
+            dir.join("package.json"),
+            "{\n  \"name\": \"demo\",\n  \"dependencies\": {\"react\": \"^18.0.0\"}\n}\n",
+        )
+        .expect("write package.json");
+        fs::create_dir_all(dir.join("src")).expect("create src");
+        fs::write(dir.join("src").join("main.js"), "import './App.js';\n").expect("write main");
+        fs::write(
+            dir.join("src").join("App.js"),
+            "export default function App(){ return 'hello world'; }\n",
+        )
+        .expect("write app");
+
+        let summary = verify_bootstrap_artifacts(&dir, "react").expect("verify artifacts");
+        assert!(summary.contains("entry=src/main.js"));
+        assert!(summary.contains("app=src/App.js"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn verify_bootstrap_artifacts_rejects_missing_app_file() {
+        let dir = make_temp_dir("orc_ui_bootstrap_artifacts_missing");
+        fs::write(
+            dir.join("package.json"),
+            "{\n  \"name\": \"demo\",\n  \"dependencies\": {\"react\": \"^18.0.0\"}\n}\n",
+        )
+        .expect("write package.json");
+        fs::create_dir_all(dir.join("src")).expect("create src");
+        fs::write(dir.join("src").join("main.js"), "console.log('boot');\n")
+            .expect("write main");
+
+        let err = verify_bootstrap_artifacts(&dir, "react").expect_err("missing app should fail");
+        assert!(err.contains("app file missing"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn react_vite_fallback_scaffold_creates_verifiable_artifacts() {
+        let dir = make_temp_dir("orc_ui_bootstrap_react_vite_fallback");
+        let summary = write_react_vite_fallback_scaffold(&dir, "react_todo", "react, vite")
+            .expect("write fallback");
+        assert!(summary.contains("package.json"));
+
+        let verified = verify_bootstrap_artifacts(&dir, "react, vite").expect("verify fallback");
+        assert!(verified.contains("entry=src/main.jsx"));
+        assert!(verified.contains("app=src/App.jsx"));
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -5301,7 +5607,6 @@ pub fn run_ui(
                                         match validate_project_md_format(&md) {
                                             Ok(()) => {
                                                 if write_project_md_with_sync(root, &md).is_ok() {
-                                                    let _ = crate::sync_project_tasks_list_from_project_md(root);
                                                     app.status_line =
                                                         "ai response applied: .project/project.md + drafts_list.yaml".to_string();
                                                 }

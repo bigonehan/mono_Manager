@@ -1,4 +1,4 @@
-recentActivepane: CbgR
+recentActivepane: 4isu
 projects:
   - id: CbgR
     name: web/next
@@ -6,7 +6,7 @@ projects:
     description: monorepo template package
     created_at: "1772888984"
     updated_at: "1772963389"
-    selected: true
+    selected: false
     project_type: mono
   - id: Crqr
     name: blender-bots
@@ -21,7 +21,7 @@ projects:
     path: /home/tree
     description: todo manager app
     created_at: "1772265581"
-    updated_at: "1772888103"
+    updated_at: "1773794878"
     selected: false
     project_type: code
   - id: 501S
@@ -37,15 +37,7 @@ projects:
     path: /home/tree/home
     description: loaded project
     created_at: "1772888117"
-    updated_at: "1772892629"
-    selected: false
-    project_type: code
-  - id: 7zpF
-    name: pw-1773077961064
-    path: /tmp/tmp_project
-    description: playwright e2e project
-    created_at: "1772888365"
-    updated_at: "1773077963"
+    updated_at: "1773794880"
     selected: false
     project_type: code
   - id: ue6A
@@ -213,7 +205,7 @@ projects:
     path: /tmp/pw-episode-1773074123280
     description: episode ui verification
     created_at: "1773074125"
-    updated_at: "1773074126"
+    updated_at: "1773794883"
     selected: false
     project_type: code
   - id: HbvM
@@ -312,29 +304,13 @@ projects:
     updated_at: "1773076782"
     selected: false
     project_type: code
-  - id: dyka
-    name: pw-auto-1773076782007-other
-    path: /tmp/pw-auto-1773076782007-other
-    description: auto ui verification
-    created_at: "1773076782"
-    updated_at: "1773076782"
-    selected: false
-    project_type: code
-  - id: mFE2
-    name: pw-episode-1773077963932
-    path: /tmp/pw-episode-1773077963932
-    description: episode ui verification
-    created_at: "1773077964"
-    updated_at: "1773077965"
-    selected: false
-    project_type: code
   - id: 4isu
     name: pw-auto-1773077965421
     path: /tmp/pw-auto-1773077965421
     description: auto ui verification
     created_at: "1773077965"
-    updated_at: "1773077966"
-    selected: false
+    updated_at: "1773794906"
+    selected: true
     project_type: code
   - id: j3Gh
     name: pw-auto-1773077965421-other

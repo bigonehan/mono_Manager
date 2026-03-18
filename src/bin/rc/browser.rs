@@ -1,3 +1,5 @@
+use std::path::Path;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeadMode {
     On,
@@ -82,9 +84,10 @@ pub fn snapshot_command(agent_browser_command: &str) -> String {
     format!("{agent_browser_command} snapshot -i")
 }
 
-pub fn screenshot_and_close_command(agent_browser_command: &str) -> String {
+pub fn screenshot_and_close_command(agent_browser_command: &str, output_path: &Path) -> String {
+    let output = output_path.display().to_string().replace('"', "\\\"");
     format!(
-        "{agent_browser_command} screenshot rc-web.png && printf 'Screenshot saved: rc-web.png\\n' && {agent_browser_command} close"
+        "{agent_browser_command} screenshot \"{output}\" && test -f \"{output}\" && printf 'Screenshot saved: {output}\\n' && {agent_browser_command} close"
     )
 }
 
@@ -143,6 +146,10 @@ mod tests {
         assert_eq!(
             snapshot_command("agent-browser"),
             "agent-browser snapshot -i"
+        );
+        assert!(
+            screenshot_and_close_command("agent-browser", Path::new("/tmp/rc-web.png"))
+                .contains("/tmp/rc-web.png")
         );
         assert!(wait_for_url_command("http://127.0.0.1:3000")
             .contains("python3 - \"http://127.0.0.1:3000\" <<'PY'"));

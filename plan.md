@@ -1,13 +1,21 @@
 ## 문제
-- `rc clit test`의 step 실행은 장시간 무응답 구간 동안 heartbeat가 없어 hang처럼 보인다.
-- `orc clit ...` forwarding 경로도 `cargo run --bin rc`를 기다리는 동안 중간 상태를 보여주지 않는다.
+- `story` 관련 코드/프로파일이 남아 있어 legacy 경로(`assets/story/...`)와 story 명령 진입점이 계속 노출된다.
+- 요청사항은 story 관련 부분 전체 제거다.
 
 ## 해결책
-- `src/bin/rc.rs`의 step 실행을 polling 기반으로 바꿔 장시간 step마다 주기적인 heartbeat를 stdout/stderr와 execution record에 남긴다.
-- `src/main.rs`의 `run_rc_forward`도 장시간 대기 중 heartbeat를 출력해 forwarding 경로의 무응답 구간을 줄인다.
-- 회귀를 막기 위해 heartbeat 메시지 포맷을 검증하는 단위 테스트를 추가한다.
+- `src/main.rs`에서 `mod story;` 제거.
+- `src/profile/mod.rs`에서 Story 전용 타입/구현/매핑(`is_known_profile_name`, `resolve_profile`) 제거.
+- `src/cli.rs` usage의 profile 목록에서 `story` 제거.
+- `src/web_api/mod.rs`의 `ProjectType`에서 `story` alias 제거.
+- `src/story.rs` 파일 삭제.
 
 ## 검증
+- `rg -n "\\bstory\\b|Story|assets/story" src README.md`
 - `cargo test`
-- `env PATH="/tmp/orc-fake-bin-...:$PATH" timeout 20 target/debug/rc clit test -p <slow-target> -m smoke`
-- `env PATH="/tmp/orc-fake-bin-...:$PATH" timeout 20 target/debug/orc clit test -p <slow-target> -m smoke`
+- `cargo run --bin orc -- --help`
+- `cargo install --path /home/tree/project/rust-orc`
+
+## 재시도 반영
+- `cargo test` 실패 원인은 story 제거와 독립적인 기존 unresolved symbol/시그니처 불일치 오류로 확인됨.
+- 이번 턴 강제 실행 항목: story 제거 완료 여부를 `rg`로 먼저 확정하고, `cargo test`를 동일 조건으로 1회 재시도한다.
+- `cargo install`도 동일 오류로 실패하여, install 재시도는 컴파일 깨짐 복구 이후 단계로 이관한다.

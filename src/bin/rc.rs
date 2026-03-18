@@ -464,7 +464,7 @@ fn execute_test(input: ParsedCliInput, config: &Config) -> Result<()> {
         format!("{} generated", PLAN_FILE),
         true,
     );
-    run_check(&input.target_path, &drafts, &mut log, config, &mut recorder)?;
+    let check_result = run_check(&input.target_path, &drafts, &mut log, config, &mut recorder);
     match get_current_state(&input.target_path, &runner, config) {
         Ok(state) => log.output_log.push(format!("current-state:\n{state}")),
         Err(error) => log
@@ -485,7 +485,7 @@ fn execute_test(input: ParsedCliInput, config: &Config) -> Result<()> {
         }
     }
     recorder.close();
-    Ok(())
+    check_result
 }
 
 fn detect_runner(target_path: &Path) -> Result<RunnerKind> {
@@ -697,7 +697,7 @@ fn plan_execute_line(target_path: &Path, runner: &RunnerKind, config: &Config) -
         RunnerKind::Web => format!(
             "{} -> browser open {}",
             detect_web_server_command(target_path),
-            browser_reachable_url(&config.browser_url)
+            browser_reachable_url_for_target(target_path, &config.browser_url)
         ),
         _ => runner.default_run_command(),
     }
@@ -736,7 +736,7 @@ fn build_web_procedure(
 ) -> DraftProcedure {
     let agent = &config.agent_browser_command;
     let requested_url = requested_web_url(target_path, mode, config);
-    let url = browser_reachable_url(&requested_url);
+    let url = browser_reachable_url_for_target(target_path, &requested_url);
     let login_mode = mode.to_ascii_lowercase().contains("login");
     let wait_selector = extract_action_value(mode, "selector")
         .or_else(|| extract_action_value(mode, "wait"))
@@ -750,7 +750,7 @@ fn build_web_procedure(
     let mut steps = vec![
         Step {
             command_template: format!(
-                "if [ -f .rc-web-server.pid ]; then kill $(cat .rc-web-server.pid) >/dev/null 2>&1 || true; fi; ({}) > .rc-web-server.log 2>&1 & echo $! > .rc-web-server.pid; sleep 5",
+                "if [ -f .rc-web-server.pid ]; then kill $(cat .rc-web-server.pid) >/dev/null 2>&1 || true; fi; nohup {} > .rc-web-server.log 2>&1 < /dev/null & echo $! > .rc-web-server.pid; sleep 5",
                 detect_web_server_command(target_path)
             ),
             responses: Vec::new(),
@@ -791,7 +791,14 @@ fn build_web_procedure(
             responses: build_responses(mode),
         });
     }
-    steps.push(Step { command_template: format!("{}; if [ -f .rc-web-server.pid ]; then kill $(cat .rc-web-server.pid) >/dev/null 2>&1 || true; fi", browser::screenshot_and_close_command(agent)), responses: Vec::new() });
+    let screenshot_path = target_path.join("rc-web.png");
+    steps.push(Step {
+        command_template: format!(
+            "{}; if [ -f .rc-web-server.pid ]; then kill $(cat .rc-web-server.pid) >/dev/null 2>&1 || true; fi",
+            browser::screenshot_and_close_command(agent, &screenshot_path)
+        ),
+        responses: Vec::new(),
+    });
     DraftProcedure {
         name: if login_mode {
             "web_login_check".to_string()
@@ -897,16 +904,36 @@ fn requested_web_url(target_path: &Path, mode: &str, config: &Config) -> String 
     }
     let package_json = fs::read_to_string(target_path.join("package.json")).unwrap_or_default();
     if package_json.contains("vite") {
-        return "http://127.0.0.1:5173".to_string();
+        return "http://localhost:5173".to_string();
     }
     config.browser_url.clone()
 }
 
-fn browser_reachable_url(url: &str) -> String {
-    let Some(host) = local_ipv4_address() else {
+fn web_server_exposes_network_host(target_path: &Path) -> bool {
+    let package_json = fs::read_to_string(target_path.join("package.json")).unwrap_or_default();
+    let lowered = package_json.to_ascii_lowercase();
+    ["--host", "--hostname", "0.0.0.0"]
+        .iter()
+        .any(|needle| lowered.contains(needle))
+}
+
+fn browser_reachable_url_for_target(target_path: &Path, url: &str) -> String {
+    let replacement_host = local_ipv4_address();
+    browser_reachable_url_for_target_with_host(target_path, url, replacement_host.as_deref())
+}
+
+fn browser_reachable_url_for_target_with_host(
+    target_path: &Path,
+    url: &str,
+    replacement_host: Option<&str>,
+) -> String {
+    if !web_server_exposes_network_host(target_path) {
+        return url.to_string();
+    }
+    let Some(host) = replacement_host else {
         return url.to_string();
     };
-    rewrite_loopback_url(url, &host)
+    rewrite_loopback_url(url, host)
 }
 
 fn rewrite_loopback_url(url: &str, replacement_host: &str) -> String {
@@ -1028,6 +1055,16 @@ fn run_check(
             );
             log.output_log.extend(outcome.messages.clone());
             log.errors.extend(outcome.errors.clone());
+            if !outcome.errors.is_empty() {
+                bail!(
+                    "step failed: {}",
+                    outcome.errors
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                );
+            }
         }
     }
     Ok(())
@@ -1171,7 +1208,11 @@ fn needs_interactive_response(output: &str) -> bool {
 
 fn contains_error_signal(output: &str) -> bool {
     let lowered = output.to_ascii_lowercase();
-    lowered.contains("error") || lowered.contains("exit")
+    lowered.contains("✗")
+        || lowered.contains("enoent")
+        || lowered.contains("failed")
+        || lowered.lines().any(|line| line.trim_start().starts_with("error:"))
+        || lowered.lines().any(|line| line.trim_start().starts_with("error "))
 }
 
 fn write_session_cache(cache: &SessionCache) -> Result<()> {
@@ -1188,6 +1229,10 @@ fn collect_captures(log: &mut SessionLog) -> Result<()> {
     let workdir = std::env::current_dir()?;
     let terminal_capture = capture_terminal_session(&workdir)?;
     log.captures.push(terminal_capture);
+    let browser_capture = workdir.join("rc-web.png");
+    if browser_capture.exists() {
+        log.captures.push(browser_capture);
+    }
     if let Ok(contexts) = bridge.list_contexts() {
         if let Some(context) = contexts.first() {
             log.output_log.push(format!(
@@ -1582,6 +1627,21 @@ mod tests {
     }
 
     #[test]
+    fn requested_web_url_prefers_localhost_for_vite() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts":{"dev":"vite --host 0.0.0.0 --port 5173"}}"#,
+        )
+        .expect("write");
+        let config = load_config().expect("config");
+        assert_eq!(
+            requested_web_url(dir.path(), "smoke", &config),
+            "http://localhost:5173"
+        );
+    }
+
+    #[test]
     fn builds_login_drafts_for_web_mode() {
         let dir = tempdir().expect("tempdir");
         fs::write(
@@ -1650,6 +1710,10 @@ mod tests {
             .steps
             .iter()
             .any(|step| step.command_template == "agent-browser wait \"body\""));
+        assert!(drafts.procedures[0]
+            .steps
+            .first()
+            .is_some_and(|step| step.command_template.contains("nohup")));
         assert!(!drafts.procedures[0].steps.iter().any(|step| {
             step.command_template
                 .contains(".auth-card:nth-of-type(1) input[placeholder='user id']")
@@ -1669,6 +1733,39 @@ mod tests {
         assert_eq!(
             rewrite_loopback_url("http://example.com:3000", "172.21.188.149"),
             "http://example.com:3000"
+        );
+    }
+
+    #[test]
+    fn keeps_loopback_url_for_localhost_only_vite_server() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("package.json"), r#"{"scripts":{"dev":"vite"}}"#)
+            .expect("write package.json");
+        assert_eq!(
+            browser_reachable_url_for_target_with_host(
+                dir.path(),
+                "http://127.0.0.1:5173",
+                Some("172.21.188.149"),
+            ),
+            "http://127.0.0.1:5173"
+        );
+    }
+
+    #[test]
+    fn rewrites_loopback_url_when_web_server_exposes_host() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts":{"dev":"vite --host 0.0.0.0 --port 5173"}}"#,
+        )
+        .expect("write package.json");
+        assert_eq!(
+            browser_reachable_url_for_target_with_host(
+                dir.path(),
+                "http://127.0.0.1:5173",
+                Some("172.21.188.149"),
+            ),
+            "http://172.21.188.149:5173"
         );
     }
 
@@ -1697,6 +1794,15 @@ mod tests {
         assert!(line.contains("procedure=web_smoke_check"));
         assert!(line.contains("elapsed=30s"));
         assert!(line.contains("command=bun run dev"));
+    }
+
+    #[test]
+    fn detects_real_error_signals_without_matching_install_note() {
+        assert!(contains_error_signal("✗ ENOENT: no such file or directory"));
+        assert!(contains_error_signal("command failed while saving screenshot"));
+        assert!(!contains_error_signal(
+            "Note: If you see \"shared library\" errors when running, use install --with-deps"
+        ));
     }
 
     #[test]

@@ -27,27 +27,20 @@ pub fn is_help_command(args: &[String]) -> bool {
 }
 
 pub fn print_usage(program: &str) {
-    println!("profiles: code (default), story, write (planned), movie (planned)");
+    println!("profiles: code (default)");
     println!("usage:");
     println!("  {program} [profile] <command> [args...]");
     let mut commands = [
         "help | -h | --help",
         "clit <args...>  (forward to rc CLI)",
-        "init_code_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-a <message>]",
-        "init_code_plan [-a]",
-        "add_code_plan [-f] [-m <message>] [-a]",
-        "create_input_md",
-        "create_code_draft",
-        "add_code_draft [-f] [-m <message>] [-a]",
-        "add_code_draft_item [-f] [-m <message>] [-a]",
-        "impl_code_draft",
-        "check_code_draft [-a]",
-        "test",
-        "check_task",
+        "init_orc_project [-n <name>] [-s <spec>] [-d <description>] [-a]",
+        "build_orc_domains",
+        "init_orc_job",
+        "add_orc_drafts",
+        "impl_orc_code",
+        "check_orc_code",
         "open-ui [-w|--web]",
         "serve-web-api [--addr <host:port>]",
-        "auto <message> | auto -f",
-        "auto_add_function <message>",
         "send-tmux <pane_id> <msg...> [enter|enter-exit|raw|display]",
         "chat -n <name> [--background] [-m <message>] [-i <receiver_id>] [--data <data>]",
         "chat-wait -n <name> -a <true|false> [-c <count>]",
@@ -87,48 +80,22 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
     let tail = &args[(command_idx + 1)..];
 
     match command {
-        "init_code_project" => profile.project_service().create(tail),
-        "init_code_plan" => profile.plan_service().create(tail),
-        "add_code_plan" => profile.plan_service().add_feature(tail),
-        "create_input_md" => {
+        "init_orc_project" => profile.project_service().init_project(tail),
+        "build_orc_domains" => profile.project_service().build_domains(),
+        "init_orc_job" => profile.project_service().init_job(),
+        "add_orc_drafts" => profile.draft_service().add_drafts(),
+        "impl_orc_code" => {
             if !tail.is_empty() {
-                return Err("create_input_md does not accept arguments".to_string());
-            }
-            profile.plan_service().create_input()
-        }
-        "create_code_draft" => {
-            if !tail.is_empty() {
-                return Err("create_code_draft does not accept arguments".to_string());
-            }
-            profile.plan_service().create_draft()
-        }
-        "add_code_draft" => profile.draft_service().add(tail),
-        "add_code_draft_item" => profile.draft_service().move_item_to_drafts_yaml(tail),
-        "impl_code_draft" => {
-            if !tail.is_empty() {
-                return Err("impl_code_draft does not accept arguments".to_string());
+                return Err("impl_orc_code does not accept arguments".to_string());
             }
             profile.draft_service().run_parallel().await
         }
-        "check_code_draft" => {
-            let auto_yes = tail.first().is_some_and(|v| v == "-a");
-            profile.feedback_service().check(auto_yes)
-        }
-        "check_task" => {
-            if !tail.is_empty() {
-                return Err("check_task does not accept arguments".to_string());
-            }
-            profile.feedback_service().decide_policy()
-        }
-        "test" => {
-            if !tail.is_empty() {
-                return Err("test does not accept arguments".to_string());
-            }
-            profile.feedback_service().check(false)
+        "check_orc_code" => {
+            profile.feedback_service().check()
         }
         "open-ui" => {
             if tail.is_empty() {
-                super::tui::open_ui()
+                super::tui::TuiRuntime::new().run_ui_entry()
             } else if tail.len() == 1 && matches!(tail[0].as_str(), "-w" | "--web") {
                 super::web::open_web_ui()
             } else {
@@ -153,26 +120,6 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                 }
             }
             super::web_api::serve_web_api(&addr).await
-        }
-        "auto" => {
-            if tail.first().is_some_and(|v| v == "-f") {
-                if tail.len() != 1 {
-                    return Err("auto -f does not accept extra arguments".to_string());
-                }
-                return profile.project_service().auto_from_input();
-            }
-            if tail.is_empty() || tail[0].starts_with('-') {
-                return Err("auto requires <message>".to_string());
-            }
-            profile.project_service().auto_message(&tail.join(" "))
-        }
-        "auto_add_function" => {
-            if tail.is_empty() || tail[0].starts_with('-') {
-                return Err("auto_add_function requires <message>".to_string());
-            }
-            profile
-                .project_service()
-                .auto_add_function_message(&tail.join(" "))
         }
         "send-tmux" => {
             if tail.len() < 2 {
@@ -201,7 +148,7 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                         .to_string(),
                 );
             }
-            super::chat_command(tail).await
+            crate::chat_command(tail).await
         }
         "chat-wait" => {
             if tail.len() < 2 {
@@ -210,7 +157,7 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                         .to_string(),
                 );
             }
-            super::chat_wait_command(tail).await
+            crate::chat_wait_command(tail).await
         }
         "clit" => {
             if tail.is_empty() {
@@ -219,7 +166,7 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                         .to_string(),
                 );
             }
-            super::run_rc_forward(tail)
+            crate::run_rc_forward(tail)
         }
         _ => Err(format!("unknown command: {}", command)),
     }

@@ -3,6 +3,11 @@ build_input_md_auto prompt
 - 반드시 코드/YAML/Markdown 형식을 정확히 지킨다.
 - 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
 - `project.md`와 `plan.yaml`을 읽고 필요한 기능 리스트를 `input.md` 본문으로 생성한다.
+- `project.md # info.description`은 사용자 원요청으로 간주하고 feature/rule/step 생성의 최우선 근거로 사용한다.
+- `plan.yaml`의 `drafts.planned/worked/complete/error`에 있는 feature 이름을 입력 객체 이름의 기준으로 삼고, framework 이름으로 임의 개명하지 않는다.
+- 사용자 요청 feature가 있으면 bootstrap/framework 보조 작업보다 그 feature를 우선해 입력 객체를 만든다.
+- `project.md`가 bootstrap-only 문구를 포함하더라도 `plan.yaml` feature가 더 구체적이면 feature 쪽을 우선한다.
+- `react`, `vite`, `next` 같은 framework 명만 가진 일반 객체로 축소하지 말고 실제 구현 대상 기능명을 유지한다.
 - 출력 형식은 아래 객체가 여러 개 나열된 Markdown이어야 한다.
 # 기능 이름
 - 기능 규칙 1

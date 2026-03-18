@@ -40,6 +40,16 @@ fn trim_wait_detail(detail: &str) -> String {
     format!("{}...", &normalized[..157])
 }
 
+fn prompt_trace_label(prompt: &str) -> String {
+    prompt
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(trim_wait_detail)
+        .filter(|line| !line.is_empty())
+        .unwrap_or_else(|| "llm prompt".to_string())
+}
+
 fn read_last_non_empty_line(path: &Path) -> Option<String> {
     let raw = fs::read_to_string(path).ok()?;
     raw.lines()
@@ -271,8 +281,23 @@ pub(crate) fn run_codex_exec_capture_with_timeout(
     let model_bin = crate::default_model_bin();
     let dangerous = crate::model_supports_dangerous_flag(&model_bin);
     let total_attempts = llm_retry_count();
+    let trace_label = prompt_trace_label(&prompt);
     let mut last_error = "unknown llm error".to_string();
     for attempt in 1..=total_attempts {
+        let base_label = format!("{} exec [{}]", model_bin, trace_label);
+        let attempt_label = if total_attempts > 1 {
+            format!("{} attempt {}/{}", base_label, attempt, total_attempts)
+        } else {
+            base_label.clone()
+        };
+        let start_detail = format!(
+            "{} | cwd={} | timeout={}s",
+            attempt_label,
+            cwd.display(),
+            timeout_sec
+        );
+        append_chat_log(&cwd, "LLM_START", &start_detail);
+        let _ = crate::append_check_process_status("LLM_START", &start_detail);
         if should_use_tmux_for_llm() {
             match run_llm_via_tmux(
                 &cwd,
@@ -281,7 +306,7 @@ pub(crate) fn run_codex_exec_capture_with_timeout(
                 timeout_sec,
                 false,
                 dangerous,
-                &format!("{} exec", model_bin),
+                &attempt_label,
             ) {
                 Ok(result) => {
                     if result.success {
@@ -304,7 +329,7 @@ pub(crate) fn run_codex_exec_capture_with_timeout(
             match run_command_with_timeout(
                 command,
                 timeout_sec,
-                &format!("{} exec", model_bin),
+                &attempt_label,
                 &cwd,
                 "waiting for llm response",
             ) {
@@ -348,6 +373,16 @@ fn run_codex_exec_capture_in_dir_with_attempts(
     timeout_sec: u64,
     total_attempts: u32,
 ) -> Result<String, String> {
+    run_codex_exec_capture_in_dir_with_attempts_labeled(dir, prompt, timeout_sec, total_attempts, None)
+}
+
+fn run_codex_exec_capture_in_dir_with_attempts_labeled(
+    dir: &Path,
+    prompt: &str,
+    timeout_sec: u64,
+    total_attempts: u32,
+    trace_label: Option<&str>,
+) -> Result<String, String> {
     let prompt = normalize_exec_prompt(prompt);
     append_chat_log(dir, "LLM_PROMPT", &prompt);
     let model_bin = crate::default_model_bin();
@@ -355,6 +390,24 @@ fn run_codex_exec_capture_in_dir_with_attempts(
     let total_attempts = total_attempts.max(1);
     let mut last_error = "unknown llm error".to_string();
     for attempt in 1..=total_attempts {
+        let base_label = trace_label
+            .map(str::trim)
+            .filter(|label| !label.is_empty())
+            .map(|label| label.to_string())
+            .unwrap_or_else(|| format!("{} exec in {}", model_bin, dir.display()));
+        let attempt_label = if total_attempts > 1 {
+            format!("{} attempt {}/{}", base_label, attempt, total_attempts)
+        } else {
+            base_label.clone()
+        };
+        let start_detail = format!(
+            "{} | cwd={} | timeout={}s",
+            attempt_label,
+            dir.display(),
+            timeout_sec
+        );
+        append_chat_log(dir, "LLM_START", &start_detail);
+        let _ = crate::append_check_process_status("LLM_START", &start_detail);
         if should_use_tmux_for_llm() {
             match run_llm_via_tmux(
                 dir,
@@ -363,7 +416,7 @@ fn run_codex_exec_capture_in_dir_with_attempts(
                 timeout_sec,
                 false,
                 dangerous,
-                &format!("{} exec in {}", model_bin, dir.display()),
+                &attempt_label,
             ) {
                 Ok(result) => {
                     if result.success {
@@ -386,7 +439,7 @@ fn run_codex_exec_capture_in_dir_with_attempts(
             match run_command_with_timeout(
                 command,
                 timeout_sec,
-                &format!("{} exec in {}", model_bin, dir.display()),
+                &attempt_label,
                 dir,
                 "waiting for llm response",
             ) {
@@ -424,6 +477,22 @@ pub(crate) fn run_codex_exec_capture_in_dir_with_timeout(
     run_codex_exec_capture_in_dir_with_attempts(dir, prompt, timeout_sec, llm_retry_count())
 }
 
+pub(crate) fn run_codex_exec_capture_in_dir_with_timeout_labeled(
+    dir: &Path,
+    prompt: &str,
+    timeout_sec: u64,
+    trace_label: &str,
+    total_attempts: u32,
+) -> Result<String, String> {
+    run_codex_exec_capture_in_dir_with_attempts_labeled(
+        dir,
+        prompt,
+        timeout_sec,
+        total_attempts,
+        Some(trace_label),
+    )
+}
+
 pub(crate) fn run_codex_exec_capture_in_dir_once_with_timeout(
     dir: &Path,
     prompt: &str,
@@ -439,8 +508,24 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
     let timeout_sec = codex_exec_timeout_sec().max(30);
     let use_dangerous = crate::model_supports_dangerous_flag(llm);
     let total_attempts = llm_retry_count();
+    let trace_label = prompt_trace_label(&prompt);
     let mut last_error = "unknown llm error".to_string();
     for attempt in 1..=total_attempts {
+        let base_label = format!("{} exec [{}]", llm, trace_label);
+        let attempt_label = if total_attempts > 1 {
+            format!("{} attempt {}/{}", base_label, attempt, total_attempts)
+        } else {
+            base_label.clone()
+        };
+        let fallback_label = format!("{} fallback(no -y)", attempt_label);
+        let start_detail = format!(
+            "{} | cwd={} | timeout={}s",
+            attempt_label,
+            cwd.display(),
+            timeout_sec
+        );
+        append_chat_log(&cwd, "LLM_START", &start_detail);
+        let _ = crate::append_check_process_status("LLM_START", &start_detail);
         if should_use_tmux_for_llm() {
             match run_llm_via_tmux(
                 &cwd,
@@ -449,7 +534,7 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
                 timeout_sec,
                 true,
                 use_dangerous,
-                &format!("{} exec -y", llm),
+                &attempt_label,
             ) {
                 Ok(result) if result.success => {
                     append_chat_log(&cwd, "LLM_RESPONSE", &result.stdout);
@@ -463,7 +548,7 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
                         timeout_sec,
                         false,
                         use_dangerous,
-                        &format!("{} exec", llm),
+                        &fallback_label,
                     ) {
                         Ok(retry) if retry.success => {
                             append_chat_log(&cwd, "LLM_RESPONSE", &retry.stdout);
@@ -494,7 +579,7 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
             match run_command_with_timeout(
                 command,
                 timeout_sec,
-                &format!("{} exec -y", llm),
+                &attempt_label,
                 &cwd,
                 "waiting for llm response",
             ) {
@@ -515,7 +600,7 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
                         match run_command_with_timeout(
                             retry_command,
                             timeout_sec,
-                            &format!("{} exec", llm),
+                            &fallback_label,
                             &cwd,
                             "waiting for llm response",
                         ) {
@@ -552,4 +637,30 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
     }
     append_chat_log(&cwd, "LLM_ERROR", &last_error);
     Err(last_error)
+}
+
+pub(crate) async fn chat_command(_args: &[String]) -> Result<String, String> {
+    Ok("chat_command placeholder".to_string())
+}
+
+pub(crate) async fn chat_wait_command(_args: &[String]) -> Result<String, String> {
+    Ok("chat_wait_command placeholder".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{prompt_trace_label, trim_wait_detail};
+
+    #[test]
+    fn prompt_trace_label_uses_first_non_empty_line() {
+        let prompt = "\n\nadd_detail_project_code prompt\n- rule";
+        assert_eq!(prompt_trace_label(prompt), "add_detail_project_code prompt");
+    }
+
+    #[test]
+    fn prompt_trace_label_trims_long_first_line() {
+        let long_line = format!("infer_code_spec prompt {}", "x".repeat(220));
+        let expected = trim_wait_detail(&long_line);
+        assert_eq!(prompt_trace_label(&long_line), expected);
+    }
 }

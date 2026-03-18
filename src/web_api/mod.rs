@@ -26,7 +26,7 @@ struct AppState {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 enum ProjectType {
-    #[serde(alias = "story", alias = "movie")]
+    #[serde(alias = "movie")]
     #[default]
     Code,
     Mono,
@@ -1169,17 +1169,17 @@ async fn run_orc_action(
     std::env::set_current_dir(repo_root)
         .map_err(|e| format!("failed to enter repo root: {}", e))?;
     let output = match action {
-        "create_draft" => crate::code::create_code_draft(),
+        "create_draft" => crate::code::add_orc_drafts(),
         "add_draft" => {
             let args = if payload.trim().is_empty() {
                 vec!["-a".to_string()]
             } else {
                 vec!["-m".to_string(), payload.to_string()]
             };
-            crate::code::add_code_draft(&args)
+            crate::code::add_orc_drafts()
         }
-        "impl_draft" => crate::code::impl_code_draft().await,
-        "check_code" => crate::code::check_code_draft(true),
+        "impl_draft" => crate::code::impl_orc_code().await,
+        "check_code" => crate::code::check_orc_code(),
         _ => Err(format!("unsupported action: {}", action)),
     };
     let _ = std::env::set_current_dir(previous);
