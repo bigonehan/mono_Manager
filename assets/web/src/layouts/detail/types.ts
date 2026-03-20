@@ -9,6 +9,7 @@ export type DetailLayoutProps = {
   setSelectedPane: (pane: DetailPane) => void;
   selectedDomain: string;
   setSelectedDomain: (domain: string) => void;
+  refreshDomainFeatures: () => void;
   openEditor: () => void;
   actionsDisabled: boolean;
   memoDraft: string;

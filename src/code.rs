@@ -265,16 +265,37 @@ pub(crate) fn add_orc_drafts() -> Result<String, String> {
 /// Step 5: Implement Code (Parallel)
 pub(crate) async fn impl_orc_code() -> Result<String, String> {
     let mut drafts = load_drafts_doc()?;
+    let mut job = load_job_doc()?;
     let targets: Vec<DraftItemDoc> = drafts.draft.iter()
-        .filter(|d| d.state == "planned" || d.state == "work")
+        .filter(|d| d.state == "planned" || d.state == "work" || d.state == "worked")
         .cloned()
         .collect();
     
     if targets.is_empty() {
         return Ok("no drafts to implement".to_string());
     }
+
+    for item in &targets {
+        set_draft_item_state(&mut drafts, &item.name, "work")?;
+        move_job_task_item(&mut job, &item.name, "work")?;
+    }
+    save_drafts_doc(&drafts)?;
+    save_job_doc(&job)?;
     
     let result = impl_code_draft_parallel(targets).await?;
+    for name in &result.succeeded {
+        set_draft_item_state(&mut drafts, name, "complete")?;
+        move_job_task_item(&mut job, name, "check")?;
+    }
+    for (name, reason) in &result.failed {
+        set_draft_item_state(&mut drafts, name, "error")?;
+        move_job_task_item(&mut job, name, "fail")?;
+        if !reason.trim().is_empty() {
+            job.problems.push(format!("- {} : {}", name, reason.trim()));
+        }
+    }
+    save_drafts_doc(&drafts)?;
+    save_job_doc(&job)?;
     Ok(format!("impl_orc_code completed: success={} fail={}", result.succeeded.len(), result.failed.len()))
 }
 
@@ -388,6 +409,35 @@ pub(crate) fn job_task_state_change(doc: &mut JobDoc, name: &str, to: &str) -> R
     Ok(())
 }
 
+fn normalize_draft_state(to: &str) -> Result<&'static str, String> {
+    match to {
+        "planned" => Ok("planned"),
+        "work" | "worked" => Ok("work"),
+        "complete" | "completed" => Ok("complete"),
+        "error" | "fail" => Ok("error"),
+        _ => Err(format!("invalid draft state: {}", to)),
+    }
+}
+
+pub(crate) fn set_draft_item_state(
+    doc: &mut CodeDraftsDoc,
+    name: &str,
+    to_state: &str,
+) -> Result<(), String> {
+    let next = normalize_draft_state(to_state)?;
+    let target = doc
+        .draft
+        .iter_mut()
+        .find(|item| item.name == name)
+        .ok_or_else(|| format!("draft item not found: {}", name))?;
+    target.state = next.to_string();
+    Ok(())
+}
+
+pub(crate) fn move_job_task_item(doc: &mut JobDoc, name: &str, to_list: &str) -> Result<(), String> {
+    job_task_state_change(doc, name, to_list)
+}
+
 fn replace_markdown_section(raw: &str, header: &str, body: &str) -> String {
     let mut out = Vec::new();
     let mut in_section = false;
@@ -465,22 +515,92 @@ async fn impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<ImplRunRes
         let sem = semaphore.clone();
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.unwrap();
-            // Implement logic here using assets/prompts/build_parallel.md
-            Ok::<String, String>(item.name)
+            let name = item.name.clone();
+            impl_single_draft_item(&item)
+                .map(|_| name.clone())
+                .map_err(|e| (name, e))
         }));
     }
 
     for h in handles {
         match h.await.unwrap() {
             Ok(name) => succeeded.push(name),
-            Err(e) => failed.push(("unknown".to_string(), e)),
+            Err((name, e)) => failed.push((name, e)),
         }
     }
 
     Ok(ImplRunResult { succeeded, failed })
 }
 
+fn impl_single_draft_item(item: &DraftItemDoc) -> Result<(), String> {
+    let prompt_base = read_prompt("build_parallel.md")?;
+    let task_yaml =
+        serde_yaml::to_string(item).map_err(|e| format!("failed to encode draft item yaml: {}", e))?;
+    let prompt = format!(
+        "{}\n\n# 입력 task 단일 객체\n```yaml\n{}\n```\n\n# 추가 지시\n- `drafts.yaml`, `job.md`는 절대 직접 수정하지 말고 코드 생성/수정 내용만 출력한다.\n- 상태 전이(work/complete/error, planned/work/check/fail 이동)는 Rust 오케스트레이터가 수행하므로 출력하지 않는다.",
+        prompt_base, task_yaml
+    );
+    let raw = crate::run_codex_exec_capture_with_timeout(&prompt, IMPL_DRAFT_LLM_TIMEOUT_SEC)?;
+    if raw.trim().is_empty() {
+        return Err(format!("empty llm output for draft {}", item.name));
+    }
+    Ok(())
+}
+
 struct ImplRunResult {
     succeeded: Vec<String>,
     failed: Vec<(String, String)>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        job_task_state_change, move_job_task_item, set_draft_item_state, CodeDraftsDoc, DraftItemDoc, JobDoc,
+    };
+
+    #[test]
+    fn set_draft_item_state_updates_target_only() {
+        let mut doc = CodeDraftsDoc {
+            draft: vec![
+                DraftItemDoc {
+                    name: "alpha".to_string(),
+                    state: "planned".to_string(),
+                    ..Default::default()
+                },
+                DraftItemDoc {
+                    name: "beta".to_string(),
+                    state: "planned".to_string(),
+                    ..Default::default()
+                },
+            ],
+        };
+        set_draft_item_state(&mut doc, "alpha", "worked").expect("state update");
+        assert_eq!(doc.draft[0].state, "work");
+        assert_eq!(doc.draft[1].state, "planned");
+    }
+
+    #[test]
+    fn set_draft_item_state_errors_on_missing_item() {
+        let mut doc = CodeDraftsDoc::default();
+        let err = set_draft_item_state(&mut doc, "missing", "work").expect_err("expected error");
+        assert!(err.contains("draft item not found"));
+    }
+
+    #[test]
+    fn move_job_task_item_rehomes_without_duplicates() {
+        let mut job = JobDoc::default();
+        job.task.planned.push("todo_create".to_string());
+        move_job_task_item(&mut job, "todo_create", "work").expect("move work");
+        move_job_task_item(&mut job, "todo_create", "check").expect("move check");
+        assert!(job.task.planned.is_empty());
+        assert!(job.task.work.is_empty());
+        assert_eq!(job.task.check, vec!["todo_create".to_string()]);
+    }
+
+    #[test]
+    fn job_task_state_change_accepts_alias() {
+        let mut job = JobDoc::default();
+        job_task_state_change(&mut job, "todo_create", "worked").expect("worked alias");
+        assert_eq!(job.task.work, vec!["todo_create".to_string()]);
+    }
 }

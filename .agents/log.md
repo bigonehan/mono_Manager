@@ -2722,3 +2722,40 @@
 - `src/profile/mod.rs`에서 Story profile/provider/service 구현과 `story` 프로파일 해석 분기를 제거해 `code` 중심으로 정리함.
 - `src/cli.rs`의 프로파일 안내 문구에서 `story`를 제거하고, `src/web_api/mod.rs`의 `ProjectType`에서 `story` alias를 제거함.
 - `rg -n "\\bstory\\b|Story|assets/story" src README.md` 재검증 결과 source 범위에서 story 참조 0건을 확인함.
+
+## 2026-03-20 - 작업한일
+- `.../skills/orc-cli-workflow/SKILL.md`에 stage gate 규칙을 추가해 `project/domain/plan/draft`는 `/plan` 선행 후 normal 실행으로 고정하고 `impl/check`는 즉시 실행으로 분리함.
+- 기능 추가/프로젝트 초기화 섹션에 stage gate 적용 문구를 동기화해 초기 설계 단계에서 계획 우선 흐름이 빠지지 않도록 명시함.
+- `.../.codex/skills/manager/SKILL.md`의 ORC execution contract에 동일 규칙을 반영해 manager 경유 실행에서도 동일하게 적용되도록 맞춤.
+
+## 2026-03-20 - 작업한일
+- `.../src/web/mod.rs`에서 Unix detached web dev server를 process-group으로 실행하도록 바꿔 종료 시 하위 프로세스까지 정리할 수 있게 함.
+- managed stop 로직을 `SIGTERM -> 대기 -> SIGKILL -> direct kill` 순서로 보강하고, 포트 해제 대기와 결합해 `open-ui` 종료 후 잔여 프로세스가 남지 않도록 강화함.
+- `open-ui -w` 진입을 managed(web debug) 경로로 일원화해 열기/종료 시 종료 정리 로직이 항상 적용되게 맞춤.
+
+## 2026-03-20 - 작업한일
+- `.gitignore`에 `dist/`를 추가해 build 산출물 추적을 제외함.
+- `open-ui` CLI 인자에 `-b|--build`를 추가하고 help/README 사용법을 동기화함.
+- `.../src/web/mod.rs`에 build 모드 실행 경로를 추가해 `npm run build` 후 `npm run preview -- --host 127.0.0.1 --port 4175`로 서빙하도록 구현함.
+- Astro build 실패 원인(No adapter)을 해결하기 위해 `assets/web`에 `@astrojs/node`와 `output: server` adapter 설정을 추가해 `open-ui -b`가 실제 실행되도록 고정함.
+
+## 2026-03-20 - 작업한일
+- project 페이지 list 모드의 bulk delete 흐름을 보강해 삭제 대상 id 정규화, 실패 응답 로그 출력, 실패 항목 재선택 유지가 되도록 `WebApp.tsx`를 수정함.
+- project 삭제 시 `.project`만 삭제하던 동작을 실제 프로젝트 경로 전체 삭제로 확장하고, 빈 경로/루트 경로 삭제 차단 가드를 추가함.
+- Node web API(`assets/web/src/server/orc.ts`)와 Rust web API(`src/web_api/mod.rs`)의 삭제 동작을 동일하게 맞춰 실행 모드와 무관하게 같은 결과가 나오도록 동기화함.
+
+## 2026-03-20 - 작업한일
+- detail domains pane에서 badge 선택 시 하단 영역에 선택 domain의 기능 목록(`이름: 설명`)이 카드형으로 표시되도록 렌더를 보강함.
+- `assets/web/src/server/orc.ts`에 source 함수명 추출 기반 domain feature 동기화(`syncDomainFeaturesFromSource`)를 추가해 detail 로드 시 `project.md # domains`의 feature 항목이 자동 보강되도록 구현함.
+- `writeProjectMd`를 확장해 domains 블록을 유지/저장하도록 수정하고, 기존 project.md 갱신 경로(save info/lists/finalize)에서도 domains가 유실되지 않게 동기화함.
+
+## 2026-03-20 - 작업한일
+- detail domains pane 상단에 새로고침 아이콘(`domains-refresh`)을 추가하고 클릭 시 domain feature 동기화 요청을 보내도록 연결함.
+- `assets/web/src/pages/api/domain-refresh.ts` API를 추가해 선택 domain 기준으로 source 함수명을 스캔하고 `project.md`의 `# domains` feature를 갱신하도록 구현함.
+- 동기화 후 최신 detail을 재로드해 UI 하단 기능 목록이 즉시 갱신되게 했고, 실행 경로(`UI 버튼 -> API -> syncDomainFeaturesFromSource -> project.md 갱신 -> detail 반영`)를 `rg`와 타입체크/테스트로 검증함.
+
+## 2026-03-20 - 작업한일
+- `src/code.rs`에 draft 상태 변경 함수(`set_draft_item_state`)와 job task 이동 함수(`move_job_task_item`)를 추가해 상태 전이를 Rust 오케스트레이터가 담당하도록 분리함.
+- `impl_orc_code` 실행 흐름을 `시작 전 work 전이 -> 병렬 impl 실행 -> 성공 시 complete/check, 실패 시 error/fail` 순서로 고정하고 결과를 `drafts.yaml`/`job.md`에 즉시 저장하도록 반영함.
+- `assets/prompts/build_parallel.md`에 `drafts.yaml`/`job.md` 직접 수정 금지 규칙을 추가해 LLM은 코드 생성/수정 내용만 출력하도록 제한함.
+- 검증: `cargo test` 통과.

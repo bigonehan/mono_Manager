@@ -1,4 +1,4 @@
-import { Folder, Settings } from "lucide-react";
+import { Folder, RefreshCw, Settings } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import type { DetailLayoutProps } from "@/layouts/detail/types";
 import { parseSpecTokens } from "@/layouts/detail/types";
@@ -15,6 +15,7 @@ export function CodeDetailLayout({
   setSelectedPane,
   selectedDomain,
   setSelectedDomain,
+  refreshDomainFeatures,
   openEditor,
   actionsDisabled,
   memoDraft,
@@ -95,6 +96,7 @@ export function CodeDetailLayout({
         detail={detail}
         selectedDomain={selectedDomain}
         setSelectedDomain={setSelectedDomain}
+        refreshDomainFeatures={refreshDomainFeatures}
       />
     </>
   );
@@ -103,11 +105,13 @@ export function CodeDetailLayout({
 function DomainsPane({
   detail,
   selectedDomain,
-  setSelectedDomain
+  setSelectedDomain,
+  refreshDomainFeatures
 }: {
   detail: DetailLayoutProps["detail"];
   selectedDomain: string;
   setSelectedDomain: (domain: string) => void;
+  refreshDomainFeatures: () => void;
 }) {
   const domains = detail?.domains ?? [];
   const selected = domains.find((domain) => domain.name === selectedDomain) ?? domains[0] ?? null;
@@ -118,6 +122,17 @@ function DomainsPane({
       <section data-testid="detail-pane-domains" className={`p-2 text-sm ${paneShellClass}`}>
       <div className="grid gap-0 md:grid-cols-[220px_1fr] md:divide-x md:divide-border">
         <div className="p-2">
+          <div className="mb-2 flex items-center justify-end">
+            <button
+              type="button"
+              className="rounded p-1 text-muted-foreground hover:bg-muted"
+              onClick={refreshDomainFeatures}
+              aria-label="domains-refresh"
+              data-testid="domains-refresh"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
+          </div>
           <div className="flex flex-wrap gap-2">
             {domains.length === 0 && <span className="text-xs text-muted-foreground">(none)</span>}
             {domains.map((domain) => (
@@ -143,14 +158,21 @@ function DomainsPane({
                 <div className="text-sm text-foreground">{selected.description || "(empty)"}</div>
               </div>
               <div>
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-2">
                   {selected.features.length === 0 && (
                     <span className="text-sm text-muted-foreground">(empty)</span>
                   )}
                   {selected.features.map((feature) => (
-                    <span key={feature} className="px-2 py-1 text-xs text-foreground">
-                      {feature}
-                    </span>
+                    <div key={feature} className="rounded-md border border-border/70 px-2 py-1 text-xs">
+                      {feature.includes(":") ? (
+                        <>
+                          <span className="font-semibold text-foreground">{feature.split(":")[0].trim()}</span>
+                          <span className="text-muted-foreground">: {feature.split(":").slice(1).join(":").trim()}</span>
+                        </>
+                      ) : (
+                        <span className="text-foreground">{feature}</span>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>

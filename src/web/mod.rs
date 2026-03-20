@@ -1,5 +1,7 @@
 use std::fs;
 use std::net::TcpStream;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
@@ -15,15 +17,17 @@ pub(crate) fn open_web_ui() -> Result<String, String> {
     if !is_web_server_alive(web_port) {
         clear_web_server_pid(web_port);
     }
-    let debug_enabled = crate::load_app_config()
-        .as_ref()
-        .is_none_or(crate::config::AppConfig::debug_enabled);
+    open_web_ui_debug(&web_dir, web_port)
+}
 
-    if debug_enabled {
-        return open_web_ui_debug(&web_dir, web_port);
+pub(crate) fn open_web_ui_build() -> Result<String, String> {
+    let web_dir = resolve_web_dir()?;
+    ensure_web_assets_exist(&web_dir)?;
+    let web_port = resolve_web_port(&web_dir)?;
+    if !is_web_server_alive(web_port) {
+        clear_web_server_pid(web_port);
     }
-
-    open_web_ui_detached(&web_dir, web_port)
+    open_web_ui_build_preview(&web_dir, web_port)
 }
 
 fn open_web_ui_detached(web_dir: &Path, web_port: u16) -> Result<String, String> {
@@ -58,7 +62,7 @@ fn open_web_ui_debug(web_dir: &Path, web_port: u16) -> Result<String, String> {
     let mut child = spawn_web_server_attached(web_dir, web_port)?;
     if let Err(err) = wait_for_web_server_with_child(Duration::from_secs(20), web_port, &mut child)
     {
-        let _ = child.kill();
+        let _ = terminate_process(child.id());
         let _ = child.wait();
         clear_web_server_pid(web_port);
         return Err(err);
@@ -80,6 +84,50 @@ fn open_web_ui_debug(web_dir: &Path, web_port: u16) -> Result<String, String> {
     } else {
         Err(format!(
             "web ui server exited with {}",
+            describe_exit_status(status)
+        ))
+    }
+}
+
+fn open_web_ui_build_preview(web_dir: &Path, web_port: u16) -> Result<String, String> {
+    let url = web_url(web_port);
+    if is_web_server_alive(web_port) && stop_managed_web_server(web_port)? {
+        println!("build web ui: stopped existing managed server on {}", url);
+    }
+    if is_web_server_alive(web_port) {
+        return Err(format!(
+            "build web ui needs an exclusive server on {}. stop the existing server and retry",
+            url
+        ));
+    }
+
+    ensure_node_modules(web_dir)?;
+    run_web_build(web_dir)?;
+    let mut child = spawn_web_preview_attached(web_dir, web_port)?;
+    if let Err(err) = wait_for_web_server_with_child(Duration::from_secs(20), web_port, &mut child)
+    {
+        let _ = terminate_process(child.id());
+        let _ = child.wait();
+        clear_web_server_pid(web_port);
+        return Err(err);
+    }
+
+    if open_browser(&url) {
+        println!("web ui opened: {}", url);
+    } else {
+        println!("web ui ready (open manually): {}", url);
+    }
+    println!("build web ui active: serving built assets, stop with Ctrl+C");
+
+    let status = child
+        .wait()
+        .map_err(|e| format!("failed to wait for web preview server: {}", e))?;
+    clear_web_server_pid(web_port);
+    if status.success() {
+        Ok(format!("web ui closed: {}", url))
+    } else {
+        Err(format!(
+            "web ui preview server exited with {}",
             describe_exit_status(status)
         ))
     }
@@ -136,6 +184,23 @@ fn ensure_node_modules(web_dir: &Path) -> Result<(), String> {
     }
 }
 
+fn run_web_build(web_dir: &Path) -> Result<(), String> {
+    let status = Command::new("npm")
+        .arg("run")
+        .arg("build")
+        .current_dir(web_dir)
+        .status()
+        .map_err(|e| format!("failed to execute npm run build: {}", e))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "npm run build failed with status: {:?}",
+            status.code()
+        ))
+    }
+}
+
 fn resolve_web_port(_web_dir: &Path) -> Result<u16, String> {
     if let Ok(raw) = std::env::var("ORC_WEB_PORT") {
         let parsed = raw
@@ -160,6 +225,7 @@ fn spawn_web_server_detached(web_dir: &Path, web_port: u16) -> Result<(), String
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .stdin(Stdio::null());
+    configure_managed_child(&mut cmd);
 
     let mut child = cmd
         .spawn()
@@ -186,19 +252,41 @@ fn spawn_web_server_attached(web_dir: &Path, web_port: u16) -> Result<Child, Str
         .stderr(Stdio::inherit())
         .stdin(Stdio::inherit());
 
-    let mut child = cmd
+    let child = cmd
         .spawn()
         .map_err(|e| format!("failed to spawn web dev server: {}", e))?;
-    if let Err(err) = write_web_server_pid(web_port, child.id()) {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(err);
-    }
+    Ok(child)
+}
+
+fn spawn_web_preview_attached(web_dir: &Path, web_port: u16) -> Result<Child, String> {
+    let mut cmd = Command::new("npm");
+    cmd.arg("run")
+        .arg("preview")
+        .arg("--")
+        .arg("--host")
+        .arg(WEB_HOST)
+        .arg("--port")
+        .arg(web_port.to_string())
+        .current_dir(web_dir)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .stdin(Stdio::inherit());
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to spawn web preview server: {}", e))?;
     Ok(child)
 }
 
 fn wait_for_web_server(timeout: Duration, web_port: u16) -> Result<(), String> {
     wait_for_web_server_inner(timeout, web_port, None)
+}
+
+fn configure_managed_child(cmd: &mut Command) {
+    #[cfg(unix)]
+    {
+        cmd.process_group(0);
+    }
 }
 
 fn wait_for_web_server_with_child(
@@ -286,11 +374,6 @@ fn stop_managed_web_server(web_port: u16) -> Result<bool, String> {
     let Some(pid) = read_web_server_pid(web_port)? else {
         return Ok(false);
     };
-    if !is_process_running(pid) {
-        clear_web_server_pid(web_port);
-        return Ok(false);
-    }
-
     terminate_process(pid)?;
     wait_for_port_release(Duration::from_secs(10), web_port)?;
     clear_web_server_pid(web_port);
@@ -343,20 +426,38 @@ fn terminate_process(pid: u32) -> Result<(), String> {
             ))
         }
     } else {
-        let status = Command::new("kill")
-            .arg(pid.to_string())
-            .status()
-            .map_err(|e| format!("failed to execute kill for {}: {}", pid, e))?;
-        if status.success() {
+        let process_group = format!("-{}", pid);
+        let _ = Command::new("kill")
+            .args(["-TERM", &process_group])
+            .status();
+        if wait_for_process_stop(pid, Duration::from_secs(3)) {
+            return Ok(());
+        }
+        let _ = Command::new("kill")
+            .args(["-KILL", &process_group])
+            .status();
+        if wait_for_process_stop(pid, Duration::from_secs(2)) {
+            return Ok(());
+        }
+
+        let _ = Command::new("kill").arg(pid.to_string()).status();
+        if wait_for_process_stop(pid, Duration::from_secs(2)) {
             Ok(())
         } else {
-            Err(format!(
-                "kill failed for {} with status {:?}",
-                pid,
-                status.code()
-            ))
+            Err(format!("kill failed for {}: process still running", pid))
         }
     }
+}
+
+fn wait_for_process_stop(pid: u32, timeout: Duration) -> bool {
+    let started = Instant::now();
+    while started.elapsed() <= timeout {
+        if !is_process_running(pid) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(150));
+    }
+    !is_process_running(pid)
 }
 
 fn describe_exit_status(status: ExitStatus) -> String {

@@ -1,12 +1,12 @@
-recentActivepane: 4isu
+recentActivepane: CbgR
 projects:
   - id: CbgR
     name: web/next
     path: /home/tree/home/template/web/next
     description: monorepo template package
     created_at: "1772888984"
-    updated_at: "1772963389"
-    selected: false
+    updated_at: "1773993820"
+    selected: true
     project_type: mono
   - id: Crqr
     name: blender-bots
@@ -37,7 +37,7 @@ projects:
     path: /home/tree/home
     description: loaded project
     created_at: "1772888117"
-    updated_at: "1773794880"
+    updated_at: "1773988370"
     selected: false
     project_type: code
   - id: ue6A
@@ -45,7 +45,7 @@ projects:
     path: /home/tree/home/apps/api
     description: monorepo app package
     created_at: "1772888760"
-    updated_at: "1772947528"
+    updated_at: "1773992526"
     selected: false
     project_type: mono
   - id: T4Yu
@@ -53,7 +53,7 @@ projects:
     path: /home/tree/home/apps/mobile
     description: monorepo app package
     created_at: "1772888760"
-    updated_at: "1772947526"
+    updated_at: "1773992631"
     selected: false
     project_type: mono
   - id: gMsN
@@ -77,7 +77,7 @@ projects:
     path: /home/tree/home/packages/features/article
     description: monorepo feature package
     created_at: "1772888760"
-    updated_at: "1772947529"
+    updated_at: "1773992529"
     selected: false
     project_type: mono
   - id: xxaS
@@ -85,7 +85,7 @@ projects:
     path: /home/tree/home/packages/features/auth
     description: monorepo feature package
     created_at: "1772888760"
-    updated_at: "1772895435"
+    updated_at: "1773992530"
     selected: false
     project_type: mono
   - id: VcBt
@@ -200,14 +200,6 @@ projects:
     updated_at: "1772949882"
     selected: false
     project_type: mono
-  - id: 2zkQ
-    name: pw-episode-1773074123280
-    path: /tmp/pw-episode-1773074123280
-    description: episode ui verification
-    created_at: "1773074125"
-    updated_at: "1773794883"
-    selected: false
-    project_type: code
   - id: HbvM
     name: web/structure_viewer
     path: /home/tree/home/apps/web/structure_viewer
@@ -272,14 +264,6 @@ projects:
     updated_at: "1773074125"
     selected: false
     project_type: mono
-  - id: bCwC
-    name: pw-episode-1773074176140
-    path: /tmp/pw-episode-1773074176140
-    description: episode ui verification
-    created_at: "1773074178"
-    updated_at: "1773074179"
-    selected: false
-    project_type: code
   - id: vzVk
     name: web/blog-feature-gapfix
     path: /home/tree/home/template/web/blog-feature-gapfix
@@ -288,46 +272,6 @@ projects:
     updated_at: "1773075493"
     selected: false
     project_type: mono
-  - id: PfZz
-    name: pw-episode-1773076780531
-    path: /tmp/pw-episode-1773076780531
-    description: episode ui verification
-    created_at: "1773076780"
-    updated_at: "1773076781"
-    selected: false
-    project_type: code
-  - id: Ana9
-    name: pw-auto-1773076782007
-    path: /tmp/pw-auto-1773076782007
-    description: auto ui verification
-    created_at: "1773076782"
-    updated_at: "1773076782"
-    selected: false
-    project_type: code
-  - id: 4isu
-    name: pw-auto-1773077965421
-    path: /tmp/pw-auto-1773077965421
-    description: auto ui verification
-    created_at: "1773077965"
-    updated_at: "1773794906"
-    selected: true
-    project_type: code
-  - id: j3Gh
-    name: pw-auto-1773077965421-other
-    path: /tmp/pw-auto-1773077965421-other
-    description: auto ui verification
-    created_at: "1773077965"
-    updated_at: "1773077965"
-    selected: false
-    project_type: code
-  - id: jN7b
-    name: pw-check-1773132865973
-    path: /tmp/pw-check-1773132865973
-    description: check pane verification
-    created_at: "1773132866"
-    updated_at: "1773132869"
-    selected: false
-    project_type: code
   - id: vfin
     name: web/donation
     path: /home/tree/home/template/web/donation
@@ -336,14 +280,6 @@ projects:
     updated_at: "1773132868"
     selected: false
     project_type: mono
-  - id: 2EYV
-    name: pw-voice-1773136050219
-    path: /tmp/pw-voice-1773136050219
-    description: voice input verification
-    created_at: "1773136050"
-    updated_at: "1773136053"
-    selected: false
-    project_type: code
   - id: acJN
     name: desktop/basic
     path: /home/tree/home/template/desktop/basic
@@ -352,30 +288,6 @@ projects:
     updated_at: "1773136052"
     selected: false
     project_type: mono
-  - id: 7Wu2
-    name: pw-voice-1773136092028
-    path: /tmp/pw-voice-1773136092028
-    description: voice input verification
-    created_at: "1773136092"
-    updated_at: "1773136095"
-    selected: false
-    project_type: code
-  - id: NPg5
-    name: pw-check-1773140592996
-    path: /tmp/pw-check-1773140592996
-    description: check pane verification
-    created_at: "1773140593"
-    updated_at: "1773140596"
-    selected: false
-    project_type: code
-  - id: jecM
-    name: pw-voice-1773140597140
-    path: /tmp/pw-voice-1773140597140
-    description: voice input verification
-    created_at: "1773140597"
-    updated_at: "1773140597"
-    selected: false
-    project_type: code
   - id: m6tH
     name: web/PageEditor
     path: /home/tree/home/apps/web/PageEditor

@@ -747,6 +747,26 @@ export default function WebApp() {
     }
   }
 
+  async function refreshDomainFeatures() {
+    if (!detail) return;
+    const res = await fetch(apiUrl("/api/domain-refresh"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: detail.id, domain: selectedDomain || undefined })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      pushLog(`domain refresh failed: ${String(data.error ?? "unknown error")}`);
+      return;
+    }
+    if (data.detail) {
+      setDetail(data.detail);
+    } else {
+      await loadDetail(detail.id);
+    }
+    pushLog(String(data.output ?? "domain features synced"));
+  }
+
   useEffect(() => {
     void loadProjects();
     void syncMonorepo();
@@ -1010,21 +1030,48 @@ export default function WebApp() {
   }
 
   async function removeSelectedProjects() {
-    if (bulkDeleteIds.length === 0) return;
+    const targets = [...new Set(bulkDeleteIds.map((id) => id.trim()).filter((id) => id.length > 0))];
+    if (targets.length === 0) {
+      pushLog("project delete skipped: no valid targets");
+      return;
+    }
     let deleted = 0;
-    for (const id of bulkDeleteIds) {
-      const res = await fetch(apiUrl("/api/project-delete"), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id })
-      });
-      if (res.ok) deleted += 1;
+    const failed: Array<{ id: string; error: string }> = [];
+    for (const id of targets) {
+      try {
+        const res = await fetch(apiUrl("/api/project-delete"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id })
+        });
+        if (res.ok) {
+          deleted += 1;
+          continue;
+        }
+        const data = await res.json().catch(() => ({}));
+        const error = String((data as { error?: unknown }).error ?? "unknown error");
+        failed.push({ id, error });
+      } catch (error) {
+        failed.push({ id, error: String(error) });
+      }
     }
     setDetail(null);
     setSelectedId("");
-    setBulkDeleteIds([]);
-    setBulkDeleteMode(false);
+    if (failed.length > 0) {
+      setBulkDeleteIds(failed.map((entry) => entry.id).filter((id) => id.length > 0));
+      setBulkDeleteMode(true);
+    } else {
+      setBulkDeleteIds([]);
+      setBulkDeleteMode(false);
+    }
     await loadProjects();
+    if (failed.length > 0) {
+      pushLog(`project deleted: ${deleted}, failed: ${failed.length}`);
+      for (const row of failed) {
+        pushLog(`delete failed: ${row.id} (${row.error})`);
+      }
+      return;
+    }
     pushLog(`project deleted: ${deleted}`);
   }
 
@@ -2240,6 +2287,7 @@ export default function WebApp() {
               setSelectedPane={setSelectedPane}
               selectedDomain={selectedDomain}
               setSelectedDomain={setSelectedDomain}
+              refreshDomainFeatures={() => void refreshDomainFeatures()}
               openEditor={openEditor}
               actionsDisabled={isAutoRunningDetail}
               memoDraft={memoDraft}

@@ -122,6 +122,8 @@ export type ProjectDetail = {
   }>;
 };
 
+type DomainRow = { name: string; description: string; features: string[] };
+
 export function repoRoot(): string {
   return process.env.ORC_ROOT ?? path.resolve(process.cwd(), "..", "..");
 }
@@ -763,6 +765,11 @@ export function deleteProject(id: string): void {
   if (!target) {
     throw new Error(`project not found: ${id}`);
   }
+  const targetPath = path.resolve(String(target.path ?? "").trim());
+  const rootPath = path.parse(targetPath).root;
+  if (!targetPath || targetPath === rootPath) {
+    throw new Error(`refusing to delete unsafe project path: ${target.path}`);
+  }
   registry.projects = registry.projects.filter((p) => p.id !== id);
   if (registry.recentActivepane === id) {
     registry.recentActivepane = registry.projects[0]?.id ?? "";
@@ -772,9 +779,8 @@ export function deleteProject(id: string): void {
   }
   saveRegistry(registry);
 
-  const meta = projectMetaDir(target.path);
-  if (fs.existsSync(meta)) {
-    fs.rmSync(meta, { recursive: true, force: true });
+  if (fs.existsSync(targetPath)) {
+    fs.rmSync(targetPath, { recursive: true, force: true });
   }
 }
 
@@ -812,9 +818,8 @@ function readProjectMdAttributes(raw: string): {
   rules: string[];
   constraints: string[];
   features: string[];
-  domains: Array<{ name: string; description: string; features: string[] }>;
+  domains: DomainRow[];
 } {
-  type DomainRow = { name: string; description: string; features: string[] };
   const out = {
     name: "",
     description: "",
@@ -931,8 +936,9 @@ function writeProjectMd(projectPath: string, doc: {
   rules: string[];
   constraints: string[];
   features: string[];
+  domains?: DomainRow[];
 }): void {
-  const content = [
+  const lines = [
     "# info",
     `name: ${doc.name}`,
     `description: ${doc.description}`,
@@ -946,11 +952,177 @@ function writeProjectMd(projectPath: string, doc: {
     ...(doc.constraints.length > 0 ? doc.constraints : [""]).map((v) => `- ${v}`),
     "",
     "# features",
-    ...(doc.features.length > 0 ? doc.features : [""]).map((v) => `- ${v}`),
-    ""
-  ].join("\n");
+    ...(doc.features.length > 0 ? doc.features : [""]).map((v) => `- ${v}`)
+  ];
+  const domains = Array.isArray(doc.domains) ? doc.domains : [];
+  if (domains.length > 0) {
+    lines.push("");
+    lines.push("# domains");
+    for (const domain of domains) {
+      lines.push(`## ${domain.name}`);
+      if (domain.description.trim().length > 0) {
+        lines.push("### description");
+        lines.push(`- ${domain.description.trim()}`);
+      }
+      lines.push("### feature");
+      if (domain.features.length === 0) {
+        lines.push("- ");
+      } else {
+        for (const feature of domain.features) {
+          lines.push(`- ${feature}`);
+        }
+      }
+      lines.push("");
+    }
+  } else {
+    lines.push("");
+  }
+  fs.writeFileSync(projectMdPath(projectPath), `${lines.join("\n").trimEnd()}\n`, "utf8");
+}
 
-  fs.writeFileSync(projectMdPath(projectPath), content, "utf8");
+function normalizeFunctionKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "");
+}
+
+function shouldSkipSourceDir(name: string): boolean {
+  return name === ".git" || name === ".jj" || name === ".project" || name === "node_modules" || name === "dist" || name === "target";
+}
+
+function collectSourceFiles(root: string): string[] {
+  const out: string[] = [];
+  const stack = [root];
+  const allowedExt = new Set([".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".go"]);
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (shouldSkipSourceDir(entry.name)) continue;
+        stack.push(path.join(current, entry.name));
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!allowedExt.has(ext)) continue;
+      out.push(path.join(current, entry.name));
+    }
+  }
+  return out;
+}
+
+function extractFunctionNames(filePath: string, raw: string): string[] {
+  const ext = path.extname(filePath).toLowerCase();
+  const names = new Set<string>();
+  const push = (value: string) => {
+    const next = value.trim();
+    if (!next) return;
+    names.add(next);
+  };
+  const readMatches = (pattern: RegExp) => {
+    for (const match of raw.matchAll(pattern)) {
+      const hit = String(match[1] ?? "").trim();
+      if (hit.length > 0) push(hit);
+    }
+  };
+
+  if (ext === ".rs") {
+    readMatches(/\b(?:pub\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g);
+  } else if (ext === ".ts" || ext === ".tsx" || ext === ".js" || ext === ".jsx") {
+    readMatches(/\b(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g);
+    readMatches(/\b(?:export\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>/g);
+  } else if (ext === ".py") {
+    readMatches(/^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/gm);
+  } else if (ext === ".go") {
+    readMatches(/^\s*func\s+(?:\([^)]+\)\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\(/gm);
+  }
+  return [...names];
+}
+
+function domainMatchesFunction(domainName: string, relativePath: string, functionName: string): boolean {
+  const domain = domainName.trim().toLowerCase();
+  if (!domain) return false;
+  const rel = relativePath.toLowerCase().replace(/\\/g, "/");
+  const file = path.basename(rel);
+  const fn = functionName.toLowerCase();
+  if (rel.includes(`/${domain}/`) || rel.startsWith(`${domain}/`) || rel.includes(`/domains/${domain}/`)) return true;
+  if (file.includes(domain)) return true;
+  if (fn.startsWith(domain) || fn.includes(`_${domain}_`) || fn.includes(`${domain}_`) || fn.includes(domain)) return true;
+  return false;
+}
+
+function syncDomainFeaturesFromSource(
+  projectPath: string,
+  targetDomainName?: string
+): { updatedDomains: number; addedFeatures: number } {
+  const projectMd = projectMdPath(projectPath);
+  if (!fs.existsSync(projectMd)) return { updatedDomains: 0, addedFeatures: 0 };
+  if (isMonorepoManagedPath(projectPath, monorepoRoot())) return { updatedDomains: 0, addedFeatures: 0 };
+  const parsed = readProjectMdAttributes(fs.readFileSync(projectMd, "utf8"));
+  if (parsed.domains.length === 0) return { updatedDomains: 0, addedFeatures: 0 };
+  const targetDomain = String(targetDomainName ?? "").trim().toLowerCase();
+
+  const files = collectSourceFiles(projectPath);
+  let changed = false;
+  let updatedDomains = 0;
+  let addedFeatures = 0;
+  const nextDomains: DomainRow[] = parsed.domains.map((domain) => {
+    const isTarget = !targetDomain || domain.name.trim().toLowerCase() === targetDomain;
+    if (!isTarget) {
+      return domain;
+    }
+    const existingByKey = new Map<string, string>();
+    for (const feature of domain.features) {
+      const key = normalizeFunctionKey(feature.split(":")[0] ?? feature);
+      if (!key || existingByKey.has(key)) continue;
+      existingByKey.set(key, feature);
+    }
+    let addedForDomain = 0;
+
+    for (const filePath of files) {
+      const relative = path.relative(projectPath, filePath).replace(/\\/g, "/");
+      let raw = "";
+      try {
+        raw = fs.readFileSync(filePath, "utf8");
+      } catch {
+        continue;
+      }
+      const functions = extractFunctionNames(filePath, raw);
+      for (const fn of functions) {
+        if (!domainMatchesFunction(domain.name, relative, fn)) continue;
+        const key = normalizeFunctionKey(fn);
+        if (!key || existingByKey.has(key)) continue;
+        existingByKey.set(key, `${fn}: ${relative} 함수`);
+        changed = true;
+        addedForDomain += 1;
+      }
+    }
+    if (addedForDomain > 0) {
+      updatedDomains += 1;
+      addedFeatures += addedForDomain;
+    }
+    return { ...domain, features: [...existingByKey.values()] };
+  });
+
+  if (!changed) return { updatedDomains: 0, addedFeatures: 0 };
+  writeProjectMd(projectPath, {
+    name: parsed.name,
+    description: parsed.description,
+    spec: parsed.spec,
+    goal: parsed.goal,
+    rules: parsed.rules,
+    constraints: parsed.constraints,
+    features: parsed.features,
+    domains: nextDomains
+  });
+  return { updatedDomains, addedFeatures };
 }
 
 function loadDraftsList(projectPath: string): DraftsListDoc {
@@ -1704,6 +1876,7 @@ export function loadProjectDetail(id: string): ProjectDetail {
   }
   ensureProjectFiles(project);
   reconcileDraftCompletionFromProjectFeatures(project.path);
+  syncDomainFeaturesFromSource(project.path);
   const parsed = readProjectMdAttributes(fs.readFileSync(projectMdPath(project.path), "utf8"));
   const drafts = loadDraftsList(project.path);
   const hasDraftsYaml = fs.existsSync(draftsYamlPath(project.path));
@@ -1763,6 +1936,15 @@ export function loadProjectDetail(id: string): ProjectDetail {
   };
 }
 
+export function refreshDomainFeatures(id: string, domainName?: string): { detail: ProjectDetail; output: string } {
+  const detail = loadProjectDetail(id);
+  const result = syncDomainFeaturesFromSource(detail.path, domainName);
+  return {
+    detail: loadProjectDetail(id),
+    output: `domain sync updated=${result.updatedDomains} added=${result.addedFeatures}`
+  };
+}
+
 export function saveProjectMemo(id: string, memo: string): ProjectDetail {
   const detail = loadProjectDetail(id);
   fs.writeFileSync(memoPath(detail.path), memo, "utf8");
@@ -1787,7 +1969,8 @@ export function saveProjectInfo(id: string, input: {
     goal: input.goal,
     rules: current.rules,
     constraints: current.constraints,
-    features: current.features
+    features: current.features,
+    domains: current.domains
   });
   return loadProjectDetail(id);
 }
@@ -1805,7 +1988,8 @@ export function saveLists(id: string, input: {
     goal: current.goal,
     rules: input.rules,
     constraints: input.constraints,
-    features: input.features
+    features: input.features,
+    domains: current.domains
   });
 
   const drafts = loadDraftsList(current.path);
@@ -1898,7 +2082,8 @@ function finalizeCompletedDrafts(id: string): string {
     goal: parsed.goal || detail.goal,
     rules: parsed.rules,
     constraints: parsed.constraints,
-    features: mergedFeatures
+    features: mergedFeatures,
+    domains: parsed.domains
   });
 
   const plan = loadPlanDoc(detail.path);

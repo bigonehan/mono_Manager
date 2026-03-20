@@ -1,21 +1,16 @@
 ## 문제
-- `story` 관련 코드/프로파일이 남아 있어 legacy 경로(`assets/story/...`)와 story 명령 진입점이 계속 노출된다.
-- 요청사항은 story 관련 부분 전체 제거다.
+- `impl_orc_code` 실행 시 `drafts.yaml`/`job.md` 상태 전이가 오케스트레이터 함수로 강제되지 않아, 작업 상태 동기화가 불명확하다.
+- LLM 구현 단계에서 상태 파일을 직접 수정하지 못하도록 역할 분리가 필요하다.
 
 ## 해결책
-- `src/main.rs`에서 `mod story;` 제거.
-- `src/profile/mod.rs`에서 Story 전용 타입/구현/매핑(`is_known_profile_name`, `resolve_profile`) 제거.
-- `src/cli.rs` usage의 profile 목록에서 `story` 제거.
-- `src/web_api/mod.rs`의 `ProjectType`에서 `story` alias 제거.
-- `src/story.rs` 파일 삭제.
+- `src/code.rs`에 상태 전이 전용 함수 2개를 둔다.
+  - draft item state 변경 함수
+  - job task list 이동 함수
+- `impl_orc_code` 흐름을 `시작 전 work 전이 -> LLM 실행 -> 성공/실패 후 상태 전이`로 고정한다.
+  - 성공: `draft.state=complete`, `job.task=check`
+  - 실패: `draft.state=error`, `job.task=fail`
+- `assets/prompts/build_parallel.md`에 `drafts.yaml`/`job.md` 직접 수정 금지 규칙을 명시한다.
 
 ## 검증
-- `rg -n "\\bstory\\b|Story|assets/story" src README.md`
 - `cargo test`
-- `cargo run --bin orc -- --help`
 - `cargo install --path /home/tree/project/rust-orc`
-
-## 재시도 반영
-- `cargo test` 실패 원인은 story 제거와 독립적인 기존 unresolved symbol/시그니처 불일치 오류로 확인됨.
-- 이번 턴 강제 실행 항목: story 제거 완료 여부를 `rg`로 먼저 확정하고, `cargo test`를 동일 조건으로 1회 재시도한다.
-- `cargo install`도 동일 오류로 실패하여, install 재시도는 컴파일 깨짐 복구 이후 단계로 이관한다.

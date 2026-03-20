@@ -1004,6 +1004,16 @@ fn delete_project(repo_root: &Path, id: &str) -> Result<(), String> {
         .find(|p| p.id == id)
         .cloned()
         .ok_or_else(|| format!("project not found: {}", id))?;
+    let target_path = PathBuf::from(target.path.trim());
+    if target_path.as_os_str().is_empty() {
+        return Err("refusing to delete empty project path".to_string());
+    }
+    if target_path.parent().is_none() {
+        return Err(format!(
+            "refusing to delete unsafe project path: {}",
+            target_path.display()
+        ));
+    }
     registry.projects.retain(|p| p.id != id);
     if registry.recent_active_pane == id {
         registry.recent_active_pane = registry
@@ -1018,10 +1028,9 @@ fn delete_project(repo_root: &Path, id: &str) -> Result<(), String> {
         }
     }
     save_registry(repo_root, &registry)?;
-    let meta = project_meta_dir(Path::new(&target.path));
-    if meta.exists() {
-        fs::remove_dir_all(&meta)
-            .map_err(|e| format!("failed to remove {}: {}", meta.display(), e))?;
+    if target_path.exists() {
+        fs::remove_dir_all(&target_path)
+            .map_err(|e| format!("failed to remove {}: {}", target_path.display(), e))?;
     }
     Ok(())
 }

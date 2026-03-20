@@ -39,7 +39,7 @@ pub fn print_usage(program: &str) {
         "add_orc_drafts",
         "impl_orc_code",
         "check_orc_code",
-        "open-ui [-w|--web]",
+        "open-ui [-w|--web|-b|--build]",
         "serve-web-api [--addr <host:port>]",
         "send-tmux <pane_id> <msg...> [enter|enter-exit|raw|display]",
         "chat -n <name> [--background] [-m <message>] [-i <receiver_id>] [--data <data>]",
@@ -98,8 +98,10 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                 super::tui::TuiRuntime::new().run_ui_entry()
             } else if tail.len() == 1 && matches!(tail[0].as_str(), "-w" | "--web") {
                 super::web::open_web_ui()
+            } else if tail.len() == 1 && matches!(tail[0].as_str(), "-b" | "--build") {
+                super::web::open_web_ui_build()
             } else {
-                Err("open-ui accepts no args or one of: -w, --web".to_string())
+                Err("open-ui accepts no args or one of: -w, --web, -b, --build".to_string())
             }
         }
         "serve-web-api" => {
