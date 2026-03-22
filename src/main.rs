@@ -332,11 +332,13 @@ pub(crate) fn registry_path() -> PathBuf {
 pub(crate) fn test_command() -> Result<String, String> {
     let cwd = env::current_dir().map_err(|e| format!("failed to get cwd: {}", e))?;
     if cwd.join("package.json").exists() {
-        let output = Command::new("npm")
+        let manager = resolve_js_package_manager_for(&cwd)?;
+        let output = Command::new(manager)
             .arg("run")
             .arg("build")
+            .current_dir(&cwd)
             .output()
-            .map_err(|e| format!("failed to execute npm: {}", e))?;
+            .map_err(|e| format!("failed to execute {} run build: {}", manager, e))?;
         return Ok(String::from_utf8_lossy(&output.stdout).to_string());
     }
     if cwd.join("Cargo.toml").exists() {
@@ -347,6 +349,26 @@ pub(crate) fn test_command() -> Result<String, String> {
         return Ok(String::from_utf8_lossy(&output.stdout).to_string());
     }
     Err("no build command found for this workspace".to_string())
+}
+
+fn resolve_js_package_manager_for(_cwd: &Path) -> Result<&'static str, String> {
+    if is_command_available("npm") {
+        return Ok("npm");
+    }
+    if is_command_available("pnpm") {
+        return Ok("pnpm");
+    }
+    if is_command_available("bun") {
+        return Ok("bun");
+    }
+    Err("no supported package manager found (need npm, pnpm, or bun)".to_string())
+}
+
+fn is_command_available(program: &str) -> bool {
+    Command::new(program)
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
 }
 
 pub(crate) fn run_codex_exec_capture_with_timeout(prompt: &str, timeout_sec: u64) -> Result<String, String> {

@@ -45,57 +45,41 @@ test("web ui: load and create/select project", async ({ page, request }) => {
   expect(raw).toContain("project_type: code");
 });
 
-test("web ui: episode pane ordering, read modal, and draft action disabled state", async ({ page, request }) => {
-  const unique = `pw-episode-${Date.now()}`;
+test("web ui: drafts pane accepts job.md input and shows generated drafts.yaml", async ({ page, request }) => {
+  const unique = `pw-drafts-${Date.now()}`;
   const tmpPath = `/tmp/${unique}`;
   fs.rmSync(tmpPath, { recursive: true, force: true });
   fs.mkdirSync(tmpPath, { recursive: true });
 
-  await page.goto("/");
   const createRes = await request.post("http://127.0.0.1:4175/api/projects", {
     data: {
       name: unique,
-      description: "episode ui verification",
+      description: "drafts pane verification",
       path: tmpPath,
-      spec: "story, episode",
+      spec: "react, draft",
       project_type: "code"
     }
   });
   expect(createRes.ok()).toBeTruthy();
 
-  await page.reload();
-  const card = page.locator(`[data-testid^="project-item-"]`, { hasText: unique }).first();
-  await card.click({ force: true });
-  await page.getByTestId("tab-detail").click({ force: true });
-
-  await expect(page.getByTestId("draft-action-add")).toBeDisabled();
-  await expect(page.getByTestId("draft-action-modify")).toBeDisabled();
-
   fs.writeFileSync(
-    path.join(tmpPath, "input.md"),
+    path.join(tmpPath, "job.md"),
     [
-      "# Episode One",
-      "- 감정선 유지 > 바닷가에서 시작해 관계 변화를 드러낸다",
+      "# plan",
       "",
-      "첫 문단은 바닷가의 공기와 인물의 긴장을 보여준다.",
+      "# requirement",
+      "## Episode One",
+      "1. 바닷가에서 시작해 관계 변화를 드러낸다",
+      "- 감정선 유지",
       "",
-      "## 전개",
-      "- 두 인물의 대화를 통해 갈등을 밀어 올린다"
-    ].join("\n"),
-    "utf8"
-  );
-  fs.writeFileSync(
-    path.join(tmpPath, ".project", "drafts.yaml"),
-    [
-      "draft:",
-      "  - name: episode_one",
-      "    scope:",
-      "      - story/episode-one.md",
-      "planned:",
-      "  - episode_one",
-      "worked: []",
-      "complete: []",
-      "failed: []"
+      "# task",
+      "## planned",
+      "## work",
+      "## check",
+      "## completed",
+      "## fail",
+      "",
+      "# problems"
     ].join("\n"),
     "utf8"
   );
@@ -104,25 +88,17 @@ test("web ui: episode pane ordering, read modal, and draft action disabled state
   await page.locator(`[data-testid^="project-item-"]`, { hasText: unique }).first().click({ force: true });
   await page.getByTestId("tab-detail").click({ force: true });
 
-  const episodePane = page.getByTestId("episode-pane");
   const draftPane = page.getByTestId("draft-pane");
-  const draftActionRow = page.getByTestId("draft-action-row");
-  const episodeBox = await episodePane.boundingBox();
-  const draftBox = await draftPane.boundingBox();
-  const actionBox = await draftActionRow.boundingBox();
-  expect(episodeBox).not.toBeNull();
-  expect(draftBox).not.toBeNull();
-  expect(actionBox).not.toBeNull();
-  expect((episodeBox?.y ?? 0) < (draftBox?.y ?? 0)).toBeTruthy();
-  expect((draftBox?.y ?? 0) < (actionBox?.y ?? 0)).toBeTruthy();
+  await expect(draftPane).toBeVisible();
+  await expect(page.getByRole("button", { name: "Generate drafts.yaml" })).toBeVisible();
 
-  await expect(page.getByTestId("draft-action-add")).toBeEnabled();
-  await expect(page.getByTestId("draft-action-modify")).toBeEnabled();
-  await page.getByRole("button", { name: "Episode One" }).click();
-  await page.getByTestId("episode-read-button").click();
-  await expect(page.getByTestId("episode-read-modal")).toBeVisible();
-  await expect(page.getByTestId("episode-read-modal")).toContainText("Episode One");
-  await expect(page.getByTestId("episode-read-modal")).toContainText("첫 문단은 바닷가의 공기와 인물의 긴장을 보여준다.");
+  const textareas = page.locator("[data-testid='draft-pane'] textarea");
+  await expect(textareas).toHaveCount(2);
+  await textareas.first().fill(["# plan", "", "# requirement", "## login", "1. 로그인 폼 노출", "- 접근성 유지"].join("\n"));
+  await page.getByRole("button", { name: "Generate drafts.yaml" }).click();
+
+  await expect(page.getByRole("button", { name: /save drafts\.yaml/i })).toBeVisible();
+  await expect(page.getByText(/no drafts\.yaml items/i)).toBeHidden({ timeout: 10000 });
 });
 
 test("web ui: check pane renders draft subject and appends screenshot feedback", async ({ page, request }) => {

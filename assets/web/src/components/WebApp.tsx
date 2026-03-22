@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Code2,
   CornerUpLeft,
-  FilePlus2,
   FileText,
   FlaskConical,
   FolderOpen,
@@ -48,12 +47,6 @@ type ProjectItemViewMode = "card" | "minimal";
 type ProfileType = "code" | "mono";
 type DraftFormField = { key: string; value: string };
 type TemplateAssetFile = { name: string; path: string; content: string };
-type EpisodeSection = {
-  title: string;
-  rule: string;
-  step: string;
-  markdown: string;
-};
 type CheckScreenshotItem = NonNullable<Detail["screenshots"]>[number];
 
 function stateLabel(state?: Project["state"]): string {
@@ -134,62 +127,6 @@ function splitSidebarParent(name: string): { parent: string | null; leaf: string
 function apiUrl(path: string): string {
   const base = (import.meta.env.PUBLIC_ORC_API_BASE ?? "").trim().replace(/\/+$/, "");
   return base ? `${base}${path}` : path;
-}
-
-function parseEpisodeSections(raw: string): EpisodeSection[] {
-  if (!raw.trim()) {
-    return [];
-  }
-  const rows: EpisodeSection[] = [];
-  let current: { title: string; rule: string; step: string; lines: string[] } | null = null;
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (/^#{1,6}\s+/.test(trimmed)) {
-      if (current && current.title) {
-        rows.push({
-          title: current.title,
-          rule: current.rule,
-          step: current.step,
-          markdown: current.lines.join("\n").trim()
-        });
-      }
-      current = {
-        title: trimmed.replace(/^#{1,6}\s+/, "").trim(),
-        rule: "",
-        step: "",
-        lines: [line]
-      };
-      continue;
-    }
-    if (!current) {
-      continue;
-    }
-    current.lines.push(line);
-    if (current.rule || !trimmed.startsWith("- ")) {
-      continue;
-    }
-    const body = trimmed.slice(2).trim();
-    const [rulePart, ...stepParts] = body.split(">");
-    current.rule = rulePart.trim();
-    current.step = stepParts.join(">").trim();
-  }
-  if (current && current.title) {
-    rows.push({
-      title: current.title,
-      rule: current.rule,
-      step: current.step,
-      markdown: current.lines.join("\n").trim()
-    });
-  }
-  const seen = new Set<string>();
-  return rows.filter((row) => {
-    const key = row.title.trim();
-    if (!key || seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
 }
 
 function renderEpisodeMarkdown(markdown: string) {
@@ -296,23 +233,21 @@ export default function WebApp() {
   const [memoSaving, setMemoSaving] = useState(false);
   const [runningImplDraft, setRunningImplDraft] = useState(false);
   const [draftModalAction, setDraftModalAction] = useState<DraftModalAction | null>(null);
-  const [formAddInputOpen, setFormAddInputOpen] = useState(false);
   const [formRawInput, setFormRawInput] = useState("");
   const [formAiMessage, setFormAiMessage] = useState("");
   const [formAiGenerating, setFormAiGenerating] = useState(false);
   const [formAiDone, setFormAiDone] = useState(false);
+  const [formDraftsRaw, setFormDraftsRaw] = useState("");
+  const [draftsRawSaving, setDraftsRawSaving] = useState(false);
   const [addInputStatus, setAddInputStatus] = useState("");
   const [addInputApplying, setAddInputApplying] = useState(false);
   const [autoModalOpen, setAutoModalOpen] = useState(false);
   const [autoModalInput, setAutoModalInput] = useState("");
   const [autoRunning, setAutoRunning] = useState(false);
-  const [selectedInputTitle, setSelectedInputTitle] = useState("");
   const [selectedDraftYamlItem, setSelectedDraftYamlItem] = useState<{
     name: string;
     draft: Record<string, unknown>;
   } | null>(null);
-  const [draftsViewMode, setDraftsViewMode] = useState<"input" | "drafts">("drafts");
-  const [episodeReadOpen, setEpisodeReadOpen] = useState(false);
   const [checkRunning, setCheckRunning] = useState(false);
   const [checkFeedbackSaving, setCheckFeedbackSaving] = useState(false);
   const [checkRetrying, setCheckRetrying] = useState(false);
@@ -441,16 +376,8 @@ export default function WebApp() {
     const selectedTemplate = templateAssets.templates.find((file) => `templates:${file.name}` === templateSelectedKey);
     return selectedTemplate ?? null;
   }, [templateAssets, templateSelectedKey]);
-  const inputItemRows = detail?.inputItems ?? [];
   const draftsYamlCards = detail?.draftsYamlItems ?? [];
   const hasGreenDraft = draftsYamlCards.some((item) => item.status === "complete");
-  const episodeSections = useMemo(() => parseEpisodeSections(detail?.inputMdRaw ?? ""), [detail?.inputMdRaw]);
-  const selectedEpisode = episodeSections.find((item) => item.title === selectedInputTitle) ?? null;
-  const selectedInputRow = inputItemRows.find((item) => item.title === selectedInputTitle) ?? null;
-  const selectedEpisodeMarkdown =
-    selectedEpisode?.markdown ??
-    (selectedInputRow ? `# ${selectedInputRow.title}\n- ${selectedInputRow.rule} > ${selectedInputRow.step}` : "");
-  const hasEpisodes = inputItemRows.length > 0;
   const checkSubject = detail?.checkSubject?.trim() || "drafts.yaml 기반 수동 check 대상이 없습니다.";
   const checkSteps = detail?.checkSteps ?? [];
   const checkScreenshots = detail?.screenshots ?? [];
@@ -778,6 +705,12 @@ export default function WebApp() {
     }
   }, [selectedId]);
 
+
+  useEffect(() => {
+    setFormRawInput(String(detail?.jobEditableRaw ?? ""));
+    setFormDraftsRaw(String(detail?.draftsYamlRaw ?? ""));
+  }, [detail?.id, detail?.jobEditableRaw, detail?.draftsYamlRaw]);
+
   useEffect(() => {
     if (tab === "project") {
       void loadProjects();
@@ -851,23 +784,7 @@ export default function WebApp() {
     };
   }, [detail?.id]);
 
-  useEffect(() => {
-    const titles = (detail?.inputItems ?? []).map((item) => item.title);
-    if (titles.length === 0) {
-      setSelectedInputTitle("");
-      setEpisodeReadOpen(false);
-      return;
-    }
-    if (!selectedInputTitle || !titles.includes(selectedInputTitle)) {
-      setSelectedInputTitle(titles[0]);
-    }
-  }, [detail?.id, detail?.inputItems, selectedInputTitle]);
 
-  useEffect(() => {
-    if (!selectedEpisodeMarkdown.trim()) {
-      setEpisodeReadOpen(false);
-    }
-  }, [selectedEpisodeMarkdown]);
 
   useEffect(() => {
     if (!detail?.id) return;
@@ -1077,8 +994,8 @@ export default function WebApp() {
 
   async function saveRawInputMd(nextRaw: string) {
     if (!detail) return;
-    if (!detail.hasInputMd) {
-      pushLog("raw input save blocked: input.md not found");
+    if (!detail.hasJobMd) {
+      pushLog("raw input save blocked: job.md not found");
       return;
     }
     const res = await fetch(apiUrl("/api/input-md-raw"), {
@@ -1425,9 +1342,9 @@ export default function WebApp() {
     await loadDetail(detail.id);
   }
 
-  async function removeDraftPaneFile(target: "input" | "drafts") {
+  async function removeDraftPaneFile(target: "job" | "drafts") {
     if (!detail) return;
-    const targetLabel = target === "input" ? "input.md" : "drafts.yaml";
+    const targetLabel = target === "job" ? "job.md" : "drafts.yaml";
     const answer = window.prompt(`${targetLabel} 파일을 삭제합니다. 진행하려면 y 를 입력하세요. (y/n)`, "n");
     if (!answer || answer.trim().toLowerCase() !== "y") {
       pushLog(`${targetLabel} delete cancelled`);
@@ -1445,9 +1362,60 @@ export default function WebApp() {
     }
     pushLog(String(data.output ?? `${targetLabel} deleted`));
     setDetail(data.detail);
-    setFormRawInput(String(data.detail?.inputMdRaw ?? ""));
+    setFormRawInput(String(data.detail?.jobEditableRaw ?? ""));
     if (target === "drafts") {
       setSelectedDraftYamlItem(null);
+    }
+  }
+
+  async function saveRawDraftsYaml(nextRaw: string) {
+    if (!detail) return;
+    setDraftsRawSaving(true);
+    try {
+      const res = await fetch(apiUrl("/api/drafts-yaml-raw"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: detail.id, raw: nextRaw })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        pushLog(`drafts.yaml save failed: ${String(data.error ?? "unknown error")}`);
+        return;
+      }
+      setDetail(data.detail);
+      setFormDraftsRaw(String(data.detail?.draftsYamlRaw ?? ""));
+      pushLog("drafts.yaml saved");
+    } finally {
+      setDraftsRawSaving(false);
+    }
+  }
+
+  async function generateDraftsFromJob() {
+    if (!detail) return;
+    setAddInputApplying(true);
+    setAddInputStatus("drafts.yaml 생성중...");
+    try {
+      const res = await fetch(apiUrl("/api/input-md-raw"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: detail.id, raw: formRawInput, apply: true })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        pushLog(`drafts generate failed: ${String(data.error ?? "unknown error")}`);
+        setAddInputStatus("실패");
+        return;
+      }
+      if (Array.isArray(data.stages)) {
+        for (const line of data.stages) pushLog(`[job->drafts] ${String(line)}`);
+      }
+      setDetail(data.detail);
+      setFormRawInput(String(data.detail?.jobEditableRaw ?? ""));
+      setFormDraftsRaw(String(data.detail?.draftsYamlRaw ?? ""));
+      setAddInputStatus("완료");
+      await loadProjects();
+    } finally {
+      setAddInputApplying(false);
     }
   }
 
@@ -1475,10 +1443,10 @@ export default function WebApp() {
         return;
       }
       setDetail(data.detail);
-      setFormRawInput(String(data.detail?.inputMdRaw ?? ""));
+      setFormRawInput(String(data.detail?.jobEditableRaw ?? ""));
       setFormAiDone(true);
       setTimeout(() => setFormAiDone(false), 1800);
-      pushLog(String(data.output ?? "input.md generated"));
+      pushLog(String(data.output ?? "job.md generated"));
     } finally {
       setFormAiGenerating(false);
     }
@@ -1563,7 +1531,7 @@ export default function WebApp() {
     const currentJob = String(data.current_job ?? data.detail?.current_job ?? "");
     if (data.detail && selectedId === id) {
       setDetail(data.detail);
-      setFormRawInput(String(data.detail.inputMdRaw ?? ""));
+      setFormRawInput(String(data.detail.jobEditableRaw ?? ""));
     }
     syncProjectRuntimeState(id, nextState, currentJob);
     setActiveAutoProjectIds((prev) =>
@@ -2296,110 +2264,99 @@ export default function WebApp() {
               memoSaving={memoSaving}
             />
             <div>
-              <div className={sectionLabelClass}>episodes</div>
-              <Card data-testid="episode-pane" className="rounded-2xl border border-border bg-white">
-                <CardContent className="pt-6">
-                  <div className="grid gap-3 md:grid-cols-[220px_1fr]">
-                    <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-border bg-white p-2">
-                      {inputItemRows.length === 0 && <div className="text-xs text-muted-foreground">no episodes</div>}
-                      {inputItemRows.map((item) => (
-                        <button
-                          key={`input-title-${item.title}`}
-                          className={`w-full rounded px-2 py-1 text-left text-xs ${
-                            selectedInputTitle === item.title
-                              ? "bg-muted font-semibold text-foreground"
-                              : "text-muted-foreground hover:bg-muted/50"
-                          }`}
-                          onClick={() => setSelectedInputTitle(item.title)}
-                        >
-                          {item.title}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="max-h-64 overflow-y-auto rounded-xl border border-border bg-white p-3 text-xs">
-                      {!selectedInputRow ? (
-                        <div className="text-muted-foreground">episode를 선택하세요.</div>
-                      ) : (
-                        <div className="space-y-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">title</div>
-                              <div className="mt-1 break-words text-sm text-foreground">{selectedInputRow.title}</div>
-                            </div>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="shrink-0"
-                              onClick={() => setEpisodeReadOpen(true)}
-                              disabled={!selectedEpisodeMarkdown.trim()}
-                              data-testid="episode-read-button"
-                            >
-                              read
-                            </Button>
-                          </div>
-                          <div>
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">rule</div>
-                            <div className="mt-1 text-sm text-foreground">{selectedInputRow.rule || "-"}</div>
-                          </div>
-                          <div>
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">step</div>
-                            <div className="mt-1 text-sm text-foreground">{selectedInputRow.step || "-"}</div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-            <div>
               <div className={sectionLabelClass}>drafts</div>
-              <div className="relative" data-testid="draft-pane">
-                <div className="flex flex-wrap items-end justify-end gap-2 lg:absolute lg:right-3 lg:top-0 lg:-translate-y-full">
-                  {[
-                    { key: "input", label: "input.md" },
-                    { key: "drafts", label: "drafts.yaml" }
-                  ].map((tab) => (
-                    <button
-                      key={`draft-tab-${tab.key}`}
-                      type="button"
-                      onClick={() => setDraftsViewMode(tab.key as "input" | "drafts")}
-                      className={`rounded-t-md border border-b-0 px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
-                        draftsViewMode === tab.key
-                          ? "border-border bg-white text-foreground"
-                          : "border-border/70 bg-muted/20 text-muted-foreground"
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                  {(draftsViewMode === "input" || draftsViewMode === "drafts") && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void removeDraftPaneFile(draftsViewMode === "input" ? "input" : "drafts")}
-                      disabled={isAutoRunningDetail}
-                      aria-label={draftsViewMode === "input" ? "delete-input-md" : "delete-drafts-yaml"}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              <Card className={`rounded-2xl border border-border lg:border-x lg:border-b lg:border-t-0 ${runningImplDraft ? "bg-amber-50" : "bg-white"}`}>
-                <CardContent className="pt-6">
-                  <div className="rounded-b-xl border-x border-b border-border bg-white p-3">
-                    {draftsViewMode === "input" ? (
-                      <pre className="max-h-64 overflow-y-auto rounded-xl border border-border bg-white p-3 text-xs leading-relaxed text-foreground/80">
-                        {detail?.inputMdRaw?.trim() || "# input.md not found"}
-                      </pre>
-                    ) : (
-                      <div className="max-h-64 overflow-y-auto rounded-xl border border-border bg-white p-2">
-                        {draftsYamlCards.length === 0 && (
-                          <div className="px-1 py-2 text-xs text-muted-foreground">no drafts.yaml items</div>
-                        )}
-                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              <Card data-testid="draft-pane" className={`rounded-2xl border border-border bg-white ${runningImplDraft ? "bg-amber-50" : "bg-white"}`}>
+                <CardContent className="space-y-4 pt-6">
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <div className="space-y-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">job.md (editable: # requirement 까지)</div>
+                      <Textarea
+                        value={formRawInput}
+                        onChange={(e) => handleRawInputChange(e.target.value)}
+                        className="min-h-[260px] bg-white"
+                        placeholder="# plan
+
+# requirement
+## item"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={formAiMessage}
+                          onChange={(e) => setFormAiMessage(e.target.value)}
+                          placeholder="메시지로 job.md 생성"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void generateInputMdWithAi();
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="gap-2"
+                          onClick={() => void generateInputMdWithAi()}
+                          disabled={formAiGenerating || isAutoRunningDetail}
+                          aria-label="generate-input-md-with-ai"
+                        >
+                          <span>ai</span>
+                          <Sparkles className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void removeDraftPaneFile("job")}
+                          disabled={isAutoRunningDetail}
+                          aria-label="delete-job-md"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          delete job.md
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={() => void generateDraftsFromJob()}
+                          disabled={addInputApplying || isBuildRunning || isAutoRunningDetail}
+                          aria-label="generate-drafts-yaml"
+                        >
+                          Generate drafts.yaml
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">drafts.yaml (editable)</div>
+                      <Textarea
+                        value={formDraftsRaw}
+                        onChange={(e) => setFormDraftsRaw(e.target.value)}
+                        className="min-h-[260px] bg-white"
+                        placeholder="draft:
+  - name: ..."
+                      />
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void removeDraftPaneFile("drafts")}
+                          disabled={isAutoRunningDetail}
+                          aria-label="delete-drafts-yaml"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          delete drafts.yaml
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void saveRawDraftsYaml(formDraftsRaw)}
+                          disabled={draftsRawSaving || isAutoRunningDetail}
+                          aria-label="save-drafts-yaml"
+                        >
+                          {draftsRawSaving ? "saving..." : "save drafts.yaml"}
+                        </Button>
+                      </div>
+                      <div className="max-h-56 overflow-y-auto rounded-xl border border-border bg-white p-2">
+                        {draftsYamlCards.length === 0 && <div className="px-1 py-2 text-xs text-muted-foreground">no drafts.yaml items</div>}
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
                           {draftsYamlCards.map((item) => (
                             <DraftYamlItemCard
                               key={`drafts-yaml-item-${item.name}`}
@@ -2409,9 +2366,9 @@ export default function WebApp() {
                           ))}
                         </div>
                       </div>
-                    )}
+                    </div>
                   </div>
-                  <div className="mt-3 flex justify-end gap-2">
+                  <div className="mt-2 flex justify-end gap-2">
                     <Button
                       variant="outline"
                       className="h-9 gap-2 px-3 text-sm font-semibold"
@@ -2432,57 +2389,22 @@ export default function WebApp() {
                       <CheckCircle2 className="h-4 w-4" />
                       <span>complete</span>
                     </Button>
+                    <Button
+                      variant="outline"
+                      className={`h-9 gap-2 px-3 text-sm font-semibold ${isBuildRunning ? "border-red-600 bg-red-600 text-white hover:bg-red-700 hover:text-white" : ""}`}
+                      onClick={() => void (isBuildRunning ? stopBuildJob() : startBuildJob())}
+                      disabled={addInputApplying || isAiBusy}
+                      aria-label="build_parallel"
+                      data-testid="draft-action-build"
+                    >
+                      {isBuildRunning ? <Ban className="h-4 w-4" /> : <Hammer className="h-4 w-4" />}
+                      <span>{isBuildRunning ? "stop" : "build"}</span>
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
-              </div>
             </div>
-            <div data-testid="draft-action-row" className="flex flex-wrap justify-end gap-2">
-              <Button
-                variant="outline"
-                className="h-10 gap-2 px-3 text-sm font-semibold"
-                onClick={() => {
-                  setFormRawInput(detail?.inputMdRaw ?? "");
-                  setFormAiMessage("");
-                  setFormAiDone(false);
-                  setAddInputStatus("");
-                  setFormAddInputOpen(true);
-                }}
-                disabled={!hasEpisodes || addInputApplying || isBuildRunning || isAiBusy}
-                aria-label="form_add_input"
-                data-testid="draft-action-add"
-              >
-                <FilePlus2 className="h-4 w-4" />
-                <span>add</span>
-              </Button>
-              <Button
-                variant="outline"
-                className="h-10 gap-2 px-3 text-sm font-semibold"
-                onClick={() => {
-                  setSelectedPane("project_info");
-                  openEditor();
-                }}
-                disabled={!hasEpisodes || addInputApplying || isBuildRunning || isAiBusy}
-                aria-label="modify_project_info"
-                data-testid="draft-action-modify"
-              >
-                <Pencil className="h-4 w-4" />
-                <span>modify</span>
-              </Button>
-              <Button
-                variant="outline"
-                className={`h-10 gap-2 px-3 text-sm font-semibold ${
-                  isBuildRunning ? "border-red-600 bg-red-600 text-white hover:bg-red-700 hover:text-white" : ""
-                }`}
-                onClick={() => void (isBuildRunning ? stopBuildJob() : startBuildJob())}
-                disabled={addInputApplying || isAiBusy}
-                aria-label="build_parallel"
-                data-testid="draft-action-build"
-              >
-                {isBuildRunning ? <Ban className="h-4 w-4" /> : <Hammer className="h-4 w-4" />}
-                <span>{isBuildRunning ? "stop" : "build"}</span>
-              </Button>
-            </div>
+
             <div>
               <div className={sectionLabelClass}>check</div>
               <Card data-testid="check-pane" className="rounded-2xl border border-border bg-white">
@@ -2647,7 +2569,7 @@ export default function WebApp() {
           {addInputApplying && (
             <div className="absolute inset-0 z-20 flex items-center justify-center">
               <div className="rounded-xl border border-border bg-white/95 px-4 py-2 text-sm font-semibold text-foreground shadow">
-                input.md 반영중...
+                job.md 반영중...
               </div>
             </div>
           )}
@@ -2737,37 +2659,6 @@ export default function WebApp() {
         </div>
       )}
 
-      {episodeReadOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 p-4">
-          <Card className="mx-auto flex h-full w-full max-w-5xl flex-col rounded-2xl">
-            <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-              <div className="min-w-0">
-                <CardTitle className="truncate">episode read</CardTitle>
-                <div className="mt-1 text-sm text-muted-foreground">{selectedInputTitle || "selected episode"}</div>
-              </div>
-              <button
-                type="button"
-                className="rounded p-1 text-muted-foreground hover:bg-muted"
-                onClick={() => setEpisodeReadOpen(false)}
-                aria-label="close-episode-read"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </CardHeader>
-            <CardContent className="min-h-0 flex-1 overflow-hidden">
-              <div
-                data-testid="episode-read-modal"
-                className="h-full overflow-y-auto rounded-2xl border border-border bg-white p-6"
-              >
-                <div className="mx-auto flex max-w-3xl flex-col gap-5">
-                  {renderEpisodeMarkdown(selectedEpisodeMarkdown)}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
       {editOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
           <Card className="w-full max-w-2xl rounded-2xl">
@@ -2819,118 +2710,6 @@ export default function WebApp() {
                 </Button>
               </div>
             </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {formAddInputOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <Card className="relative flex h-[80vh] max-h-[1100px] w-full max-w-4xl flex-col rounded-2xl">
-            <CardHeader>
-              <CardTitle>form_add_input</CardTitle>
-            </CardHeader>
-            <CardContent className={`flex min-h-0 flex-1 flex-col gap-3 overflow-hidden ${formAiGenerating ? "blur-sm" : ""}`}>
-              <div className="flex min-h-0 flex-1 flex-col space-y-3 overflow-hidden rounded-xl border border-border p-3">
-                <Label>raw input.md (# / - / &gt;)</Label>
-                <Textarea
-                  value={formRawInput}
-                  onChange={(e) => handleRawInputChange(e.target.value)}
-                  className="min-h-[220px] flex-1"
-                  placeholder={"# title\n- rule > step"}
-                />
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={formAiMessage}
-                    onChange={(e) => setFormAiMessage(e.target.value)}
-                    placeholder="메시지로 input.md 생성"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void generateInputMdWithAi();
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="gap-2"
-                    onClick={() => void generateInputMdWithAi()}
-                    disabled={formAiGenerating}
-                    aria-label="generate-input-md-with-ai"
-                  >
-                    <span>ai</span>
-                    <Sparkles className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>입력 즉시 input.md로 저장됩니다.</span>
-                  {formAiDone && <span className="font-semibold text-emerald-600">input.md 생성 완료</span>}
-                </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  onClick={async () => {
-                    if (!detail) return;
-                    setFormAddInputOpen(false);
-                    setAddInputApplying(true);
-                    setAddInputStatus("input.md 반영중...");
-                    if (rawInputSaveTimerRef.current) {
-                      clearTimeout(rawInputSaveTimerRef.current);
-                      rawInputSaveTimerRef.current = null;
-                    }
-                    try {
-                      const res = await fetch(apiUrl("/api/input-md-raw"), {
-                        method: "POST",
-                        headers: { "content-type": "application/json" },
-                        body: JSON.stringify({
-                          id: detail.id,
-                          raw: formRawInput,
-                          apply: true
-                        })
-                      });
-                      const data = await res.json();
-                      if (!res.ok) {
-                        pushLog(`raw input apply failed: ${String(data.error ?? "unknown error")}`);
-                        setAddInputStatus("실패");
-                        return;
-                      }
-                      if (Array.isArray(data.stages)) {
-                        for (const line of data.stages) {
-                          pushLog(`[form_add_input] ${String(line)}`);
-                        }
-                      }
-                      setDetail(data.detail);
-                      setAddInputStatus("완료");
-                      await loadProjects();
-                    } finally {
-                      setAddInputApplying(false);
-                    }
-                  }}
-                >
-                  확인
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={formAiGenerating}
-                  onClick={() => {
-                    if (rawInputSaveTimerRef.current) {
-                      clearTimeout(rawInputSaveTimerRef.current);
-                      rawInputSaveTimerRef.current = null;
-                    }
-                    setFormAddInputOpen(false);
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </CardContent>
-            {formAiGenerating && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/45">
-                <div className="rounded-xl border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground shadow">
-                  AI 작업중...
-                </div>
-              </div>
-            )}
           </Card>
         </div>
       )}

@@ -10,6 +10,13 @@ use std::time::{Duration, Instant};
 const WEB_HOST: &str = "127.0.0.1";
 const WEB_PORT: u16 = 4175;
 
+#[derive(Clone, Copy)]
+enum WebPackageManager {
+    Npm,
+    Pnpm,
+    Bun,
+}
+
 pub(crate) fn open_web_ui() -> Result<String, String> {
     let web_dir = resolve_web_dir()?;
     ensure_web_assets_exist(&web_dir)?;
@@ -169,33 +176,35 @@ fn ensure_node_modules(web_dir: &Path) -> Result<(), String> {
     if web_dir.join("node_modules").exists() {
         return Ok(());
     }
-    let status = Command::new("npm")
-        .arg("install")
+    let manager = resolve_web_package_manager()?;
+    let status = Command::new(command_for_web_package_manager(manager))
+        .args(install_args_for_web_package_manager(manager))
         .current_dir(web_dir)
         .status()
-        .map_err(|e| format!("failed to execute npm install: {}", e))?;
+        .map_err(|e| format!("failed to install web dependencies: {}", e))?;
     if status.success() {
         Ok(())
     } else {
         Err(format!(
-            "npm install failed with status: {:?}",
+            "web dependency install failed with status: {:?}",
             status.code()
         ))
     }
 }
 
 fn run_web_build(web_dir: &Path) -> Result<(), String> {
-    let status = Command::new("npm")
+    let manager = resolve_web_package_manager()?;
+    let status = Command::new(command_for_web_package_manager(manager))
         .arg("run")
         .arg("build")
         .current_dir(web_dir)
         .status()
-        .map_err(|e| format!("failed to execute npm run build: {}", e))?;
+        .map_err(|e| format!("failed to execute web build: {}", e))?;
     if status.success() {
         Ok(())
     } else {
         Err(format!(
-            "npm run build failed with status: {:?}",
+            "web build failed with status: {:?}",
             status.code()
         ))
     }
@@ -213,7 +222,8 @@ fn resolve_web_port(_web_dir: &Path) -> Result<u16, String> {
 }
 
 fn spawn_web_server_detached(web_dir: &Path, web_port: u16) -> Result<(), String> {
-    let mut cmd = Command::new("npm");
+    let manager = resolve_web_package_manager()?;
+    let mut cmd = Command::new(command_for_web_package_manager(manager));
     cmd.arg("run")
         .arg("dev")
         .arg("--")
@@ -239,7 +249,8 @@ fn spawn_web_server_detached(web_dir: &Path, web_port: u16) -> Result<(), String
 }
 
 fn spawn_web_server_attached(web_dir: &Path, web_port: u16) -> Result<Child, String> {
-    let mut cmd = Command::new("npm");
+    let manager = resolve_web_package_manager()?;
+    let mut cmd = Command::new(command_for_web_package_manager(manager));
     cmd.arg("run")
         .arg("dev")
         .arg("--")
@@ -259,7 +270,8 @@ fn spawn_web_server_attached(web_dir: &Path, web_port: u16) -> Result<Child, Str
 }
 
 fn spawn_web_preview_attached(web_dir: &Path, web_port: u16) -> Result<Child, String> {
-    let mut cmd = Command::new("npm");
+    let manager = resolve_web_package_manager()?;
+    let mut cmd = Command::new(command_for_web_package_manager(manager));
     cmd.arg("run")
         .arg("preview")
         .arg("--")
@@ -276,6 +288,44 @@ fn spawn_web_preview_attached(web_dir: &Path, web_port: u16) -> Result<Child, St
         .spawn()
         .map_err(|e| format!("failed to spawn web preview server: {}", e))?;
     Ok(child)
+}
+
+fn resolve_web_package_manager() -> Result<WebPackageManager, String> {
+    if is_command_available("npm") {
+        return Ok(WebPackageManager::Npm);
+    }
+    if is_command_available("pnpm") {
+        return Ok(WebPackageManager::Pnpm);
+    }
+    if is_command_available("bun") {
+        return Ok(WebPackageManager::Bun);
+    }
+    Err("no supported package manager found for web ui (need npm, pnpm, or bun)".to_string())
+}
+
+fn is_command_available(program: &str) -> bool {
+    Command::new(program)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn command_for_web_package_manager(manager: WebPackageManager) -> &'static str {
+    match manager {
+        WebPackageManager::Npm => "npm",
+        WebPackageManager::Pnpm => "pnpm",
+        WebPackageManager::Bun => "bun",
+    }
+}
+
+fn install_args_for_web_package_manager(manager: WebPackageManager) -> &'static [&'static str] {
+    match manager {
+        WebPackageManager::Npm => &["install"],
+        WebPackageManager::Pnpm => &["install"],
+        WebPackageManager::Bun => &["install"],
+    }
 }
 
 fn wait_for_web_server(timeout: Duration, web_port: u16) -> Result<(), String> {

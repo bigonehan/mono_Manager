@@ -37,12 +37,11 @@ export type Detail = {
   is_dev_running?: boolean;
   is_build_running?: boolean;
   hasDraftsYaml: boolean;
-  hasInputMd: boolean;
+  hasJobMd: boolean;
   dev_server_url?: string;
   draftsYamlRaw?: string;
-  inputMdRaw?: string;
-  inputTitles?: string[];
-  inputItems?: Array<{ title: string; rule: string; step: string }>;
+  jobMdRaw?: string;
+  jobEditableRaw?: string;
   draftItems?: Array<Record<string, unknown>>;
   draftsYamlItems?: Array<{
     name: string;

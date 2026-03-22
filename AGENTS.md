@@ -19,7 +19,8 @@
 ## Notification Output Rule
 
 ## Auto Install Rule
-- When a feature addition or improvement task is completed, run `cargo install --path /home/tree/project/rust-orc` automatically before finalizing the task.
+- When any task is completed, run `cargo install --path /home/tree/project/mono_Manager --bin orc --force` automatically before finalizing the task.
+- Completion preflight order is fixed: `cargo install` -> `nf -m "<task-name> complete"` -> final response.
 
 ## UI Flow Verification Rule
 - When the user requests a UI change, verify and implement the connected internal behavior flow in the same task.

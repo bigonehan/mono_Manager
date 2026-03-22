@@ -1,16 +1,14 @@
 ## 문제
-- `impl_orc_code` 실행 시 `drafts.yaml`/`job.md` 상태 전이가 오케스트레이터 함수로 강제되지 않아, 작업 상태 동기화가 불명확하다.
-- LLM 구현 단계에서 상태 파일을 직접 수정하지 못하도록 역할 분리가 필요하다.
+- `orc add_orc_drafts` 단계에서 LLM이 자연어 설명/머리말을 함께 반환해 YAML 파서가 반복 실패한다.
+- 현재 구현은 `assets/prompts/init_project.md`를 재사용해 draft item 생성 프롬프트가 목적에 맞지 않는다.
 
 ## 해결책
-- `src/code.rs`에 상태 전이 전용 함수 2개를 둔다.
-  - draft item state 변경 함수
-  - job task list 이동 함수
-- `impl_orc_code` 흐름을 `시작 전 work 전이 -> LLM 실행 -> 성공/실패 후 상태 전이`로 고정한다.
-  - 성공: `draft.state=complete`, `job.task=check`
-  - 실패: `draft.state=error`, `job.task=fail`
-- `assets/prompts/build_parallel.md`에 `drafts.yaml`/`job.md` 직접 수정 금지 규칙을 명시한다.
+- `add_orc_drafts`에서 draft-item 전용 프롬프트를 사용하도록 교체하고, 출력 형식을 YAML 단일 item으로 강제한다.
+- 응답 파싱은 `YAML code fence 추출 -> 전체 본문 정리 -> 단일 item 파싱` 순서로 처리하고, 파싱 실패 시 1회 정규화(reformat) 재시도를 수행한다.
+- 실패 메시지에 requirement 이름을 포함해 재시도/원인 추적 가능성을 높인다.
 
 ## 검증
-- `cargo test`
-- `cargo install --path /home/tree/project/rust-orc`
+- `timeout 180s orc add_orc_drafts` (실패 시 동일 단계 최대 2회 재시도)
+- `timeout 180s orc impl_orc_code`
+- `timeout 180s orc check_orc_code`
+- `timeout 180s orc clit test -p . -m "add_orc_drafts parser output guard"`

@@ -2759,3 +2759,54 @@
 - `impl_orc_code` 실행 흐름을 `시작 전 work 전이 -> 병렬 impl 실행 -> 성공 시 complete/check, 실패 시 error/fail` 순서로 고정하고 결과를 `drafts.yaml`/`job.md`에 즉시 저장하도록 반영함.
 - `assets/prompts/build_parallel.md`에 `drafts.yaml`/`job.md` 직접 수정 금지 규칙을 추가해 LLM은 코드 생성/수정 내용만 출력하도록 제한함.
 - 검증: `cargo test` 통과.
+
+## 2026-03-22 - 작업한일
+- Git 이력에서 build 산출물(`target/`, `crates/rc/target/`, `assets/web/node_modules/`)을 `git filter-branch`로 제거함.
+- `.gitignore`에 위 경로를 명시적으로 추가해 재추적을 차단함.
+- `git gc --prune=now --aggressive` 후 pack 크기를 `272.48 MiB -> 1.04 MiB`로 축소 확인함.
+
+## 2026-03-22 - 작업한일
+- 작업 완료 시 `cargo install --path /home/tree/project/mono_Manager --bin orc --force`를 매번 실행하도록 전역 규칙(`/home/tree/ai/codex/AGENTS.override.md`)과 저장소 규칙(`AGENTS.md`)에 절차를 추가함.
+- 완료 전 고정 순서를 `cargo install -> nf -m -> final 응답`으로 명시함.
+
+## 2026-03-22 - 작업한일
+- `src/bin/rc/config.rs`의 `config_path()`를 `assets/rc/configs.yaml`에서 `configs/configs.yaml`로 변경해 rc 설정을 메인 설정 파일로 통합함.
+- 중복 설정 파일 `assets/rc/configs.yaml`를 삭제해 단일 설정 소스만 유지함.
+- 검증: `cargo test -q` 통과(21 + 16).
+
+## 2026-03-22 - 작업한일
+- `.../src/code.rs`의 `add_orc_drafts` 경로를 draft-item 전용으로 교체해 자연어 응답을 금지하고, 단일 item/list YAML 파싱 + 1회 정규화 재시도를 추가함.
+- `add_orc_drafts`에서 개별 requirement 실패(자연어/timeout/파싱 실패)를 전체 단계 실패로 전파하지 않고 `job.md#problems`에 누적 기록 후 다음 항목을 계속 처리하도록 수정함.
+- `job.md` 구조에 `# plan` 섹션 보존 파싱/렌더링을 추가해 `/plan` 확정안을 문서에 고정하도록 반영함.
+- ORC 체인 검증(`timeout 180s` + 단계별 최대 2회 재시도)을 `add_orc_drafts -> impl_orc_code -> check_orc_code -> clit test` 순서로 실행해 최종 `PIPELINE_OK`를 확인함.
+
+## 2026-03-22 - 작업한일
+- `.../src/code.rs`의 `add_orc_drafts`에서 LLM 기반 draft item 추론을 제거하고 requirement 기반 deterministic item 생성으로 교체해 자연어 출력 파서 실패 원인을 제거함.
+- 동일 경로에서 기존 파싱/재시도 보조 함수(`infer_draft_item_from_prompt`, YAML 파서 보정)를 제거해 add 단계 실패 전파를 단순화함.
+- 검증으로 `cargo test`, `timeout 180s cargo run --bin orc -- add_orc_drafts`, `timeout 180s cargo run --bin orc -- check_orc_code`, `timeout 180s cargo run --bin orc -- clit test -p . -m "add_orc_drafts parser fix"`를 실행해 모두 통과를 확인함.
+
+## 2026-03-23 - 작업한일
+- `.../assets/web/src/server/orc.ts`를 `job.md` 기준으로 전환: detail 필드를 `hasJobMd/jobMdRaw/jobItems`로 바꾸고, requirement 파서(`parseJobRequirements`)를 추가해 UI 데이터 소스를 `job.md # requirement`로 통합함.
+- web server 액션 흐름을 `input.md` 중심에서 `job.md + add_orc_drafts`로 변경: `applyFormAddInput`, raw 저장, 삭제, generate 경로를 모두 `job.md`로 동작하게 수정하고 `runJobMdSyncWorkflow(init_orc_job -> add_orc_drafts)`를 도입함.
+- `.../assets/web/src/components/WebApp.tsx`, `.../assets/web/src/store/orc-store.ts`, `.../assets/web/src/pages/api/drafts-pane-file-delete.ts`를 동기화해 UI 탭/문구/타입/삭제 타깃을 `job.md` 기준으로 맞춤(구 `input` 타깃은 API에서 `job`으로 호환 매핑).
+- `.../assets/web/tests/web.spec.ts`의 episode fixture를 `input.md`에서 `job.md`로 전환해 E2E 검증 데이터도 새 규칙에 맞춤.
+
+## 2026-03-23 - 작업한일
+- `.../assets/web/dist`를 재빌드(`pnpm --dir assets/web run build`)해 webui drafts pane 표기를 `input.md`에서 `job.md` 기준으로 최신화함.
+- `.../src/web/mod.rs`에 web 패키지 매니저 감지(`npm -> pnpm -> bun`)를 추가해 npm 미설치 환경에서도 dev/build/preview/install 경로가 동작하도록 수정함.
+- auto 경로 호출 체인을 `detail-auto-button -> runAutoFlowFromMessage -> /api/auto-run,/api/auto-status -> startAutoFromMessage/getAutoStatus -> detail.state/current_job 반영`으로 재점검함.
+- 검증: `pnpm --dir assets/web run build` 성공, `pnpm --dir assets/web exec tsc --noEmit` 성공, `rg -n "input\.md" assets/web/dist` 0건.
+
+## 2026-03-23 - 작업한일
+- `.../src/web/mod.rs`의 `open-ui` 빌드/dev/preview 실행을 패키지 매니저 자동 감지(`npm -> pnpm -> bun`) 경로로 고정하고, `npm` 하드코딩 오류 문구를 제거함.
+- `.../src/main.rs`의 `test_command()`도 JS 빌드 시 동일 감지 경로를 사용하도록 변경해 `npm` 미설치 환경에서의 재발 지점을 차단함.
+- `cargo install --path /home/tree/project/mono_Manager --bin orc --force`로 `~/.cargo/bin/orc`를 최신 소스로 재설치함.
+- 검증: `cargo test -q` 통과, `strings ~/.cargo/bin/orc`에서 구문구(`failed to execute npm run build`) 미검출, `timeout 35s orc open-ui -b`로 build+preview 정상 기동 로그 확인.
+
+## 2026-03-23 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx`에서 legacy `episodes` pane/모달/상태를 제거하고, detail drafts를 2-pane 고정(좌: `job.md` requirement 입력, 우: `drafts.yaml` 편집/카드)으로 재구성함.
+- 좌측 입력은 `Generate drafts.yaml` 버튼으로만 ORC 체인(`init_orc_job -> add_orc_drafts`)을 실행하도록 변경해 `job.md 입력 완료 후 drafts.yaml 생성` 순서를 강제함.
+- `.../assets/web/src/server/orc.ts`에 requirement 전용 병합 로직(`extractJobEditableSection`, `extractJobManagedSection`, `buildJobMdFromEditable`)을 추가해 사용자 입력 범위를 `# requirement`까지로 제한하고 `# task/#problems`는 관리 영역으로 유지함.
+- `.../assets/web/src/pages/api/drafts-yaml-raw.ts` + `saveRawDraftsYaml`을 추가해 생성된 `drafts.yaml`의 수동 수정/저장을 지원함.
+- `.../assets/web/src/store/orc-store.ts`와 `.../assets/web/tests/web.spec.ts`를 새 흐름에 맞춰 갱신(episode 테스트 제거, drafts pane 입력/생성 시나리오로 대체)함.
+- 검증: `pnpm --dir assets/web run build` 성공, `pnpm --dir assets/web exec tsc --noEmit` 성공, `cargo test -q` 성공, `rg -n "episode|episodes|jobItems|jobTitles" assets/web/src` 0건.
