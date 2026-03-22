@@ -2,4 +2,5 @@
 /crates/rc/target/
 /node_modules/
 /assets/web/node_modules/
-/dist/
+build/
+dist/
