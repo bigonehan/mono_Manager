@@ -8,10 +8,11 @@ export const POST: APIRoute = async ({ request }) => {
     const body = await request.json();
     const id = String(body.id ?? "");
     const target = String(body.target ?? "");
-    if (target !== "input" && target !== "drafts") {
-      throw new Error("target must be input or drafts");
+    if (target !== "job" && target !== "drafts" && target !== "input") {
+      throw new Error("target must be job or drafts");
     }
-    const result = deleteDraftPaneFile(id, target);
+    const normalizedTarget = target === "input" ? "job" : target;
+    const result = deleteDraftPaneFile(id, normalizedTarget as "job" | "drafts");
     return new Response(JSON.stringify(result), {
       headers: { "content-type": "application/json" }
     });

@@ -51,8 +51,7 @@ pub fn debug_enabled(config: &Config) -> bool {
 
 pub fn config_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("assets")
-        .join("rc")
+        .join("configs")
         .join("configs.yaml")
 }
 

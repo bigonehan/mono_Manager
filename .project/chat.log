@@ -18985,3 +18985,4934 @@ workspace_hint:
 [1773482279] LLM_START
 codex exec [infer_code_spec prompt] attempt 1/2 | cwd=/home/tree/project/rust-orc | timeout=300s
 
+[1774190239] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "rust_cli_workspace", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190239] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190253] LLM_RESPONSE
+- name: rust_cli_workspace
+  type: action
+  domain:
+    - rust_cli_workspace
+  depends_on: []
+  scope:
+    - src
+    - Cargo.toml
+    - tests
+  rule:
+    - "name == rust_cli_workspace"
+    - "type == action"
+    - "state == planned"
+  step:
+    - "CLI 트리거 -> 워크스페이스 초기 상태 확인 -> 결과 로그 출력"
+    - "초기화 명령 실행 -> 산출물 경로 정리 -> 피드백 경로 단일화 반영"
+    - "검증 명령 실행 -> 성공/실패 상태 기록 -> 다음 draft 진행 가능 상태로 종료"
+  tasks:
+    - "rust_cli_workspace draft 항목의 초기 실행 경로를 정의한다."
+    - "워크스페이스 초기화 시 필요한 파일/상태 정리 동작을 구현한다."
+    - "검증 가능한 상태 출력과 실패 처리 분기를 추가한다."
+  constraints:
+    - "초기화 입력 -> 정리된 작업 상태 출력 : 작업 시작 시 잔여 산출물 없이 동일한 초기 상태를 보장"
+    - "명령 실행 입력 -> planned 상태 유지 출력 : draft 생성 단계에서는 상태 전이를 수행하지 않음"
+  check:
+    - "초기화 실행 후 필수 경로가 기대 상태로 존재/비존재하는지 확인"
+    - "피드백 경로가 .project/feedback.md 단일 경로로 처리되는지 확인"
+    - "검증 명령 결과에 rust_cli_workspace 항목이 planned로 표시되는지 확인"
+  state: planned
+
+
+[1774190253] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "project_documentation", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190253] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190277] LLM_RESPONSE
+- name: "project_documentation"
+  type: "action"
+  domain:
+    - "project_documentation"
+  depends_on: []
+  scope:
+    - "project.md"
+    - ".project/feedback.md"
+    - ".project/check-process.md"
+    - "문서 내 reset-task-feedback 관련 섹션"
+  rule:
+    - "project.md contains '.project/feedback.md'"
+    - "project.md contains 'check-process/feedback/screenshot 초기화'"
+    - ".project/feedback.md exists"
+    - "문서의 경로 표기가 '.project/feedback.md'로 단일화되어야 함"
+  step:
+    - "요구사항 입력 -> 문서 영향 범위 식별"
+    - "영향 범위 식별 -> project.md와 연계 문서 갱신"
+    - "문서 갱신 -> 경로/초기화/공용화 규칙 검증"
+  tasks:
+    - "reset-task-feedback 요구사항을 project.md에 반영한다."
+    - "feedback 경로를 .project/feedback.md 단일 경로로 명시한다."
+    - "orc 작업 시작 시 check-process/feedback/screenshot 초기화 절차를 문서화한다."
+    - "web check pane의 rc binary resolver 공통화 규칙을 문서화한다."
+    - "Playwright 음성 mock helper 공용화 방침을 문서화한다."
+  constraints:
+    - "요구사항 텍스트 -> project.md 반영본 : 기존 기능명/도메인 체계를 유지하며 변경점만 추가"
+    - "기존 다중 feedback 경로 표기 -> '.project/feedback.md' 단일 표기 : 경로 불일치 재발 방지"
+    - "문서 초안 입력 -> 최종 문서 : 글 생성 분량은 1300~1700자 목표로 구성"
+    - "초기화/공용화 정책 입력 -> 검증 가능한 문장 : 각 정책은 트리거와 결과를 함께 명시"
+  check:
+    - "rg --fixed-strings '.project/feedback.md' project.md로 경로 반영 여부 확인"
+    - "rg --fixed-strings 'check-process/feedback/screenshot 초기화' project.md로 초기화 절차 반영 확인"
+    - "rg --fixed-strings 'rc binary resolver' project.md로 공통화 규칙 반영 확인"
+    - "rg --fixed-strings 'Playwright' project.md로 음성 mock helper 공용화 반영 확인"
+  state: "planned"
+
+
+[1774190277] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_rust_orchestra", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190277] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190296] LLM_RESPONSE
+- name: cli_rust_orchestra
+  type: action
+  domain:
+    - cli_rust_orchestra
+  depends_on: []
+  scope:
+    - src/cli
+    - src/orc
+    - .project/*
+  rule:
+    - "state == planned"
+    - "name == cli_rust_orchestra"
+    - "tasks contains orc_orchestration_flow"
+  step:
+    - "명령 입력 -> ORC 파이프라인 파라미터 파싱"
+    - "파싱 완료 -> 작업 단계 실행 및 상태 기록"
+    - "실행 완료 -> 결과 요약 출력"
+  tasks:
+    - "orc_orchestration_flow 구현"
+    - "단계별 실패 처리 및 재시도 로직 연결"
+    - "작업 로그 및 체크 결과 기록 경로 연동"
+  constraints:
+    - "ORC 명령 입력 -> 단계별 실행 결과 : 파이프라인 순서를 고정하고 중간 단계 실패 시 다음 단계로 진행하지 않는다"
+    - "실패 이벤트 입력 -> 에러 상태 출력 : 실패 원인과 재시도 가능 여부를 함께 기록한다"
+  check:
+    - "cargo test -p rust-orc cli_rust_orchestra"
+    - "orc 실행 시 단계 순서가 정의와 일치하는지 확인"
+    - ".project/check-process.md에 실행 로그가 남는지 확인"
+  state: planned
+
+
+[1774190296] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_help", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190296] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190312] LLM_RESPONSE
+- name: "cli_help"
+  type: "action"
+  domain:
+    - "cli_help"
+  depends_on: []
+  scope:
+    - "CLI help command output"
+    - "subcommand help for reset-task-artifacts"
+    - "help documentation text alignment"
+  rule:
+    - "help_output contains 'reset-task-artifacts'"
+    - "help_output contains '.project/feedback.md'"
+    - "help_output != ''"
+  step:
+    - "사용자 입력(--help) -> help 핸들러 실행 -> 전체 명령 목록 출력"
+    - "사용자 입력(reset-task-artifacts --help) -> 서브커맨드 help 핸들러 실행 -> 초기화 대상/경로 설명 출력"
+  tasks:
+    - "cli_help 출력에 reset-task-artifacts 명령 설명을 추가한다."
+    - "feedback 단일 경로(.project/feedback.md)를 help 문구에 반영한다."
+    - "상위 help와 서브커맨드 help 문구를 일관된 형식으로 정리한다."
+  constraints:
+    - "--help 입력 -> 전체 도움말 문자열 출력 : 등록된 주요 명령과 사용법을 누락 없이 보여준다"
+    - "reset-task-artifacts --help 입력 -> 서브커맨드 도움말 출력 : 초기화 대상(check-process/feedback/screenshot)과 feedback 경로를 명시한다"
+    - "동일 옵션 반복 입력 -> 동일한 도움말 출력 : 실행 환경과 무관하게 결정적 결과를 유지한다"
+  check:
+    - "CLI 실행 검증: `orc --help` 출력에 reset-task-artifacts가 포함된다."
+    - "CLI 실행 검증: `orc reset-task-artifacts --help` 출력에 `.project/feedback.md`가 포함된다."
+    - "회귀 확인: 기존 주요 명령 help 항목이 삭제되지 않는다."
+  state: "planned"
+
+
+[1774190312] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_create_input_md", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190312] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190332] LLM_RESPONSE
+- name: "cli_create_input_md"
+  type: "action"
+  domain:
+    - "project_documentation"
+    - "cli_rust_orchestra"
+  depends_on: []
+  scope:
+    - "src/cli/create_input_md.rs"
+    - "src/templates/input_md_template.md"
+    - ".project/input.md"
+  rule:
+    - "exists(.project/input.md) == true"
+    - "contains(.project/input.md, '# requirement') == true"
+    - "contains(.project/input.md, '# constraints') == true"
+    - "contains(.project/input.md, '# rules') == true"
+  step:
+    - "CLI 트리거 수신(create_input_md) -> 입력 경로/프로젝트 메타 확인"
+    - "템플릿 로드 및 requirement/rules/constraints 섹션 채움"
+    - ".project/input.md 생성 또는 갱신 후 저장 결과 반환"
+  tasks:
+    - "create_input_md 명령 핸들러에서 출력 경로를 .project/input.md로 고정한다."
+    - "project.md 기반 requirement/rules/constraints 기본값을 input.md 본문에 반영한다."
+    - "기존 파일이 있을 때는 필수 섹션 누락 여부를 검사해 누락 섹션만 보강한다."
+    - "명령 실행 결과에 생성/갱신 상태를 일관된 메시지로 반환한다."
+  constraints:
+    - "project.md 메타 + CLI 인자 -> .project/input.md : requirement/rules/constraints 섹션을 포함한 작업 입력 문서를 생성하며 글 생성 draft 본문 목표는 1300~1700자 범위를 유지한다."
+    - "기존 .project/input.md 존재 여부 -> 동일 경로 결과물 : 사용자 커스텀 본문을 불필요하게 삭제하지 않고 필수 섹션만 보강한다."
+  check:
+    - "CLI 실행 후 .project/input.md 파일이 생성되는지 확인한다."
+    - "생성된 문서에 requirement/rules/constraints 헤더가 모두 존재하는지 확인한다."
+    - "재실행 시 중복 헤더/중복 블록이 추가되지 않는지 확인한다."
+    - "기존 사용자 작성 본문이 보존되는지 회귀 확인한다."
+  state: "planned"
+
+
+[1774190332] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_create_code_draft", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190332] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190345] LLM_RESPONSE
+- name: "cli_create_code_draft"
+  type: "action"
+  domain:
+    - "cli_rust_orchestra"
+    - "project_documentation"
+  depends_on:
+    - "cli_create_input_md"
+    - "cli_add_code_draft"
+  scope:
+    - "src/cli/create_code_draft.rs"
+    - ".project/drafts.yaml"
+    - "job.md"
+  rule:
+    - "state == planned"
+    - "name matches ^[a-z0-9_]+$"
+    - "type == action"
+    - "tasks contains draft_item_generation"
+    - "check contains parser_readable_yaml"
+  step:
+    - "사용자 입력/요구사항 수신"
+    - "요구사항을 단일 draft_item 구조로 변환"
+    - "drafts.yaml에 파서 가능 YAML item 기록"
+  tasks:
+    - "draft item 필드(name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state) 구성"
+    - "placeholder/주석 제거된 최종 YAML item 생성"
+    - "ORC 파서 호환 형식 검증"
+  constraints:
+    - "요구사항 입력 -> 단일 YAML item 출력 : 파서가 읽을 수 있는 구조만 반환"
+    - "템플릿 입력 -> 주석/placeholder 제거 출력 : 최종 결과에 설명성 텍스트를 남기지 않음"
+    - "필드 값 입력 -> state=planned 출력 : 상태값은 항상 planned로 고정"
+  check:
+    - "단일 item만 출력되는지 확인"
+    - "허용 키 12개만 포함되는지 확인"
+    - "YAML 파서 로드 성공 여부 확인"
+    - "state 값이 planned인지 확인"
+  state: "planned"
+
+
+[1774190345] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_impl_code_draft", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190345] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190360] LLM_RESPONSE
+- name: "cli_impl_code_draft"
+  type: "action"
+  domain:
+    - "cli_rust_orchestra"
+    - "cli_impl_code_draft"
+  depends_on:
+    - "cli_create_code_draft"
+    - "cli_add_code_draft"
+  scope:
+    - "src/cli"
+    - "src/orc"
+    - ".project/drafts.yaml"
+    - "job.md"
+  rule:
+    - "exists:.project/drafts.yaml"
+    - "contains:job.md:#task"
+    - "contains:job.md:#check"
+    - "contains:stdout:impl_orc_code"
+  step:
+    - "draft item 입력 수집"
+    - "planned 상태 draft item 로드 및 실행 대상 확정"
+    - "구현 명령 실행 및 결과 기록"
+    - "검증 단계로 상태 전달"
+  tasks:
+    - "planned draft_item을 읽어 구현 대상과 순서를 확정한다"
+    - "impl_orc_code 실행 시 draft_item 단위로 처리하고 실패 원인을 수집한다"
+    - "성공/실패 결과를 check-process 로그와 상태 값에 반영한다"
+    - "후속 check_orc_code가 읽을 수 있도록 산출물 경로를 고정한다"
+  constraints:
+    - "draft_item 입력 -> 구현 실행 결과 : draft_item state가 planned인 항목만 처리"
+    - "구현 명령 입력 -> 로그 출력 : 실패 시 원인과 재시도 가능 여부를 반드시 기록"
+    - "구현 완료 입력 -> 상태 갱신 : worked 또는 error로만 전이하고 근거를 남김"
+  check:
+    - "planned 항목만 선택되어 실행되는지 확인"
+    - "실패 시 error 상태와 원인 로그가 남는지 확인"
+    - "성공 시 worked 상태와 산출물 경로가 기록되는지 확인"
+    - "check_orc_code 단계에서 이전 결과를 참조 가능한지 확인"
+  state: "planned"
+
+
+[1774190360] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_test", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190360] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190374] LLM_RESPONSE
+- name: "cli_test"
+  type: "action"
+  domain:
+    - "cli_rust_orchestra"
+  depends_on: []
+  scope:
+    - "src/cli/clit"
+    - "src/cli/test"
+    - ".project/check-process.md"
+  rule:
+    - "state == planned"
+    - "step contains '트리거'"
+    - "step contains '처리'"
+    - "step contains '결과'"
+  step:
+    - "트리거: 사용자가 clit test 실행을 요청한다"
+    - "처리: 테스트 대상 경로와 메시지 인자를 파싱해 테스트 실행기를 호출한다"
+    - "결과: 테스트 종료코드와 로그를 기록하고 요약 결과를 반환한다"
+  tasks:
+    - "clit test 명령 인자 파싱 및 유효성 검사 경로를 확정한다"
+    - "테스트 실행 함수와 종료코드 전파를 연결한다"
+    - "실행 결과를 check-process 로그 형식으로 기록한다"
+    - "성공/실패 요약 출력을 단일 포맷으로 고정한다"
+  constraints:
+    - "clit test 입력 -> 종료코드/요약 출력 : 테스트 실행 결과를 동일한 규격으로 반환"
+    - "프로젝트 경로 입력 -> 해당 경로 테스트 실행 : 지정 경로 외 테스트를 수행하지 않음"
+    - "실패 로그 입력 -> check-process 기록 : 실패 원인을 누락 없이 저장"
+  check:
+    - "clit test -p . -m 'cli_test' 실행 시 종료코드가 0 또는 실패코드로 일관되게 반환된다"
+    - "테스트 실패 시 .project/check-process.md에 실패 단계와 원인이 기록된다"
+    - "명령 실행 후 요약 출력에 성공/실패 상태가 포함된다"
+  state: "planned"
+
+
+[1774190374] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_check_task", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190374] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190394] LLM_RESPONSE
+- name: "cli_check_task"
+  type: "action"
+  domain:
+    - "cli_rust_orchestra"
+  depends_on:
+    - "cli_track_check_process"
+  scope:
+    - "orc CLI check-task command flow"
+    - ".project/check-process.md update path"
+    - "task feedback reset/verification integration"
+  rule:
+    - "command_name == cli_check_task"
+    - "state_transition contains planned->worked|error|complete"
+    - "check_process_log exists"
+  step:
+    - "사용자 check-task 트리거 입력"
+    - "CLI가 대상 task 상태/검증 항목을 로드"
+    - "검증 실행 후 check-process 및 결과 상태 기록"
+  tasks:
+    - "cli_check_task 실행 경로에서 입력 파라미터 파싱과 대상 task 조회를 연결한다."
+    - "검증 결과를 상태값(planned/worked/error/complete)으로 매핑한다."
+    - ".project/check-process.md에 검증 실행 로그를 append 하도록 통합한다."
+    - "실패 시 원인 메시지와 재시도 가능 여부를 결과에 포함한다."
+  constraints:
+    - "check-task 입력 -> 상태 판정 출력 : 지정 task의 검증 결과를 단일 상태로 반환"
+    - "검증 실행 -> check-process 기록 : 모든 실행은 누락 없이 로그 파일에 남김"
+    - "실패 원인 입력 -> 에러 메시지 출력 : 사용자 재실행 판단이 가능해야 함"
+  check:
+    - "cli_check_task 실행 시 정상 케이스에서 complete 또는 worked 상태가 출력된다."
+    - "의도적 실패 입력에서 error 상태와 원인 메시지가 출력된다."
+    - "실행 후 .project/check-process.md에 신규 로그 라인이 생성된다."
+  state: "planned"
+
+
+[1774190394] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_check_draft", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190394] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190419] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "rust_cli_workspace", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190419] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190429] LLM_RESPONSE
+- name: "rust_cli_workspace"
+  type: "action"
+  domain: []
+  depends_on: []
+  scope:
+    - "rust-orc CLI workspace bootstrap and command execution context"
+  rule:
+    - "state == planned"
+    - "name == rust_cli_workspace"
+  step:
+    - "workspace command invoked -> workspace context resolved -> command runs with project root"
+  tasks:
+    - "Define workspace-level execution context for rust-orc commands"
+    - "Ensure workspace root path is consistently resolved before command handling"
+    - "Add validation path so workspace-dependent commands fail fast when context is invalid"
+  constraints:
+    - "workspace path 입력 -> deterministic root 출력 : 동일 입력에서 항상 같은 루트 경로를 반환해야 한다"
+    - "invalid workspace 입력 -> 명시적 오류 출력 : 경로 해석 실패 시 즉시 실패하고 후속 실행을 차단해야 한다"
+  check:
+    - "Workspace root resolution returns expected project root"
+    - "Workspace-dependent command executes successfully when root is valid"
+    - "Invalid workspace input is rejected with explicit error"
+  state: "planned"
+
+
+[1774190429] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "project_documentation", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190429] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190458] LLM_RESPONSE
+- name: "project_documentation"
+  type: "action"
+  domain:
+    - "project_documentation"
+  depends_on: []
+  scope:
+    - "project.md"
+    - ".project/check-process.md"
+    - ".project/feedback.md"
+    - "web check pane rc binary resolver documentation"
+    - "Playwright voice mock helper usage guide"
+  rule:
+    - "exists(.project/feedback.md) == true"
+    - "contains(project.md, '.project/feedback.md') == true"
+    - "contains(project.md, 'web_rc_binary_resolver') == true"
+    - "contains(project.md, 'web_test_voice_helper') == true"
+  step:
+    - "초기화 정책 정의 -> 피드백 경로 단일화 문서화 -> 공통 resolver/helper 사용 가이드 반영"
+    - "문서 반영 -> 검증 항목 점검 -> 결과 기록"
+  tasks:
+    - "reset-task-feedback 동작과 초기화 대상(check-process/feedback/screenshot) 문서화"
+    - "feedback 경로를 .project/feedback.md로 단일화한 규칙과 예외 조건 명시"
+    - "web check pane의 rc binary resolver 공통화 사용 규약 추가"
+    - "Playwright 음성 mock helper 공용 사용 절차와 호출 예시 추가"
+  constraints:
+    - "요구사항 입력 -> project 문서 출력 : reset-task-feedback 정책과 경로 단일화 규칙을 누락 없이 반영"
+    - "문서 작성 입력 -> 검증 가능한 서술 출력 : 규칙은 exists/contains 기반으로 점검 가능해야 함"
+    - "문서 갱신 입력 -> 일관된 용어 출력 : feedback 경로 표기는 항상 .project/feedback.md로 통일"
+  check:
+    - "project.md에 reset-task-feedback 설명이 존재하는지 확인"
+    - "project.md와 관련 문서에서 feedback 경로가 .project/feedback.md로만 표기되는지 검색 확인"
+    - "web_rc_binary_resolver, web_test_voice_helper 키워드가 문서에 모두 포함되는지 확인"
+  state: "planned"
+
+
+[1774190458] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_rust_orchestra", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190458] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190476] LLM_RESPONSE
+- name: "cli_rust_orchestra"
+  type: "action"
+  domain:
+    - "rust_cli_workspace"
+    - "project_documentation"
+  depends_on: []
+  scope:
+    - "src/cli/orchestra"
+    - "src/commands"
+    - ".project"
+  rule:
+    - "name == cli_rust_orchestra"
+    - "type == action"
+    - "state == planned"
+    - "tasks contains ORC 실행 체인 구성"
+  step:
+    - "사용자 명령 입력 -> ORC 실행 컨텍스트 초기화 -> 실행 대상 경로/설정 확인"
+    - "체인 실행 요청 -> 단계별 명령 실행(init/add/impl/check/test) -> 단계 결과 수집"
+    - "실행 완료/실패 처리 -> check-process 기록 갱신 -> 요약 결과 반환"
+  tasks:
+    - "cli_rust_orchestra 실행 엔트리와 옵션 파싱을 정의한다."
+    - "ORC 단계(init_orc_job, add_orc_drafts, impl_orc_code, check_orc_code, clit test) 호출 순서를 고정한다."
+    - "각 단계의 성공/실패/타임아웃 결과를 표준 상태로 정규화한다."
+    - "실패 시 중단 지점과 원인을 .project/check-process.md에 기록한다."
+    - "성공 시 실행 요약과 산출물 경로를 일관된 형식으로 출력한다."
+  constraints:
+    - "CLI 실행 입력 -> 고정된 ORC 체인 실행 : 임의 단계 생략 없이 순차 실행해야 한다"
+    - "단계 실행 결과 입력 -> 상태/로그 출력 : 실패 단계와 원인을 반드시 기록해야 한다"
+    - "프로젝트 경로 입력 -> 실행 컨텍스트 결정 : 작업 루트 밖 경로는 실행 대상에서 제외한다"
+  check:
+    - "명령 실행 시 ORC 단계가 정의된 순서로 호출되는지 확인한다."
+    - "중간 단계 실패 시 다음 단계가 실행되지 않는지 확인한다."
+    - ".project/check-process.md에 실패/성공 로그가 남는지 확인한다."
+    - "최종 상태 값이 planned/worked/error/complete 규약을 따르는지 확인한다."
+  state: "planned"
+
+
+[1774190476] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_help", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190476] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190494] LLM_RESPONSE
+- name: cli_help
+  type: action
+  domain:
+    - cli_rust_orchestra
+  depends_on: []
+  scope:
+    - CLI help command entrypoint
+    - subcommand help text registry
+    - argument parser help output
+  rule:
+    - "help_output contains 'USAGE'"
+    - "help_output contains 'OPTIONS'"
+    - "help_output contains 'SUBCOMMANDS'"
+    - "help_output != ''"
+  step:
+    - "orc --help 트리거"
+    - "CLI parser가 help 템플릿을 로드하고 명령/옵션 목록을 렌더링"
+    - "표준 출력으로 일관된 도움말이 표시되고 종료 코드 0 반환"
+  tasks:
+    - "기본 help 출력에서 프로젝트 표준 명령 그룹과 설명을 노출하도록 구성"
+    - "각 서브커맨드의 --help 출력이 누락 없이 표시되도록 연결"
+    - "help 렌더 포맷(섹션 순서/헤더)을 고정하고 회귀 테스트 추가"
+  constraints:
+    - "--help 입력 -> 종료 코드 0과 help 텍스트 출력 : 에러 없이 즉시 사용 가이드 제공"
+    - "알 수 없는 서브커맨드 입력 -> 에러 메시지와 함께 관련 help 힌트 출력 : 복구 가능한 사용 흐름 보장"
+  check:
+    - "`orc --help` 실행 시 USAGE/OPTIONS/SUBCOMMANDS 섹션 존재 확인"
+    - "대표 서브커맨드 1개 이상에 대해 `orc <subcommand> --help` 출력 검증"
+    - "help 관련 테스트가 CI에서 통과하는지 확인"
+  state: planned
+
+
+[1774190494] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_create_input_md", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190494] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190514] LLM_RESPONSE
+- name: "cli_create_input_md"
+  type: "action"
+  domain: ["cli_rust_orchestra", "project_documentation"]
+  depends_on: []
+  scope:
+    - "src/cli/create_input_md.rs"
+    - ".project/input.md"
+    - "CLI command routing for create_input_md"
+  rule:
+    - "exists(.project/input.md) == true"
+    - "contains(.project/input.md, '# task') == true"
+    - "contains(.project/input.md, '# problems') == true"
+    - "contains(.project/input.md, '# check') == true"
+    - "name matches ^cli_create_input_md$"
+  step:
+    - "사용자 CLI 트리거(create_input_md) -> 명령 핸들러 진입"
+    - "핸들러에서 input.md 기본 템플릿 문자열 생성"
+    - "대상 경로에 파일 생성 또는 최신 템플릿으로 갱신"
+    - "생성 결과 및 경로를 표준 출력으로 반환"
+  tasks:
+    - "create_input_md 서브커맨드 진입점 연결"
+    - "input.md 기본 템플릿(# task/#problems/#check) 정의"
+    - "파일 생성/덮어쓰기 로직 구현"
+    - "경로 생성 실패 및 쓰기 실패 에러 처리"
+    - "단위 테스트로 파일 생성 내용 검증"
+  constraints:
+    - "CLI 실행 인자 -> .project/input.md : 프로젝트 루트 기준 고정 경로에 생성한다"
+    - "파일 미존재 상태 -> 템플릿 파일 생성 : 최소 섹션 3개(# task, # problems, # check)를 보장한다"
+    - "파일 존재 상태 -> 최신 템플릿 내용 반영 : 부분 append가 아닌 전체 내용 기준으로 일관성 유지"
+    - "쓰기 실패 상황 -> 오류 반환 : 비정상 종료 코드와 함께 실패 원인을 출력한다"
+  check:
+    - "명령 실행 후 .project/input.md 파일 존재 확인"
+    - "생성 파일에 # task/#problems/#check 문자열 포함 확인"
+    - "이미 파일이 있을 때 재실행 시 템플릿 구조 유지 확인"
+    - "권한 없는 경로 시 에러 반환 확인"
+  state: "planned"
+
+
+[1774190514] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_create_code_draft", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190514] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190528] LLM_RESPONSE
+- name: "cli_create_code_draft"
+  type: "action"
+  domain:
+    - "cli_rust_orchestra"
+    - "project_documentation"
+  depends_on:
+    - "cli_create_input_md"
+  scope:
+    - "src/cli/create_code_draft.rs"
+    - "src/cli/mod.rs"
+    - ".project/drafts.yaml"
+  rule:
+    - "draft_item.name == \"cli_create_code_draft\""
+    - "draft_item.type == \"action\""
+    - "draft_item.state == \"planned\""
+    - "output.contains(\"name\")"
+    - "output.contains(\"tasks\")"
+  step:
+    - "사용자 입력 수신 -> create_code_draft 명령 실행"
+    - "요구사항 파싱 -> draft item 필드 구성 및 유효성 검사"
+    - "drafts.yaml 항목 추가 -> planned 상태로 저장"
+  tasks:
+    - "create_code_draft 명령에서 JobRequirement를 읽어 draft item 기본 구조를 생성한다."
+    - "template 기반 필드 매핑 로직을 구현해 허용 키만 출력되게 한다."
+    - "state를 항상 planned로 강제하는 검증을 추가한다."
+    - "생성된 item을 drafts.yaml에 append하고 포맷 검사를 수행한다."
+  constraints:
+    - "JobRequirement 입력 -> 단일 draft item 출력 : 입력 requirement name을 item name으로 사용한다."
+    - "template 입력 -> 허용 키만 포함된 YAML 출력 : name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state 외 키를 금지한다."
+    - "임의 state 입력 -> planned 출력 : state 값은 항상 planned로 고정한다."
+  check:
+    - "create_code_draft 실행 후 drafts.yaml에 cli_create_code_draft item이 1개 생성된다."
+    - "생성 item에 금지 키/주석/placeholder가 포함되지 않는다."
+    - "state 값이 planned인지 문자열 비교로 검증한다."
+  state: "planned"
+
+
+[1774190528] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_impl_code_draft", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190528] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190541] LLM_RESPONSE
+- name: "cli_impl_code_draft"
+  type: "action"
+  domain:
+    - "cli_rust_orchestra"
+  depends_on:
+    - "cli_create_code_draft"
+  scope:
+    - "CLI command: impl_orc_code"
+    - "draft item state transition"
+    - ".project/check-process.md update flow"
+  rule:
+    - "state == planned -> state == worked|complete|error"
+    - "depends_on complete before execution"
+    - "check-process contains execution log entry"
+    - "draft item name matches ^[a-z0-9_]+$"
+  step:
+    - "사용자/파이프라인이 impl_orc_code를 트리거한다"
+    - "planned draft_item을 로드하고 의존성을 검증한다"
+    - "코드 구현을 실행하고 결과를 draft/check-process에 반영한다"
+  tasks:
+    - "impl_orc_code 엔트리에서 draft_item 로딩 및 planned 필터링 구현"
+    - "depends_on 완료 여부 검증 로직 추가"
+    - "실행 결과에 따라 state를 worked/complete/error로 갱신"
+    - "check-process 로그 기록 및 실패 원인 저장"
+  constraints:
+    - "draft_item 입력 -> 실행 가능한 작업 집합 출력 : planned 상태만 처리"
+    - "depends_on 목록 입력 -> 실행 가능 여부 출력 : 미충족 시 즉시 차단"
+    - "실행 결과 입력 -> state 출력 : worked|complete|error 중 하나로만 전이"
+  check:
+    - "planned 항목이 impl_orc_code 실행 시 선택되는지 확인"
+    - "depends_on 미충족 항목이 차단되고 에러 로그가 남는지 확인"
+    - "성공/실패 케이스에서 state 전이가 규칙과 일치하는지 테스트"
+  state: "planned"
+
+
+[1774190541] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_test", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190541] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190558] LLM_RESPONSE
+- name: "cli_test"
+  type: "action"
+  domain:
+    - "cli_rust_orchestra"
+  depends_on: []
+  scope:
+    - "orc cli test command path"
+    - ".project/check-process.md update flow"
+  rule:
+    - "name == cli_test"
+    - "type == action"
+    - "state == planned"
+  step:
+    - "사용자 테스트 명령 입력 -> cli_test 핸들러 실행 -> 테스트 결과와 종료코드 반환"
+  tasks:
+    - "run_cli_test"
+    - "collect_test_exit_code"
+    - "record_test_result"
+  constraints:
+    - "테스트 명령 입력 -> 성공/실패 결과 반환 : 기존 테스트 실행 동작을 변경하지 않고 표준 결과 형식을 유지한다"
+  check:
+    - "cli_test 명령 실행 시 종료코드가 반환된다"
+    - "실패 케이스에서 종료코드가 0이 아니다"
+  state: planned
+
+
+[1774190558] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_check_task", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190558] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190588] LLM_RESPONSE
+- name: "cli_check_task"
+  type: "action"
+  domain:
+    - "cli_rust_orchestra"
+    - "project_documentation"
+  depends_on:
+    - "cli_track_check_process"
+  scope:
+    - "src/cli/check_task.rs"
+    - ".project/check-process.md"
+    - "CLI command routing for check task"
+  rule:
+    - "state == planned"
+    - "tasks contains 'run check-task command flow'"
+    - "check contains 'cargo test'"
+    - "scope contains '.project/check-process.md'"
+  step:
+    - "사용자 check-task 트리거 입력"
+    - "check-task 핸들러가 대상 작업 상태/검증 항목을 수집"
+    - "check-process 로그를 갱신하고 결과를 CLI로 출력"
+  tasks:
+    - "check-task CLI 엔트리와 핸들러 연결"
+    - "검증 대상 수집 로직 구현(작업 상태, 누락 항목, 실패 항목)"
+    - "검증 결과를 .project/check-process.md에 기록"
+    - "요약 결과를 CLI 출력 형식으로 반환"
+  constraints:
+    - "check-task 입력 -> 검증 결과 출력 : 입력 누락 시 사용법을 반환하고 비정상 종료 코드를 유지"
+    - "작업 상태 데이터 -> check-process 로그 : 기존 로그 포맷을 보존하며 append 방식으로 기록"
+    - "검증 실패 항목 -> CLI 요약 : 실패 개수와 항목 식별자를 반드시 포함"
+  check:
+    - "cargo test -p orc cli_check_task 관련 테스트 통과"
+    - "check-task 실행 시 .project/check-process.md 갱신 확인"
+    - "입력 누락/정상 입력 케이스별 종료 코드 검증"
+  state: planned
+
+
+[1774190588] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_check_draft", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190588] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190599] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "rust_cli_workspace", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190599] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190615] LLM_RESPONSE
+- name: "rust_cli_workspace"
+  type: "action"
+  domain:
+    - "rust_cli_workspace"
+  depends_on: []
+  scope:
+    - "Rust CLI workspace 초기 구조"
+    - "Cargo workspace 구성 파일"
+    - "기본 실행/검증 명령 경로"
+  rule:
+    - "workspace_root.Cargo.toml contains '[workspace]'"
+    - "workspace_members_count >= 1"
+    - "cargo_check_result == 0"
+  step:
+    - "워크스페이스 루트 식별"
+    - "Cargo workspace 멤버 구성"
+    - "빌드/체크 명령으로 동작 검증"
+  tasks:
+    - "워크스페이스 루트 Cargo.toml에 workspace 설정을 정의한다."
+    - "필수 멤버 크레이트를 workspace members에 등록한다."
+    - "기본 cargo check 실행 경로를 확정한다."
+  constraints:
+    - "워크스페이스 설정 입력 -> 일관된 빌드 가능한 구조 출력 : 단일 루트에서 모든 멤버를 관리해야 한다"
+    - "멤버 크레이트 목록 입력 -> Cargo 인식 가능한 members 출력 : 상대 경로가 실제 디렉터리와 일치해야 한다"
+    - "검증 명령 입력 -> 성공 종료 코드 출력 : cargo check는 종료 코드 0이어야 한다"
+  check:
+    - "루트 Cargo.toml에 [workspace]와 members가 존재하는지 확인한다."
+    - "등록된 각 members 경로가 실제로 존재하는지 확인한다."
+    - "cargo check가 성공(0)하는지 확인한다."
+  state: "planned"
+
+
+[1774190615] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "project_documentation", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190615] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190632] LLM_RESPONSE
+- name: "project_documentation"
+  type: "action"
+  domain:
+    - "project_documentation"
+  depends_on: []
+  scope:
+    - "project.md의 info/features/rules/constraints/domains 섹션 정합성 보강"
+    - ".project/check-process.md 문서 반영 여부 확인"
+  rule:
+    - "name == project_documentation"
+    - "type == action"
+    - "state == planned"
+    - "scope contains project.md"
+  step:
+    - "요구사항 입력 확인 -> project.md 문서 구조 점검 -> 누락/불일치 항목 반영"
+    - "문서 반영 결과 검토 -> 검증 체크리스트 기록 -> 완료 상태 유지"
+  tasks:
+    - "project.md의 현재 기능 목록과 문서 설명을 일치시키도록 정리한다."
+    - "reset-task-feedback 목적(artifact 초기화, feedback 경로 단일화, resolver/helper 공용화)을 문서에 명확히 반영한다."
+    - "검증 가능한 문서 체크 포인트를 추가해 후속 check 단계에서 재확인 가능하게 만든다."
+  constraints:
+    - "요구사항 입력 -> project.md 갱신안 : 기능 설명은 실제 구현 범위를 벗어나지 않게 작성한다."
+    - "문서 생성 요청 -> 정제된 문서 내용 : 글 생성 draft는 1300~1700자 목표를 유지한다."
+    - "기존 항목 유지 요청 -> 최소 변경 결과 : 무관한 섹션/키 추가 없이 필요한 부분만 수정한다."
+  check:
+    - "project.md에 project_documentation 관련 목적/범위/검증 항목이 존재하는지 확인한다."
+    - "문서 내용이 cli_reset_task_artifacts, web_project_feedback_path, web_rc_binary_resolver, web_test_voice_helper와 충돌하지 않는지 확인한다."
+    - "draft item 키가 허용 목록(name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state)만 사용하는지 확인한다."
+  state: "planned"
+
+
+[1774190632] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_rust_orchestra", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190632] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190649] LLM_RESPONSE
+- name: "cli_rust_orchestra"
+  type: "action"
+  domain:
+    - "cli_rust_orchestra"
+  depends_on: []
+  scope:
+    - "orc CLI command entrypoint"
+    - "job execution orchestration flow"
+    - "plan/draft/check/test pipeline trigger path"
+  rule:
+    - "state contains planned"
+    - "name == cli_rust_orchestra"
+    - "type == action"
+    - "step contains trigger"
+    - "step contains process"
+    - "step contains result"
+  step:
+    - "trigger: 사용자가 orc 오케스트레이션 명령을 실행한다"
+    - "process: 명령 파싱 후 계획/초안/구현/검증 파이프라인을 순차 실행한다"
+    - "result: 실행 결과와 실패 지점을 일관된 형식으로 기록/출력한다"
+  tasks:
+    - "orc 오케스트레이션 명령 입력 처리와 실행 핸들러를 연결한다"
+    - "plan -> draft -> impl/check/test 단계 호출 순서를 고정한다"
+    - "단계별 성공/실패 상태를 수집해 요약 리포트를 출력한다"
+    - "실패 시 다음 단계 진행을 차단하고 실패 원인을 기록한다"
+  constraints:
+    - "orc 명령 입력 -> 파이프라인 실행 결과 : 단계 순서는 plan/draft/impl/check/test로 고정한다"
+    - "단계 실패 이벤트 -> 중단 상태 출력 : 실패 단계 이후 실행을 금지한다"
+    - "동일 입력 재실행 -> 동일 구조 리포트 : 출력 포맷 일관성을 유지한다"
+  check:
+    - "단일 명령 실행 시 step 순서가 정의한 순서와 일치하는지 확인"
+    - "중간 단계 실패를 주입했을 때 다음 단계 미실행을 확인"
+    - "성공/실패 모두에서 결과 요약 필드가 누락 없이 출력되는지 확인"
+  state: "planned"
+
+
+[1774190649] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_help", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190649] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190660] LLM_RESPONSE
+- name: "cli_help"
+  type: "action"
+  domain: []
+  depends_on: []
+  scope:
+    - "CLI help command output"
+    - "help option parsing path"
+  rule:
+    - "help_output contains 'Usage'"
+    - "help_output contains '--help'"
+    - "help_command_exit_code == 0"
+  step:
+    - "사용자 입력(help 플래그/명령) -> CLI 인자 파싱"
+    - "파싱 결과가 help 요청으로 판정 -> 도움말 문자열 생성"
+    - "도움말 출력 -> 정상 종료 코드 반환"
+  tasks:
+    - "help 요청 트리거(--help, help 서브커맨드) 처리 경로를 단일화한다"
+    - "명령 목록과 옵션 설명을 포함한 표준 Usage 출력을 구성한다"
+    - "help 실행 시 부작용 없이 즉시 종료되도록 처리한다"
+  constraints:
+    - "help 요청 입력 -> 표준 도움말 텍스트 출력 : 사용자가 실행 가능한 명령/옵션을 즉시 확인할 수 있어야 한다"
+    - "help 요청 입력 -> 종료 코드 0 반환 : 실패로 처리되지 않아야 한다"
+  check:
+    - "`orc --help` 실행 시 Usage/옵션/서브커맨드가 출력된다"
+    - "`orc help` 실행 시 동일한 도움말이 출력된다"
+    - "help 실행 시 종료 코드가 0이다"
+  state: "planned"
+
+
+[1774190660] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_create_input_md", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190660] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190677] LLM_RESPONSE
+- name: "cli_create_input_md"
+  type: "action"
+  domain:
+    - "cli_rust_orchestra"
+    - "project_documentation"
+  depends_on: []
+  scope:
+    - "src/cli/create_input_md.rs"
+    - "src/cli/mod.rs"
+    - ".project/input.md"
+  rule:
+    - "exists(.project/input.md) == true"
+    - "contains(.project/input.md, \"# requirement\") == true"
+    - "contains(.project/input.md, \"# context\") == true"
+    - "contains(.project/input.md, \"# output\") == true"
+  step:
+    - "CLI 트리거 인자 수신 -> create_input_md 핸들러 호출"
+    - "요구사항/컨텍스트 템플릿 구성 -> input.md 본문 생성"
+    - ".project/input.md 파일 생성 또는 갱신 -> 성공 상태 코드 반환"
+  tasks:
+    - "create_input_md 커맨드 엔트리와 핸들러 연결"
+    - "input.md 기본 템플릿( requirement/context/output 섹션) 정의"
+    - ".project 디렉터리 존재 보장 후 input.md 쓰기 로직 구현"
+    - "기존 파일 재실행 시 덮어쓰기 정책과 오류 처리 구현"
+    - "명령 실행 테스트 및 파일 내용 검증 테스트 추가"
+  constraints:
+    - "CLI 인자(작업명/요약) -> .project/input.md : 필수 섹션이 누락되지 않는 입력 문서 생성"
+    - "동일 입력 재실행 -> 동일 구조 문서 : 멱등하게 갱신되고 중복 섹션을 만들지 않음"
+    - "요구사항 본문 생성 -> 1300~1700자 초안 : 글 생성 draft 분량 목표를 유지"
+  check:
+    - "명령 실행 후 .project/input.md 생성 여부 확인"
+    - "파일에 requirement/context/output 헤더 존재 확인"
+    - "재실행 시 섹션 중복 없음 확인"
+    - "비정상 경로/권한 오류 시 에러 코드와 메시지 확인"
+  state: "planned"
+
+
+[1774190677] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_create_code_draft", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190677] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190695] LLM_RESPONSE
+- name: "cli_create_code_draft"
+  type: "action"
+  domain:
+    - "cli_rust_orchestra"
+    - "project_documentation"
+  depends_on:
+    - "cli_create_input_md"
+    - "cli_add_code_draft"
+  scope:
+    - "src/cli/create_code_draft.rs"
+    - "src/orc/draft_item.rs"
+    - ".project/drafts.yaml"
+  rule:
+    - "draft_item.name matches ^[a-z0-9]+(_[a-z0-9]+)*$"
+    - "draft_item.type == action"
+    - "draft_item.state == planned"
+    - "draft_item.tasks contains 구현 단계"
+  step:
+    - "사용자가 code draft 생성 명령을 실행한다"
+    - "입력 requirement와 project 정보를 읽어 draft_item 필드를 구성한다"
+    - "단일 YAML item을 drafts 데이터에 추가한다"
+  tasks:
+    - "requirement.name을 draft_item.name으로 매핑한다"
+    - "template 허용 키만 남기고 불필요 필드를 제거한다"
+    - "depends_on과 scope를 feature 연동 기준으로 채운다"
+    - "state를 planned로 고정한다"
+  constraints:
+    - "requirement 입력 -> 단일 YAML item 출력 : 허용 키(name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state)만 포함"
+    - "template 주석 포함 입력 -> 주석 없는 결과 출력 : placeholder와 주석 문자열 제거"
+    - "draft 생성 요청 입력 -> planned 상태 item 출력 : 글 생성 draft는 1300~1700자 목표를 constraints에 명시"
+  check:
+    - "생성 결과 YAML이 단일 item으로 파싱된다"
+    - "허용 키 외 필드가 없다"
+    - "state 값이 planned이다"
+    - "name이 snake_case 규칙을 만족한다"
+  state: "planned"
+
+
+[1774190695] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_impl_code_draft", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190695] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190716] LLM_RESPONSE
+- name: cli_impl_code_draft
+  type: action
+  domain:
+    - name
+  depends_on:
+    - cli_create_code_draft
+  scope:
+    - cli command flow for impl_code_draft
+    - draft item state transition logic
+    - check-process logging integration
+  rule:
+    - "state == planned"
+    - "tasks contains implementation step definitions"
+    - "step contains trigger->process->result flow"
+    - "check contains executable verification entry"
+  step:
+    - "trigger: user runs impl_code_draft command"
+    - "process: load planned draft items and execute implementation pipeline"
+    - "result: update draft item progress and persist execution/check records"
+  tasks:
+    - "parse and validate target draft items for implementation eligibility"
+    - "execute implementation routine for each planned draft item"
+    - "persist state/log updates to project artifacts after execution"
+    - "return structured result for succeeding/failing items"
+  constraints:
+    - "draft item 입력 -> 구현 실행 결과 출력 : planned 상태 항목만 구현 대상으로 처리"
+    - "구현 실행 요청 입력 -> 상태/로그 반영 출력 : 실행 결과는 check-process와 draft 상태에 동기화"
+  check:
+    - "impl_code_draft 실행 시 planned 항목이 worked 또는 complete로 전이되는지 확인"
+    - "실패 케이스에서 state가 error로 기록되고 원인이 남는지 확인"
+    - "실행 후 결과가 재실행 가능한 형태로 저장되는지 확인"
+  state: planned
+
+
+[1774190716] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_test", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190716] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190734] LLM_RESPONSE
+- name: "cli_test"
+  type: "action"
+  domain:
+    - "cli_rust_orchestra"
+  depends_on: []
+  scope:
+    - "src/cli/test command path"
+    - ".project/check-process.md update flow"
+    - "test execution and result aggregation"
+  rule:
+    - "state == planned"
+    - "name == cli_test"
+    - "tasks contains test_command_execution"
+    - "check contains command_exit_code_validation"
+  step:
+    - "사용자 테스트 요청 입력"
+    - "cli_test 명령 경로에서 테스트 실행"
+    - "종료 코드와 로그를 수집해 결과 기록"
+  tasks:
+    - "test_command_execution"
+    - "collect_stdout_stderr"
+    - "command_exit_code_validation"
+    - "write_check_process_result"
+  constraints:
+    - "테스트 명령 입력 -> 종료코드/로그 출력 : 실패 시에도 결과 요약을 반드시 남긴다"
+    - "프로젝트 경로 입력 -> 해당 경로 테스트 실행 : 작업 경로를 임의 변경하지 않는다"
+  check:
+    - "cli_test 실행 시 테스트 프로세스가 실제로 시작된다"
+    - "성공 케이스에서 종료 코드 0을 기록한다"
+    - "실패 케이스에서 종료 코드 != 0과 실패 로그를 기록한다"
+    - ".project/check-process.md에 실행 결과가 반영된다"
+  state: "planned"
+
+
+[1774190734] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_check_task", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190734] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190764] LLM_RESPONSE
+- name: "cli_check_task"
+  type: "action"
+  domain:
+    - "cli_check_task"
+  depends_on: []
+  scope:
+    - "orc CLI check-task command flow"
+    - ".project/check-process.md update path"
+    - "task validation state output"
+  rule:
+    - "state == planned"
+    - "name == cli_check_task"
+    - "type == action"
+    - "check contains task validation execution"
+  step:
+    - "사용자/자동 실행에서 check_task 트리거 입력"
+    - "CLI가 대상 task와 check 대상 산출물 경로를 로드"
+    - "검증 로직 실행 후 결과를 요약하고 상태를 기록"
+  tasks:
+    - "check_task 입력 파라미터 파싱 및 기본값 처리 정의"
+    - "검증 대상 로딩 로직 연결(작업 산출물/체크 로그)"
+    - "검증 결과를 성공/실패 기준으로 판정하는 로직 구현"
+    - "결과를 check-process 문서와 CLI 출력에 반영"
+  constraints:
+    - "task 식별자 입력 -> 검증 실행 결과 출력 : 입력 task 기준으로만 검사 범위를 제한"
+    - "검증 실패 조건 입력 -> 실패 상태 출력 : 실패 시 원인 항목을 누락 없이 포함"
+    - "검증 성공 조건 입력 -> 성공 상태 출력 : 성공 시 재실행 가능한 요약 형식 유지"
+  check:
+    - "유효한 task 입력 시 검증이 실행되고 결과 상태가 출력되는지 확인"
+    - "누락된 입력에서 오류 메시지와 종료 코드가 일관되게 반환되는지 확인"
+    - "검증 결과가 check-process 기록 포맷과 일치하는지 확인"
+  state: "planned"
+
+
+[1774190764] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_check_draft", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190764] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=300s
+
+[1774190828] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "rust_cli_workspace", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190828] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190838] LLM_RETRY
+attempt 1/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 timed out after 10s
+
+[1774190838] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190848] LLM_RETRY
+attempt 2/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774190848] LLM_ERROR
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774190848] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "rust_cli_workspace", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190848] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190858] LLM_RETRY
+attempt 1/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 timed out after 10s
+
+[1774190858] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190868] LLM_RETRY
+attempt 2/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774190868] LLM_ERROR
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774190868] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "rust_cli_workspace", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190868] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190878] LLM_RETRY
+attempt 1/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 timed out after 10s
+
+[1774190878] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190888] LLM_RETRY
+attempt 2/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774190888] LLM_ERROR
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774190928] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "rust_cli_workspace", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190928] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190938] LLM_RETRY
+attempt 1/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 timed out after 10s
+
+[1774190938] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190948] LLM_RETRY
+attempt 2/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774190948] LLM_ERROR
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774190948] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "project_documentation", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190948] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190958] LLM_RETRY
+attempt 1/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 timed out after 10s
+
+[1774190958] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190968] LLM_RETRY
+attempt 2/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774190968] LLM_ERROR
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774190968] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_rust_orchestra", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190968] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190979] LLM_RETRY
+attempt 1/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 timed out after 10s
+
+[1774190979] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190989] LLM_RETRY
+attempt 2/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774190989] LLM_ERROR
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774190989] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_help", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774190989] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774190999] LLM_RETRY
+attempt 1/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 timed out after 10s
+
+[1774190999] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774191009] LLM_RETRY
+attempt 2/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774191009] LLM_ERROR
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774191009] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_create_input_md", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774191009] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774191019] LLM_RETRY
+attempt 1/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 timed out after 10s
+
+[1774191019] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774191029] LLM_RETRY
+attempt 2/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774191029] LLM_ERROR
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774191029] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_create_code_draft", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774191029] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774191039] LLM_RETRY
+attempt 1/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 timed out after 10s
+
+[1774191039] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774191049] LLM_RETRY
+attempt 2/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774191049] LLM_ERROR
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774191049] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_impl_code_draft", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774191049] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774191059] LLM_RETRY
+attempt 1/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 timed out after 10s
+
+[1774191059] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774191069] LLM_RETRY
+attempt 2/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774191069] LLM_ERROR
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774191069] LLM_PROMPT
+너는 ORC draft_item 생성기다.
+- 출력은 파서가 읽을 단일 YAML item 본문만 반환한다.
+- 금지: 자연어 설명, 완료 문장, 파일 목록, Markdown code fence.
+- 입력으로 전달된 template의 주석을 읽고 값을 채운 뒤 최종 출력에서는 주석/placeholder를 제거한다.
+- 최종 출력 키는 name,type,domain,depends_on,scope,rule,step,tasks,constraints,check,state만 허용한다.
+- state는 반드시 planned로 출력한다.
+
+requirement:
+JobRequirement { name: "cli_test", steps: [], rules: [] }
+
+template:
+# draft item template (single item)
+# - LLM은 아래 주석을 읽고 각 필드 의미를 이해한 뒤 값을 채운다.
+# - 최종 출력(drafts.yaml item)에는 이 주석을 포함하지 않는다.
+- name: "" # feature key(snake_case), ex) todo_create
+  type: "action" # action | calc
+  domain: [] # project.md domains 중 실제 책임 도메인
+  depends_on: [] # 선행 feature key 목록
+  scope: [] # 구현/수정 대상 범위(파일/모듈/상태)
+  rule: [] # 자동 검증 가능한 규칙(==, !=, >=, <=, matches, contains, exists)
+  step: [] # 실행 순서(트리거 -> 처리 -> 결과)
+  tasks: [] # 구현해야 할 실제 작업 항목
+  constraints: [] # 제한/계약 조건(각 항목은 `입력 -> 출력 : 기능 설명` 포맷, 글 생성 draft는 1300~1700자 목표 포함)
+  check: [] # 검증 항목(테스트/확인 포인트)
+  state: # planned | worked | error | complete 중에 하나 
+
+
+project.md:
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_init_code_plan
+- cli_add_code_plan
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+
+[1774191069] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774191079] LLM_RETRY
+attempt 1/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 1/2 timed out after 10s
+
+[1774191079] LLM_START
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=10s
+
+[1774191089] LLM_RETRY
+attempt 2/2 failed: codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+[1774191089] LLM_ERROR
+codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+

@@ -11,9 +11,9 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const CODE_SUBCOMMAND_TIMEOUT_SEC: u64 = 600;
-const DRAFT_ITEM_LLM_TIMEOUT_SEC: u64 = 10;
 const IMPL_DRAFT_LLM_TIMEOUT_SEC: u64 = 240;
 const LONG_WAIT_REPORT_SEC: u64 = 60;
+const ADD_ORC_DRAFTS_SOFT_TIMEOUT_SEC: u64 = 150;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct JobTaskStatus {
@@ -40,6 +40,8 @@ pub(crate) struct JobRequirement {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct JobDoc {
+    #[serde(default)]
+    pub plan: Vec<String>,
     #[serde(default)]
     pub requirement: Vec<JobRequirement>,
     #[serde(default)]
@@ -226,28 +228,21 @@ pub(crate) fn init_orc_job() -> Result<String, String> {
 pub(crate) fn add_orc_drafts() -> Result<String, String> {
     let mut job = load_job_doc()?;
     let mut drafts = load_drafts_doc()?;
-    let project_md = fs::read_to_string(Path::new(".project").join("project.md"))
-        .map_err(|e| format!("failed to read project.md: {}", e))?;
-    
-    let item_template = read_template("drafts_item.yaml")?;
-    let prompt_base = read_prompt("init_project.md")?; // Generic project init prompt often used for inference
     
     let mut added = 0;
+    let mut skipped_due_budget = 0;
+    let started_at = Instant::now();
     for req in &job.requirement {
+        if started_at.elapsed().as_secs() >= ADD_ORC_DRAFTS_SOFT_TIMEOUT_SEC {
+            skipped_due_budget += 1;
+            continue;
+        }
         let key = normalize_feature_key(&req.name);
         if drafts.draft.iter().any(|d| d.name == key) {
             continue;
         }
         
-        let prompt = format!(
-            "{}\n\nrequirement:\n{:?}\n\ntemplate:\n{}\n\nproject.md:\n{}",
-            prompt_base, req, item_template, project_md
-        );
-        let raw = crate::run_codex_exec_capture(&prompt)?;
-        let yaml = crate::extract_yaml_block(&raw);
-        let mut item: DraftItemDoc = serde_yaml::from_str(&yaml)
-            .map_err(|e| format!("failed to parse inferred draft item: {}", e))?;
-        
+        let mut item = build_draft_item_from_requirement(req);
         item.name = key.clone();
         item.state = "planned".to_string();
         drafts.draft.push(item);
@@ -259,7 +254,36 @@ pub(crate) fn add_orc_drafts() -> Result<String, String> {
     
     save_job_doc(&job)?;
     save_drafts_doc(&drafts)?;
-    Ok(format!("add_orc_drafts completed: added {} items", added))
+    Ok(format!(
+        "add_orc_drafts completed: added {} items, deferred {} items (budget)",
+        added, skipped_due_budget
+    ))
+}
+
+fn build_draft_item_from_requirement(req: &JobRequirement) -> DraftItemDoc {
+    DraftItemDoc {
+        name: normalize_feature_key(&req.name),
+        state: "planned".to_string(),
+        item_type: "action".to_string(),
+        domain: vec!["core".to_string()],
+        depends_on: vec![],
+        scope: vec![format!("feature:{}", normalize_feature_key(&req.name))],
+        rule: req.rules.clone(),
+        step: if req.steps.is_empty() {
+            vec!["trigger -> process -> result".to_string()]
+        } else {
+            req.steps.clone()
+        },
+        tasks: vec![format!("implement {}", normalize_feature_key(&req.name))],
+        constraints: vec![
+            format!(
+                "{} -> {} : requirement 기반 draft item 생성",
+                req.name,
+                normalize_feature_key(&req.name)
+            ),
+        ],
+        check: vec![format!("verify {}", normalize_feature_key(&req.name))],
+    }
 }
 
 /// Step 5: Implement Code (Parallel)
@@ -316,7 +340,10 @@ fn parse_job_md(raw: &str) -> Result<JobDoc, String> {
 
     for line in raw.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("# requirement") {
+        if trimmed.starts_with("# plan") {
+            section = "plan";
+            continue;
+        } else if trimmed.starts_with("# requirement") {
             section = "req";
             continue;
         } else if trimmed.starts_with("# task") {
@@ -330,6 +357,11 @@ fn parse_job_md(raw: &str) -> Result<JobDoc, String> {
         }
 
         match section {
+            "plan" => {
+                if trimmed.starts_with("- ") {
+                    doc.plan.push(trimmed[2..].trim().to_string());
+                }
+            }
             "req" => {
                 if trimmed.starts_with("## ") {
                     if !req.name.is_empty() { doc.requirement.push(req.clone()); }
@@ -369,7 +401,11 @@ fn parse_job_md(raw: &str) -> Result<JobDoc, String> {
 }
 
 fn render_job_md(doc: &JobDoc) -> String {
-    let mut out = String::from("# requirement\n");
+    let mut out = String::from("# plan\n");
+    for p in &doc.plan {
+        out.push_str(&format!("- {}\n", p));
+    }
+    out.push_str("\n# requirement\n");
     for r in &doc.requirement {
         out.push_str(&format!("## {}\n", r.name));
         for (i, s) in r.steps.iter().enumerate() { out.push_str(&format!("{}. {}\n", i+1, s)); }

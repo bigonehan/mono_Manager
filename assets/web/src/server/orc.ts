@@ -94,12 +94,11 @@ export type ProjectDetail = {
   is_dev_running?: boolean;
   is_build_running?: boolean;
   hasDraftsYaml: boolean;
-  hasInputMd: boolean;
+  hasJobMd: boolean;
   dev_server_url?: string;
   draftsYamlRaw?: string;
-  inputMdRaw?: string;
-  inputTitles: string[];
-  inputItems: Array<{ title: string; rule: string; step: string }>;
+  jobMdRaw?: string;
+  jobEditableRaw?: string;
   draftItems: Array<Record<string, unknown>>;
   draftsYamlItems: Array<{
     name: string;
@@ -1204,7 +1203,7 @@ function defaultInstructionRetryContent(): string {
     "- .project/feedback.md 내용을 먼저 읽고, 현재 지적된 문제를 기준으로 재시도 범위를 다시 정리한다.",
     "- 현재 ORC 워크플로 산출물 기준으로 plan.yaml부터 drafts.yaml을 다시 만들고 병렬 처리 과정을 처음부터 다시 시작한다.",
     "- 이미 완료된 수정 요약이 아니라, feedback에 적힌 문제를 해결하기 위한 새 계획과 구현 순서를 우선 작성한다.",
-    "- 필요한 경우 input.md도 다시 갱신하되, 최종 목적은 plan.yaml -> drafts.yaml -> 병렬 처리 재실행이다."
+    "- 필요한 경우 job.md를 다시 갱신하되, 최종 목적은 job.md -> drafts.yaml -> 병렬 처리 재실행이다."
   ].join("\n");
 }
 
@@ -1452,57 +1451,83 @@ function resolveProjectState(project: ProjectRecord): ProjectState {
   return "wait";
 }
 
-function parseInputTitles(projectPath: string): {
-  raw: string;
-  titles: string[];
-  items: Array<{ title: string; rule: string; step: string }>;
-} {
-  const inputPath = path.join(projectPath, "input.md");
-  if (!fs.existsSync(inputPath)) {
-    return { raw: "", titles: [], items: [] };
+function normalizeRequirementHeader(raw: string): string {
+  return raw
+    .replace(/^#\s*requriements\b/gim, "# requirement")
+    .replace(/^#\s*requirements\b/gim, "# requirement");
+}
+
+function extractJobManagedSection(raw: string): string {
+  const normalized = normalizeRequirementHeader(raw);
+  const lines = normalized.split(/\r?\n/);
+  let start = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    const t = lines[i].trim().toLowerCase();
+    if (t === "# task" || t === "# problems") {
+      start = i;
+      break;
+    }
   }
-  const raw = fs.readFileSync(inputPath, "utf8");
-  const items: Array<{ title: string; rule: string; step: string }> = [];
-  let active: { title: string; rule: string; step: string } | null = null;
-  for (const line of raw.split(/\r?\n/)) {
-    const t = line.trim();
-    if (/^#{1,6}\s+/.test(t)) {
-      if (active && active.title) {
-        items.push(active);
-      }
-      active = {
-        title: t.replace(/^#{1,6}\s+/, "").trim(),
-        rule: "",
-        step: ""
-      };
+  if (start < 0) {
+    return "# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n";
+  }
+  return `${lines.slice(start).join("\n").trimEnd()}\n`;
+}
+
+function extractJobEditableSection(raw: string): string {
+  const normalized = normalizeRequirementHeader(raw);
+  const lines = normalized.split(/\r?\n/);
+  const out: string[] = [];
+  let inEditable = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const t = line.trim().toLowerCase();
+    if (t === "# plan") {
+      inEditable = true;
+      out.push("# plan");
       continue;
     }
-    if (!active || !t.startsWith("- ")) {
+    if (t === "# requirement") {
+      inEditable = true;
+      out.push("# requirement");
       continue;
     }
-    const body = t.slice(2).trim();
-    const [rulePart, ...stepParts] = body.split(">");
-    if (!active.rule) {
-      active.rule = rulePart.trim();
-      active.step = stepParts.join(">").trim();
+    if (t === "# task" || t === "# problems") {
+      break;
     }
+    if (!inEditable) {
+      continue;
+    }
+    out.push(line);
   }
-  if (active && active.title) {
-    items.push(active);
+  const body = out.join("\n").trim();
+  if (body.length === 0) {
+    return "# plan\n\n# requirement\n";
   }
-  const uniqueItems: Array<{ title: string; rule: string; step: string }> = [];
-  const seen = new Set<string>();
-  for (const item of items) {
-    const key = item.title.trim();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    uniqueItems.push(item);
+  const hasPlan = /^#\s*plan\b/im.test(body);
+  const hasReq = /^#\s*requirement\b/im.test(body);
+  const withPlan = hasPlan ? body : `# plan\n\n${body}`;
+  const withReq = hasReq ? withPlan : `${withPlan}\n\n# requirement`;
+  return `${withReq.trimEnd()}\n`;
+}
+
+function buildJobMdFromEditable(editableRaw: string, currentRaw: string): string {
+  const editable = extractJobEditableSection(editableRaw);
+  const managed = extractJobManagedSection(currentRaw);
+  return `${editable.trimEnd()}\n\n${managed.trimStart()}`;
+}
+
+function readJobMd(projectPath: string): { raw: string; editableRaw: string } {
+  const jobPath = path.join(projectPath, "job.md");
+  if (!fs.existsSync(jobPath)) {
+    const editableRaw = "# plan\n\n# requirement\n";
+    return {
+      raw: `${editableRaw}\n# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n`,
+      editableRaw
+    };
   }
-  return {
-    raw,
-    titles: uniqueItems.map((item) => item.title),
-    items: uniqueItems
-  };
+  const raw = fs.readFileSync(jobPath, "utf8");
+  return { raw, editableRaw: extractJobEditableSection(raw) };
 }
 
 function parseDraftItems(projectPath: string): {
@@ -1880,11 +1905,11 @@ export function loadProjectDetail(id: string): ProjectDetail {
   const parsed = readProjectMdAttributes(fs.readFileSync(projectMdPath(project.path), "utf8"));
   const drafts = loadDraftsList(project.path);
   const hasDraftsYaml = fs.existsSync(draftsYamlPath(project.path));
-  const hasInputMd = fs.existsSync(path.join(project.path, "input.md"));
+  const hasJobMd = fs.existsSync(path.join(project.path, "job.md"));
   const planned = Array.isArray(drafts.planned) ? drafts.planned : [];
   const plannedItems = Array.isArray(drafts.planned_items) ? drafts.planned_items : [];
   const memo = fs.existsSync(memoPath(project.path)) ? fs.readFileSync(memoPath(project.path), "utf8") : "";
-  const inputMd = parseInputTitles(project.path);
+  const jobMd = readJobMd(project.path);
   const draftItems = parseDraftItems(project.path);
   const checkPlan = collectCheckPlan(project.path);
   const feedbackMdRaw = readFeedbackMarkdown(project.path);
@@ -1919,13 +1944,12 @@ export function loadProjectDetail(id: string): ProjectDetail {
     is_dev_running: runProcessesByProject.has(project.id),
     is_build_running: buildProcessesByProject.has(project.id),
     hasDraftsYaml,
-    hasInputMd,
+    hasJobMd,
     dev_server_url: runProcessesByProject.has(project.id) ? runUrlsByProject.get(project.id) : undefined
     ,
     draftsYamlRaw: draftItems.raw,
-    inputMdRaw: inputMd.raw,
-    inputTitles: inputMd.titles,
-    inputItems: inputMd.items,
+    jobMdRaw: jobMd.raw,
+    jobEditableRaw: jobMd.editableRaw,
     draftItems: draftItems.items,
     draftsYamlItems: draftItems.cards,
     checkSubject: checkPlan.subject,
@@ -2098,18 +2122,14 @@ function finalizeCompletedDrafts(id: string): string {
   };
   savePlanDoc(detail.path, plan);
 
-  const inputPath = path.join(detail.path, "input.md");
-  if (fs.existsSync(inputPath)) {
-    fs.writeFileSync(inputPath, "", "utf8");
-  }
   fs.rmSync(draftsPath, { force: true });
-  return `finalize_complete completed: ${completed.join(", ")} | input.md cleared`;
+  return `finalize_complete completed: ${completed.join(", ")}`;
 }
 
 export function runOrcAction(id: string, action: string, payload?: string): string {
   const detail = loadProjectDetail(id);
   const projectDraftsPath = draftsYamlPath(detail.path);
-  const projectInputPath = path.join(detail.path, "input.md");
+  const projectJobPath = path.join(detail.path, "job.md");
   if (action === "add_draft" && !fs.existsSync(projectDraftsPath)) {
     throw new Error("add_draft blocked: drafts.yaml not found");
   }
@@ -2119,8 +2139,8 @@ export function runOrcAction(id: string, action: string, payload?: string): stri
   if (action === "impl_draft" && !fs.existsSync(projectDraftsPath)) {
     throw new Error("impl_draft blocked: drafts.yaml not found");
   }
-  if (action === "create_draft" && !fs.existsSync(projectInputPath)) {
-    throw new Error("create_draft blocked: input.md not found");
+  if (action === "create_draft" && !fs.existsSync(projectJobPath)) {
+    throw new Error("create_draft blocked: job.md not found");
   }
   const argsMap: Record<string, string[]> = {
     create_draft: ["create_code_draft"],
@@ -2173,40 +2193,54 @@ export async function applyFormAddInput(
   if (!normalized.length) {
     throw new Error("all title/rule/step are empty");
   }
-  const inputBody = normalized
-    .map((item) => `# ${item.title}\n- ${item.rule} > ${item.step}`)
-    .join("\n\n");
-  const inputPath = path.join(detail.path, "input.md");
-  fs.writeFileSync(inputPath, `${inputBody}\n`, "utf8");
+  const requirementBody = normalized
+    .map((item) => `## ${item.title}\n1. ${item.step}\n- ${item.rule}`)
+    .join("\n");
+  const jobBody = `# plan\n\n# requirement\n${requirementBody}\n\n# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n`;
+  const jobPath = path.join(detail.path, "job.md");
+  fs.writeFileSync(jobPath, jobBody, "utf8");
 
-  const stages = await runInputMdSyncWorkflow(id, detail.path);
+  const stages = await runJobMdSyncWorkflow(id, detail.path);
   return { detail: loadProjectDetail(id), stages };
 }
 
 export function saveRawInputMd(id: string, raw: string): ProjectDetail {
   const detail = loadProjectDetail(id);
-  const inputPath = path.join(detail.path, "input.md");
-  if (!fs.existsSync(inputPath)) {
-    throw new Error("input.md not found: create or generate input.md first");
+  const jobPath = path.join(detail.path, "job.md");
+  const currentRaw = fs.existsSync(jobPath) ? fs.readFileSync(jobPath, "utf8") : "";
+  const merged = buildJobMdFromEditable(raw, currentRaw);
+  fs.writeFileSync(jobPath, merged, "utf8");
+  return loadProjectDetail(id);
+}
+export function saveRawDraftsYaml(id: string, raw: string): ProjectDetail {
+  const detail = loadProjectDetail(id);
+  const nextRaw = raw.trim();
+  if (nextRaw.length === 0) {
+    fs.rmSync(draftsYamlPath(detail.path), { force: true });
+    return loadProjectDetail(id);
   }
-  const body = raw.trimEnd();
-  fs.writeFileSync(inputPath, body.length > 0 ? `${body}\n` : "", "utf8");
+  const parsed = YAML.parse(nextRaw);
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("drafts.yaml must be a valid YAML object");
+  }
+  fs.writeFileSync(draftsYamlPath(detail.path), `${nextRaw}\n`, "utf8");
   return loadProjectDetail(id);
 }
 
+
 export function deleteDraftPaneFile(
   id: string,
-  target: "input" | "drafts"
+  target: "job" | "drafts"
 ): { detail: ProjectDetail; output: string } {
   const detail = loadProjectDetail(id);
-  if (target === "input") {
-    const inputPath = path.join(detail.path, "input.md");
-    if (!fs.existsSync(inputPath)) {
-      return { detail: loadProjectDetail(id), output: "input.md already missing" };
+  if (target === "job") {
+    const jobPath = path.join(detail.path, "job.md");
+    if (!fs.existsSync(jobPath)) {
+      return { detail: loadProjectDetail(id), output: "job.md already missing" };
     }
-    fs.rmSync(inputPath, { force: true });
-    appendRuntimeLog(id, "[drafts-pane] input.md deleted");
-    return { detail: loadProjectDetail(id), output: "input.md deleted" };
+    fs.rmSync(jobPath, { force: true });
+    appendRuntimeLog(id, "[drafts-pane] job.md deleted");
+    return { detail: loadProjectDetail(id), output: "job.md deleted" };
   }
   const file = draftsYamlPath(detail.path);
   if (!fs.existsSync(file)) {
@@ -2219,7 +2253,7 @@ export function deleteDraftPaneFile(
 
 export async function applyRawInputMd(id: string, raw: string): Promise<{ detail: ProjectDetail; stages: string[] }> {
   const detail = saveRawInputMd(id, raw);
-  const stages = await runInputMdSyncWorkflow(id, detail.path);
+  const stages = await runJobMdSyncWorkflow(id, detail.path);
   return { detail: loadProjectDetail(id), stages };
 }
 
@@ -2229,9 +2263,9 @@ export function generateInputMdFromMessage(id: string, message: string): { detai
   if (!prompt) {
     throw new Error("message is required");
   }
-  const taskKey = createTaskSessionKey("input-generate");
+  const taskKey = createTaskSessionKey("job-generate");
   const planCommand = resolveOrcCommandArgs(["add_code_plan", "-m", prompt]);
-  appendRuntimeLog(id, `[input-generate] add_code_plan -m "${prompt}"`);
+  appendRuntimeLog(id, `[job-generate] add_code_plan -m "${prompt}"`);
   const planResult = spawnSync(planCommand.bin, planCommand.args, {
     cwd: detail.path,
     encoding: "utf8",
@@ -2241,19 +2275,33 @@ export function generateInputMdFromMessage(id: string, message: string): { detai
     const stderr = (planResult.stderr || "").trim();
     throw new Error(stderr || `add_code_plan failed: status=${String(planResult.status)}`);
   }
-  const inputCommand = resolveOrcCommandArgs(["create_input_md"]);
-  appendRuntimeLog(id, "[input-generate] create_input_md");
-  const inputResult = spawnSync(inputCommand.bin, inputCommand.args, {
+
+  const initJobCommand = resolveOrcCommandArgs(["init_orc_job"]);
+  appendRuntimeLog(id, "[job-generate] init_orc_job");
+  const initJobResult = spawnSync(initJobCommand.bin, initJobCommand.args, {
     cwd: detail.path,
     encoding: "utf8",
     env: buildTaskCommandEnv(taskKey)
   });
-  if (inputResult.status !== 0) {
-    const stderr = (inputResult.stderr || "").trim();
-    throw new Error(stderr || `create_input_md failed: status=${String(inputResult.status)}`);
+  if (initJobResult.status !== 0) {
+    const stderr = (initJobResult.stderr || "").trim();
+    throw new Error(stderr || `init_orc_job failed: status=${String(initJobResult.status)}`);
   }
-  const output = (inputResult.stdout || "").trim() || "create_input_md completed";
-  appendRuntimeLog(id, `[input-generate] ${output}`);
+
+  const addDraftsCommand = resolveOrcCommandArgs(["add_orc_drafts"]);
+  appendRuntimeLog(id, "[job-generate] add_orc_drafts");
+  const addDraftsResult = spawnSync(addDraftsCommand.bin, addDraftsCommand.args, {
+    cwd: detail.path,
+    encoding: "utf8",
+    env: buildTaskCommandEnv(taskKey)
+  });
+  if (addDraftsResult.status !== 0) {
+    const stderr = (addDraftsResult.stderr || "").trim();
+    throw new Error(stderr || `add_orc_drafts failed: status=${String(addDraftsResult.status)}`);
+  }
+
+  const output = (addDraftsResult.stdout || "").trim() || "add_orc_drafts completed";
+  appendRuntimeLog(id, `[job-generate] ${output}`);
   return { detail: loadProjectDetail(id), output };
 }
 
@@ -2342,12 +2390,11 @@ function setProjectState(id: string, nextState: ProjectState): void {
   saveRegistry(registry);
 }
 
-async function runInputMdSyncWorkflow(id: string, projectPath: string): Promise<string[]> {
+async function runJobMdSyncWorkflow(id: string, projectPath: string): Promise<string[]> {
   const taskKey = createTaskSessionKey("form-add-input");
   const stages: Array<{ label: string; args: string[] }> = [
-    { label: "plan.yaml", args: ["add_code_plan", "-f"] },
-    { label: "drafts.yaml", args: ["add_code_draft", "-f"] },
-    { label: "draft_item.yaml", args: ["add_code_draft_item", "-f"] }
+    { label: "job.md", args: ["init_orc_job"] },
+    { label: "drafts.yaml", args: ["add_orc_drafts"] }
   ];
   const outputs: string[] = [];
   for (const stage of stages) {

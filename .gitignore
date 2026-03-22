@@ -1,4 +1,5 @@
-/target
-node_modules/
-assets/web/node_modules/
-dist/
+/target/
+/crates/rc/target/
+/node_modules/
+/assets/web/node_modules/
+/dist/
