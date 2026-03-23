@@ -1862,12 +1862,21 @@ export default function WebApp() {
       <div className="fixed inset-x-0 top-0 z-50 border-b border-border bg-background/70 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1500px] items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-          <button className="text-sm font-semibold text-muted-foreground hover:text-foreground" onClick={() => scrollToProjectSection("code")}>
-            code
-          </button>
-          <button className="text-sm font-semibold text-muted-foreground hover:text-foreground" onClick={() => scrollToProjectSection("monorepo")}>
-            monorepo
-          </button>
+            <span className="rounded-full border border-border px-2 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-foreground/80">
+              ORC
+            </span>
+            <button
+              className="text-sm font-semibold text-muted-foreground hover:text-foreground"
+              onClick={() => scrollToProjectSection("code")}
+            >
+              code
+            </button>
+            <button
+              className="text-sm font-semibold text-muted-foreground hover:text-foreground"
+              onClick={() => scrollToProjectSection("monorepo")}
+            >
+              monorepo
+            </button>
           </div>
           <div className="flex items-center gap-2">
             <Button

@@ -8,7 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const WEB_HOST: &str = "127.0.0.1";
-const WEB_PORT: u16 = 4175;
+const WEB_PORT: u16 = 4275;
 
 #[derive(Clone, Copy)]
 enum WebPackageManager {
@@ -141,27 +141,9 @@ fn open_web_ui_build_preview(web_dir: &Path, web_port: u16) -> Result<String, St
 }
 
 fn resolve_web_dir() -> Result<PathBuf, String> {
-    let cwd = std::env::current_dir().map_err(|e| format!("failed to get cwd: {}", e))?;
-    if let Some(path) = find_web_dir_from(&cwd) {
-        return Ok(path);
-    }
-
-    let source_root = crate::source_root();
-    if let Some(path) = find_web_dir_from(&source_root) {
-        return Ok(path);
-    }
-
-    Err(format!("web assets not found from cwd: {}", cwd.display()))
-}
-
-fn find_web_dir_from(start: &Path) -> Option<PathBuf> {
-    for ancestor in start.ancestors() {
-        let candidate = ancestor.join("assets").join("web");
-        if candidate.join("package.json").exists() {
-            return Some(candidate);
-        }
-    }
-    None
+    let web_dir = crate::source_root().join("assets").join("web");
+    ensure_web_assets_exist(&web_dir)?;
+    Ok(web_dir)
 }
 
 fn ensure_web_assets_exist(web_dir: &Path) -> Result<(), String> {
@@ -378,7 +360,7 @@ fn is_web_server_alive(web_port: u16) -> bool {
 }
 
 fn web_url(web_port: u16) -> String {
-    format!("http://{}:{}/", WEB_HOST, web_port)
+    format!("http://{}:{}/?app=orc", WEB_HOST, web_port)
 }
 
 fn web_server_pid_path(web_port: u16) -> PathBuf {
@@ -545,32 +527,25 @@ fn try_spawn(program: &str, args: &[&str]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{describe_exit_status, find_web_dir_from};
-    use std::fs;
+    use super::{describe_exit_status, ensure_web_assets_exist, resolve_web_dir, resolve_web_port};
+    use std::path::Path;
     use std::process::Command;
-    use tempfile::tempdir;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
-    fn finds_web_assets_from_nested_directory() {
-        let dir = tempdir().expect("tempdir");
-        let repo_root = dir.path().join("repo");
-        let nested = repo_root.join("assets").join("presets").join("code");
-        let web_dir = repo_root.join("assets").join("web");
-        fs::create_dir_all(&nested).expect("nested dirs");
-        fs::create_dir_all(&web_dir).expect("web dir");
-        fs::write(web_dir.join("package.json"), "{}\n").expect("package.json");
-
-        let resolved = find_web_dir_from(&nested).expect("resolved web dir");
-        assert_eq!(resolved, web_dir);
+    fn resolve_web_dir_is_fixed_to_source_root_assets_web() {
+        let resolved = resolve_web_dir().expect("resolved web dir");
+        assert_eq!(resolved, crate::source_root().join("assets").join("web"));
     }
 
     #[test]
-    fn returns_none_when_web_assets_do_not_exist() {
-        let dir = tempdir().expect("tempdir");
-        let repo_root = dir.path().join("repo");
-        fs::create_dir_all(&repo_root).expect("repo root");
-
-        assert!(find_web_dir_from(&repo_root).is_none());
+    fn ensure_web_assets_exist_reports_missing_package_json_path() {
+        let missing_dir = crate::source_root().join(".temp").join("missing-web-assets-test");
+        let err = ensure_web_assets_exist(&missing_dir).expect_err("missing package.json should fail");
+        assert!(err.contains("web assets not found:"));
+        assert!(err.contains("missing-web-assets-test/package.json"));
     }
 
     #[test]
@@ -582,5 +557,22 @@ mod tests {
             .expect("exit status");
 
         assert_eq!(describe_exit_status(status), "exit code 7");
+    }
+
+    #[test]
+    fn resolve_web_port_defaults_to_orc_port() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        std::env::remove_var("ORC_WEB_PORT");
+        let web_port = resolve_web_port(Path::new(".")).expect("default web port");
+        assert_eq!(web_port, 4275);
+    }
+
+    #[test]
+    fn resolve_web_port_prefers_env_override() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        std::env::set_var("ORC_WEB_PORT", "4999");
+        let web_port = resolve_web_port(Path::new(".")).expect("env web port");
+        std::env::remove_var("ORC_WEB_PORT");
+        assert_eq!(web_port, 4999);
     }
 }

@@ -2824,3 +2824,15 @@
 - `.../src/main.rs`에서 실패 진행 로그 경로 상수 `CHECK_PROCESS_MD_PATH`를 `.project/check-process.md`에서 `job.md`로 변경해 내부 기록 위치를 전환함.
 - 사용자 요청에 맞춰 경로 설정 검색 결과를 확인(`rg -n "check-process\.md"`)하고 내부 코드 지점 1곳을 수정함.
 - 검증: `cargo test -q` 통과(orc 37 + rc 16).
+
+## 2026-03-23 - 작업한일
+- `.../src/web/mod.rs`에서 `orc open-ui` 기본 포트를 `4275`로 분리하고, 브라우저 오픈 URL을 `?app=orc` 식별자로 확장해 `rw open-ui`와 동일 탭 재사용 충돌을 줄임.
+- `.../assets/web/src/pages/index.astro` 타이틀을 `ORC Web UI`로 고정하고 query(`app=orc`) 기반 타이틀 보정 스크립트를 추가해 창 식별성을 강화함.
+- `.../assets/web/src/components/WebApp.tsx` 상단에 `ORC` 배지를 추가해 실행 화면에서 즉시 구분되도록 수정함.
+- 검증을 위해 `.../src/web/mod.rs`에 포트 기본값/환경변수 우선순위 단위 테스트 2건을 추가함.
+
+## 2026-03-23 - 작업한일
+- `.../src/web/mod.rs`의 `resolve_web_dir()`에서 `cwd`/조상 탐색 레거시를 제거하고 `source_root/assets/web` 고정 경로만 사용하도록 변경함.
+- 같은 파일에서 `find_web_dir_from()`를 삭제해 과거 호환용 경로 자동 추론 로직을 완전히 제거함.
+- 테스트를 고정 정책 기준으로 교체: `resolve_web_dir_is_fixed_to_source_root_assets_web`, `ensure_web_assets_exist_reports_missing_package_json_path`를 추가함.
+- 검증: `cargo test` 통과(orc 39 + rc 16).
