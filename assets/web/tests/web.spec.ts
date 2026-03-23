@@ -1,26 +1,72 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import { installMockSpeechRecognition } from "./helpers/mock-speech-recognition";
 
+type CreateProjectPayload = {
+  name: string;
+  description: string;
+  path: string;
+  spec: string;
+  project_type: "code" | "mono";
+};
+
+const trackedProjectIds = new Set<string>();
+const trackedPaths = new Set<string>();
+
+function trackPathForCleanup(targetPath: string): void {
+  trackedPaths.add(targetPath);
+}
+
+async function createProjectForTest(request: APIRequestContext, payload: CreateProjectPayload) {
+  trackPathForCleanup(payload.path);
+  const response = await request.post("http://127.0.0.1:4175/api/projects", {
+    data: payload
+  });
+  expect(response.ok()).toBeTruthy();
+  const body = (await response.json().catch(() => ({}))) as { project?: { id?: string } };
+  const projectId = body.project?.id;
+  if (typeof projectId === "string" && projectId.length > 0) {
+    trackedProjectIds.add(projectId);
+  }
+  return response;
+}
+
+test.afterEach(async ({ request }) => {
+  for (const projectId of trackedProjectIds) {
+    try {
+      await request.post("http://127.0.0.1:4175/api/project-delete", {
+        data: { id: projectId }
+      });
+    } catch {
+      // ignore cleanup errors in teardown
+    }
+  }
+  trackedProjectIds.clear();
+
+  const cleanupTargets = Array.from(trackedPaths).sort((a, b) => b.length - a.length);
+  for (const targetPath of cleanupTargets) {
+    fs.rmSync(targetPath, { recursive: true, force: true });
+  }
+  trackedPaths.clear();
+});
+
 test("web ui: load and create/select project", async ({ page, request }) => {
   const unique = `pw-${Date.now()}`;
   const tmpPath = "/tmp/tmp_project";
+  trackPathForCleanup(tmpPath);
+  fs.rmSync(tmpPath, { recursive: true, force: true });
   fs.mkdirSync(tmpPath, { recursive: true });
-  fs.rmSync(path.join(tmpPath, ".project"), { recursive: true, force: true });
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Code" })).toBeVisible();
-  const createRes = await request.post("http://127.0.0.1:4175/api/projects", {
-    data: {
-      name: unique,
-      description: "playwright e2e project",
-      path: tmpPath,
-      spec: "react, zustand",
-      project_type: "code"
-    }
+  await createProjectForTest(request, {
+    name: unique,
+    description: "playwright e2e project",
+    path: tmpPath,
+    spec: "react, zustand",
+    project_type: "code"
   });
-  expect(createRes.ok()).toBeTruthy();
   await page.reload();
   await expect(page.getByRole("heading", { name: "Code" })).toBeVisible();
 
@@ -48,19 +94,17 @@ test("web ui: load and create/select project", async ({ page, request }) => {
 test("web ui: drafts pane accepts job.md input and shows generated drafts.yaml", async ({ page, request }) => {
   const unique = `pw-drafts-${Date.now()}`;
   const tmpPath = `/tmp/${unique}`;
+  trackPathForCleanup(tmpPath);
   fs.rmSync(tmpPath, { recursive: true, force: true });
   fs.mkdirSync(tmpPath, { recursive: true });
 
-  const createRes = await request.post("http://127.0.0.1:4175/api/projects", {
-    data: {
-      name: unique,
-      description: "drafts pane verification",
-      path: tmpPath,
-      spec: "react, draft",
-      project_type: "code"
-    }
+  await createProjectForTest(request, {
+    name: unique,
+    description: "drafts pane verification",
+    path: tmpPath,
+    spec: "react, draft",
+    project_type: "code"
   });
-  expect(createRes.ok()).toBeTruthy();
 
   fs.writeFileSync(
     path.join(tmpPath, "job.md"),
@@ -104,19 +148,17 @@ test("web ui: drafts pane accepts job.md input and shows generated drafts.yaml",
 test("web ui: check pane renders draft subject and appends screenshot feedback", async ({ page, request }) => {
   const unique = `pw-check-${Date.now()}`;
   const tmpPath = `/tmp/${unique}`;
+  trackPathForCleanup(tmpPath);
   fs.rmSync(tmpPath, { recursive: true, force: true });
   fs.mkdirSync(tmpPath, { recursive: true });
 
-  const createRes = await request.post("http://127.0.0.1:4175/api/projects", {
-    data: {
-      name: unique,
-      description: "check pane verification",
-      path: tmpPath,
-      spec: "react, check",
-      project_type: "code"
-    }
+  await createProjectForTest(request, {
+    name: unique,
+    description: "check pane verification",
+    path: tmpPath,
+    spec: "react, check",
+    project_type: "code"
   });
-  expect(createRes.ok()).toBeTruthy();
 
   fs.writeFileSync(
     path.join(tmpPath, ".project", "drafts.yaml"),
@@ -175,6 +217,7 @@ test("web ui: check pane renders draft subject and appends screenshot feedback",
 test("web ui: voice input updates single-line and multiline text fields", async ({ page, request }) => {
   const unique = `pw-voice-${Date.now()}`;
   const tmpPath = `/tmp/${unique}`;
+  trackPathForCleanup(tmpPath);
   fs.rmSync(tmpPath, { recursive: true, force: true });
   fs.mkdirSync(tmpPath, { recursive: true });
 
@@ -182,16 +225,13 @@ test("web ui: voice input updates single-line and multiline text fields", async 
 
   let projectId = "";
   try {
-    const createRes = await request.post("http://127.0.0.1:4175/api/projects", {
-      data: {
-        name: unique,
-        description: "voice input verification",
-        path: tmpPath,
-        spec: "react, voice",
-        project_type: "code"
-      }
+    const createRes = await createProjectForTest(request, {
+      name: unique,
+      description: "voice input verification",
+      path: tmpPath,
+      spec: "react, voice",
+      project_type: "code"
     });
-    expect(createRes.ok()).toBeTruthy();
     const createBody = (await createRes.json()) as { project?: { id?: string } };
     projectId = createBody.project?.id ?? "";
 
@@ -212,12 +252,7 @@ test("web ui: voice input updates single-line and multiline text fields", async 
     await page.getByTestId("check-feedback-input-voice").click();
     await expect(page.getByTestId("check-feedback-input")).toHaveValue("테스트 음성 입력");
   } finally {
-    if (projectId) {
-      await request.post("http://127.0.0.1:4175/api/project-delete", {
-        data: { id: projectId }
-      });
-    }
-    fs.rmSync(tmpPath, { recursive: true, force: true });
+    if (projectId) trackedProjectIds.add(projectId);
   }
 });
 
@@ -229,6 +264,8 @@ test("web ui: auto modal starts immediately, locks current detail, and keeps pro
   const otherProject = `${autoProject}-other`;
   const autoPath = `/tmp/${autoProject}`;
   const otherPath = `/tmp/${otherProject}`;
+  trackPathForCleanup(autoPath);
+  trackPathForCleanup(otherPath);
   fs.rmSync(autoPath, { recursive: true, force: true });
   fs.rmSync(otherPath, { recursive: true, force: true });
   fs.mkdirSync(autoPath, { recursive: true });
@@ -238,16 +275,13 @@ test("web ui: auto modal starts immediately, locks current detail, and keeps pro
     [autoProject, autoPath],
     [otherProject, otherPath]
   ] as const) {
-    const createRes = await request.post("http://127.0.0.1:4175/api/projects", {
-      data: {
-        name,
-        description: "auto ui verification",
-        path: projectPath,
-        spec: "react, zustand",
-        project_type: "code"
-      }
+    await createProjectForTest(request, {
+      name,
+      description: "auto ui verification",
+      path: projectPath,
+      spec: "react, zustand",
+      project_type: "code"
     });
-    expect(createRes.ok()).toBeTruthy();
   }
 
   await page.goto("/");

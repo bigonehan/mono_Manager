@@ -1,8 +1,7 @@
 # plan
-- add_orc_drafts 파서 실패 원인을 자연어 출력 경로로 고정한다.
-- draft_item 생성 프롬프트를 YAML 단일 item 출력으로 제한한다.
-- add_orc_drafts 단계에서 단일 item/list 파싱과 1회 정규화 재시도를 적용한다.
-- ORC 체인(add_orc_drafts -> impl_orc_code -> check_orc_code -> clit test)을 timeout 180s, 단계별 최대 2회 재시도로 검증한다.
+- `orc clit test`/웹 e2e 테스트 이후 테스트 전용 프로젝트를 자동 정리한다.
+- 테스트가 만든 `/tmp` 경로와 API 프로젝트 레코드를 `afterEach`에서 강제 삭제한다.
+- ORC 체인(add_orc_drafts -> impl_orc_code -> check_orc_code -> clit test)을 timeout 180s, 단계별 최대 2회 재시도로 실행하고 결과를 기록한다.
 
 # requirement
 ## rust_cli_workspace
@@ -44,6 +43,7 @@
 
 # task
 ## planned
+## work
 - rust_cli_workspace
 - project_documentation
 - cli_rust_orchestra
@@ -80,7 +80,6 @@
 - web_project_feedback_path
 - web_rc_binary_resolver
 - web_test_voice_helper
-## work
 ## check
 ## completed
 ## fail

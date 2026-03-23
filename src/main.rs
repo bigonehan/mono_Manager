@@ -34,7 +34,7 @@ const EXEC_LOG_PATH: &str = ".project/log.md";
 const PROJECT_MD_PATH: &str = ".project/project.md";
 const PRIMARY_DRAFTS_LIST_FILE: &str = "drafts_list.yaml";
 pub(crate) const INPUT_MD_PATH: &str = "input.md";
-const CHECK_PROCESS_MD_PATH: &str = ".project/check-process.md";
+const CHECK_PROCESS_MD_PATH: &str = "job.md";
 const TASK_SESSION_KEY_ENV: &str = "ORC_TASK_SESSION_KEY";
 
 fn is_orc_workspace_runtime_entry(name: &str) -> bool {

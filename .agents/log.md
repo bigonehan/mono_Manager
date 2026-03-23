@@ -2810,3 +2810,17 @@
 - `.../assets/web/src/pages/api/drafts-yaml-raw.ts` + `saveRawDraftsYaml`을 추가해 생성된 `drafts.yaml`의 수동 수정/저장을 지원함.
 - `.../assets/web/src/store/orc-store.ts`와 `.../assets/web/tests/web.spec.ts`를 새 흐름에 맞춰 갱신(episode 테스트 제거, drafts pane 입력/생성 시나리오로 대체)함.
 - 검증: `pnpm --dir assets/web run build` 성공, `pnpm --dir assets/web exec tsc --noEmit` 성공, `cargo test -q` 성공, `rg -n "episode|episodes|jobItems|jobTitles" assets/web/src` 0건.
+
+## 2026-03-23 - 작업한일
+- `.../src/code.rs` 테스트에 `cli_create_input_md` requirement가 draft item으로 변환될 때 `scope/tasks/constraints/check`가 정확히 생성되는 단위 검증(`build_draft_item_from_requirement_keeps_cli_create_input_md_contract`)을 추가함.
+- 검증: `cargo test build_draft_item_from_requirement_keeps_cli_create_input_md_contract -- --nocapture` 통과, `cargo test` 전체 통과(orc 27 + rc 16).
+
+## 2026-03-23 - 작업한일
+- `.../src/code.rs`의 `flow_rust_orchestra` 인자 검증 에러를 확장해 전달된 인자 값을 메시지에 포함하도록 변경함(`cli_rust_orchestra does not accept arguments: <args>`).
+- 같은 파일 테스트에 `flow_rust_orchestra_rejects_arguments_with_echoed_values`를 추가해 인자 거부 및 에러 메시지 내용을 단위 검증함.
+- 검증: `cargo test flow_rust_orchestra -- --nocapture` 통과, `cargo run --bin orc -- cli_rust_orchestra --dry-run`에서 확장된 에러 메시지 출력 확인.
+
+## 2026-03-23 - 작업한일
+- `.../src/main.rs`에서 실패 진행 로그 경로 상수 `CHECK_PROCESS_MD_PATH`를 `.project/check-process.md`에서 `job.md`로 변경해 내부 기록 위치를 전환함.
+- 사용자 요청에 맞춰 경로 설정 검색 결과를 확인(`rg -n "check-process\.md"`)하고 내부 코드 지점 1곳을 수정함.
+- 검증: `cargo test -q` 통과(orc 37 + rc 16).
