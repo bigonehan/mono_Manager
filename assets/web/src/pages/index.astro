@@ -7,7 +7,15 @@ import WebApp from "@/components/WebApp";
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
-    <title>Orc Web UI</title>
+    <title>ORC Web UI</title>
+    <script is:inline>
+      (() => {
+        const app = new URLSearchParams(window.location.search).get("app");
+        if (app && app.toLowerCase() === "orc") {
+          document.title = "ORC Web UI";
+        }
+      })();
+    </script>
   </head>
   <body>
     <WebApp client:load />
