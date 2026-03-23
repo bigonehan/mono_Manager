@@ -1,6 +1,6 @@
 draft:
 - name: rust_cli_workspace
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -17,7 +17,7 @@ draft:
   check:
   - verify rust_cli_workspace
 - name: project_documentation
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -34,7 +34,7 @@ draft:
   check:
   - verify project_documentation
 - name: cli_rust_orchestra
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -51,7 +51,7 @@ draft:
   check:
   - verify cli_rust_orchestra
 - name: cli_help
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -68,7 +68,7 @@ draft:
   check:
   - verify cli_help
 - name: cli_create_input_md
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -85,7 +85,7 @@ draft:
   check:
   - verify cli_create_input_md
 - name: cli_create_code_draft
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -102,7 +102,7 @@ draft:
   check:
   - verify cli_create_code_draft
 - name: cli_impl_code_draft
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -119,7 +119,7 @@ draft:
   check:
   - verify cli_impl_code_draft
 - name: cli_test
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -136,7 +136,7 @@ draft:
   check:
   - verify cli_test
 - name: cli_check_task
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -153,7 +153,7 @@ draft:
   check:
   - verify cli_check_task
 - name: cli_check_draft
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -170,7 +170,7 @@ draft:
   check:
   - verify cli_check_draft
 - name: cli_code
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -187,7 +187,7 @@ draft:
   check:
   - verify cli_code
 - name: cli_init_code_project
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -204,7 +204,7 @@ draft:
   check:
   - verify cli_init_code_project
 - name: cli_init_code_plan
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -221,7 +221,7 @@ draft:
   check:
   - verify cli_init_code_plan
 - name: cli_add_code_plan
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -238,7 +238,7 @@ draft:
   check:
   - verify cli_add_code_plan
 - name: cli_add_code_draft
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -255,7 +255,7 @@ draft:
   check:
   - verify cli_add_code_draft
 - name: cli_add_code_draft_item
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -272,7 +272,7 @@ draft:
   check:
   - verify cli_add_code_draft_item
 - name: cli_check_code_draft
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -289,7 +289,7 @@ draft:
   check:
   - verify cli_check_code_draft
 - name: cli_open_ui
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -306,7 +306,7 @@ draft:
   check:
   - verify cli_open_ui
 - name: cli_serve_web_api
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -323,7 +323,7 @@ draft:
   check:
   - verify cli_serve_web_api
 - name: cli_auto
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -340,7 +340,7 @@ draft:
   check:
   - verify cli_auto
 - name: cli_auto_add_function
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -357,7 +357,7 @@ draft:
   check:
   - verify cli_auto_add_function
 - name: cli_send_tmux
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -374,7 +374,7 @@ draft:
   check:
   - verify cli_send_tmux
 - name: cli_enter
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -391,7 +391,7 @@ draft:
   check:
   - verify cli_enter
 - name: cli_chat
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -408,7 +408,7 @@ draft:
   check:
   - verify cli_chat
 - name: cli_chat_wait
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -425,7 +425,7 @@ draft:
   check:
   - verify cli_chat_wait
 - name: cli_clit
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -442,7 +442,7 @@ draft:
   check:
   - verify cli_clit
 - name: cli_report_long_running_status
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -459,7 +459,7 @@ draft:
   check:
   - verify cli_report_long_running_status
 - name: cli_track_check_process
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -476,7 +476,7 @@ draft:
   check:
   - verify cli_track_check_process
 - name: web_detail_check_pane
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -493,7 +493,7 @@ draft:
   check:
   - verify web_detail_check_pane
 - name: web_manual_rc_check
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -510,7 +510,7 @@ draft:
   check:
   - verify web_manual_rc_check
 - name: web_screenshot_feedback
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -527,7 +527,7 @@ draft:
   check:
   - verify web_screenshot_feedback
 - name: web_voice_input_fields
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -544,7 +544,7 @@ draft:
   check:
   - verify web_voice_input_fields
 - name: cli_reset_task_artifacts
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -561,7 +561,7 @@ draft:
   check:
   - verify cli_reset_task_artifacts
 - name: web_project_feedback_path
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -578,7 +578,7 @@ draft:
   check:
   - verify web_project_feedback_path
 - name: web_rc_binary_resolver
-  state: planned
+  state: work
   type: action
   domain:
   - core
@@ -595,7 +595,7 @@ draft:
   check:
   - verify web_rc_binary_resolver
 - name: web_test_voice_helper
-  state: planned
+  state: work
   type: action
   domain:
   - core

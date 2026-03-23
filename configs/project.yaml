@@ -296,11 +296,3 @@ projects:
     updated_at: "1774191703"
     selected: false
     project_type: mono
-  - id: j4LB
-    name: pw-drafts-1774195706695
-    path: /tmp/pw-drafts-1774195706695
-    description: drafts pane verification
-    created_at: "1774195706"
-    updated_at: "1774195706"
-    selected: false
-    project_type: code

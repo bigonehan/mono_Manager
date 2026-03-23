@@ -16,6 +16,7 @@
 - `orc check_code_draft [-a]`
 - `orc check_task`
 - `orc check_draft`
+- `orc cli_rust_orchestra`
 - `orc chat -n <name>`
 - `orc chat -n <name> --background`
 - `orc chat -n <name> -m <message> [-i <receiver_id>] [--data <data>]`

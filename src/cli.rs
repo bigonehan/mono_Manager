@@ -37,7 +37,9 @@ pub fn print_usage(program: &str) {
         "build_orc_domains",
         "init_orc_job",
         "add_orc_drafts",
-        "impl_orc_code",
+        "create_input_md",
+        "cli_rust_orchestra",
+        "impl_code_draft",
         "check_orc_code",
         "open-ui [-w|--web|-b|--build]",
         "serve-web-api [--addr <host:port>]",
@@ -49,6 +51,14 @@ pub fn print_usage(program: &str) {
 
     for command in commands {
         println!("  {program} {command}");
+    }
+}
+
+fn canonical_command_for_match(command: &str) -> &str {
+    match command {
+        "impl_code_draft" => "impl_orc_code",
+        "cli_create_input_md" => "create_input_md",
+        other => other,
     }
 }
 
@@ -76,7 +86,8 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         return Err("missing command".to_string());
     }
     let profile = super::profile::resolve_profile(&profile_name)?;
-    let command = args[command_idx].as_str();
+    let raw_command = args[command_idx].as_str();
+    let command = canonical_command_for_match(raw_command);
     let tail = &args[(command_idx + 1)..];
 
     match command {
@@ -84,11 +95,18 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         "build_orc_domains" => profile.project_service().build_domains(),
         "init_orc_job" => profile.project_service().init_job(),
         "add_orc_drafts" => profile.draft_service().add_drafts(),
+        "cli_rust_orchestra" => crate::code::flow_rust_orchestra(Path::new("."), tail),
         "impl_orc_code" => {
             if !tail.is_empty() {
-                return Err("impl_orc_code does not accept arguments".to_string());
+                return Err(format!("{raw_command} does not accept arguments"));
             }
             profile.draft_service().run_parallel().await
+        }
+        "create_input_md" => {
+            if !tail.is_empty() {
+                return Err(format!("{raw_command} does not accept arguments"));
+            }
+            crate::code::create_input_md()
         }
         "check_orc_code" => {
             profile.feedback_service().check()
@@ -171,5 +189,25 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             crate::run_rc_forward(tail)
         }
         _ => Err(format!("unknown command: {}", command)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::canonical_command_for_match;
+
+    #[test]
+    fn canonical_command_maps_impl_code_draft_alias() {
+        assert_eq!(canonical_command_for_match("impl_code_draft"), "impl_orc_code");
+    }
+
+    #[test]
+    fn canonical_command_keeps_other_commands() {
+        assert_eq!(canonical_command_for_match("open-ui"), "open-ui");
+    }
+
+    #[test]
+    fn canonical_command_maps_cli_create_input_md_alias() {
+        assert_eq!(canonical_command_for_match("cli_create_input_md"), "create_input_md");
     }
 }
