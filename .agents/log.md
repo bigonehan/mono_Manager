@@ -2836,3 +2836,88 @@
 - 같은 파일에서 `find_web_dir_from()`를 삭제해 과거 호환용 경로 자동 추론 로직을 완전히 제거함.
 - 테스트를 고정 정책 기준으로 교체: `resolve_web_dir_is_fixed_to_source_root_assets_web`, `ensure_web_assets_exist_reports_missing_package_json_path`를 추가함.
 - 검증: `cargo test` 통과(orc 39 + rc 16).
+
+## 2026-03-23 - 작업한일
+- `.../AGENTS.md`에 성능 개선 완료 시 E2E 필수 실행 규칙을 추가하고, 고정 명령(`npm --prefix assets/web run test:e2e`)과 실패 시 완료 보고 금지 규칙을 명시함.
+- E2E 종료 후 테스트 프로젝트 정리 규칙(`/tmp/tmp_project`, `/tmp/pw-*` 삭제 + 잔존 확인)을 같은 규칙에 추가함.
+- 실제 검증으로 `npm --prefix assets/web run test:e2e`를 실행했고 2개 케이스 실패를 확인함(나머지 3개 통과).
+- 테스트 종료 후 `rm -rf /tmp/tmp_project /tmp/pw-*` 실행 및 `/tmp`, `configs/project.yaml` 잔존 문자열 검색 0건을 확인함.
+
+## 2026-03-23 - 작업한일
+- `.../assets/web/tests/web.spec.ts`의 실패 E2E 2건을 수정: drafts pane 케이스에 `page.goto("/")` + 카드 가시성 대기를 추가하고, auto 케이스의 구형 `stage:` 텍스트 기대를 상태 기반 검증으로 교체함.
+- drafts pane 테스트의 버튼 locator를 텍스트명에서 `aria-label` 기준(`generate-drafts-yaml`, `save-drafts-yaml`)으로 변경해 현재 UI 접근성 계약과 일치시킴.
+- 검증: `npm --prefix assets/web run test:e2e` 재실행 결과 5/5 통과.
+- 테스트 후 정리: `rm -rf /tmp/tmp_project /tmp/pw-*` 실행, `/tmp` 및 `configs/project.yaml`에 테스트 프로젝트 잔존 0건 확인.
+
+## 2026-03-23 - 작업한일
+- `.../assets/web/src/lib/requirement-parser.ts`를 추가해 `## / - / >` 블록 기반 requirement 파서를 구현하고, `## ... - ... > ...` 한줄은 제목으로만 처리하도록 고정함.
+- `.../assets/web/src/server/orc.ts`/`.../assets/web/src/pages/api/form-add-input.ts`를 갱신해 raw multiline 입력을 객체 배열로 파싱 후 `job.md -> add_orc_drafts` 동기화가 자동 수행되도록 연결함.
+- `.../assets/web/src/components/WebApp.tsx` drafts pane을 리스트+버튼 중심으로 재구성하고, `요구사항 추가`/`메시지로 job.md 생성` multiline 모달을 분리해 입력 경로를 전환함.
+- `.../assets/web/tests/unit/requirement-parser.test.ts`와 `test:unit` 스크립트를 추가해 `## only`, `##+-`, `##+-+>`, `##- > 한줄 특례`, 다중/혼합 객체 파싱을 단위 검증함.
+- E2E를 새 UI 흐름으로 갱신(`.../assets/web/tests/web.spec.ts`)하고, 제출 후 `job.md`, `#task ##planned`, `drafts.yaml` 생성/항목 반영을 파일 기반으로 확인함.
+- 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web exec -- tsc --noEmit -p assets/web/tsconfig.json` 통과, `npm --prefix assets/web run test:e2e` 통과(5/5), 테스트 프로젝트 정리 후 `/tmp`/`configs/project.yaml` 잔존 0건 확인.
+
+## 2026-03-23 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx` detail 화면에 `work pane`을 drafts 섹션 하단으로 추가해 좌측 `draft_item list`/우측 선택 상세의 세로 분할 레이아웃을 구현함.
+- 우측 상세에 `impl draft_item` 버튼을 추가하고 실행 중(`runningImplDraft`)에는 우측 본문만 blur + 작업중 오버레이를 표시하도록 연결함.
+- 좌측 상태 표시는 하이브리드 기준으로 적용: 서버 status를 기본으로 사용하고 현재 impl 실행 대상은 즉시 노란색(`work`)으로 오버레이되게 처리함.
+- `.../assets/web/src/lib/draft-item-state.ts`, `.../assets/web/tests/unit/draft-item-state.test.ts`를 추가해 상태 병합/색상 매핑 로직을 분리하고 단위 검증함.
+- `.../assets/web/src/components/drafts/DraftYamlItemCard.tsx`에 선택 상태/테스트 식별자를 추가하고 status dot 매핑을 공용 유틸로 치환함.
+- `.../assets/web/tests/web.spec.ts`를 확장해 work pane 렌더, 항목 선택 상세, impl 중 overlay+노란 상태, drafts.yaml 저장 후 초록 상태 반영을 E2E로 검증함.
+- 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web exec -- tsc --noEmit -p assets/web/tsconfig.json` 통과, `npm --prefix assets/web run test:e2e` 통과(5/5).
+
+## 2026-03-23 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx` drafts 상단 액션을 정리해 텍스트 버튼(`요구사항 추가`, `메시지로 job.md 생성`)을 제거하고, 초록색 `>` 아이콘 버튼(`generate-job-and-drafts`)으로 `job.md -> drafts.yaml` 순차 생성을 실행하도록 변경함.
+- delete 동작을 아이콘-only UI로 변경해 requirements/job 영역과 drafts.yaml 영역 각각 우상단에 `Trash` 버튼을 배치함.
+- `save drafts.yaml` 버튼과 drafts 편집 하단의 `no drafts.yaml items` 안내 박스를 제거해 화면을 단순화함.
+- work pane 좌/우 컨테이너 높이를 동일(`h-[320px]`)하게 맞춰 `draft_item list`와 `draft_item detail` 높이 불일치를 제거함.
+- `.../assets/web/tests/web.spec.ts`를 새 UI 규격에 맞게 수정해 아이콘-only 액션, 초록 `>` 트리거, save 버튼 제거, 좌우 높이 동일성, impl 진행 시 오버레이/상태색을 E2E로 검증함.
+- 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web exec -- tsc --noEmit -p assets/web/tsconfig.json` 통과, `npm --prefix assets/web run test:e2e` 통과(5/5).
+
+## 2026-03-24 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx`에 `normalizeAutoMessageInput`을 추가해 auto 입력창에 `auto`/`자동`만 입력된 경우도 LLM 실행용 프롬프트로 보정되게 수정함.
+- `.../src/ui/mod.rs`에서 onboarding/bootstrap spec 힌트 처리 시 `auto` 문자열을 제거하던 필터를 제거해 입력이 confirm 단계에서 소거되지 않도록 수정함.
+- `.../assets/web/tests/web.spec.ts` auto 케이스를 `자동` 입력 기준으로 바꾸고, 전 프로젝트 버튼 전수 확인 테스트(`all projects expose detail actions...`)를 추가함.
+- 버튼 전수 테스트는 각 프로젝트별로 project/detail 전환 후 핵심 버튼(자동, 테스트, 빌드, 생성, 삭제 아이콘)의 노출/활성 상태와 auto 모달 열기/닫기 동작을 검증함.
+- UI 호출 경로를 `rg`로 점검(`detail-auto-button -> runAutoFlowFromMessage -> /api/auto-run -> startAutoFromMessage -> auto_add_function`)해 dead path가 없음을 확인함.
+- 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web exec -- tsc --noEmit -p assets/web/tsconfig.json` 통과, `npm --prefix assets/web run test:e2e` 통과(6/6), `cargo test -q` 통과(39 + 16).
+
+## 2026-03-24 - 작업한일
+- `.../plan.md`를 이번 이슈 기준으로 갱신해 문제(요구사항 입력 경로 단절/테스트 우회/CLIT 검증 갭), 해결책, 검증 명령을 재정의함.
+- `.../assets/web/src/components/WebApp.tsx` drafts pane에 `open-requirement-modal` 버튼을 복구해 requirement 입력 모달 경로(`submitRequirementBlocks`)를 다시 UI에서 실행 가능하게 연결함.
+- `.../assets/web/tests/web.spec.ts` drafts 테스트를 사전 `job.md` 주입 방식에서 실제 입력 모달 저장 방식으로 전환해 `입력 -> job.md/drafts.yaml 반영`을 검증하도록 수정함.
+- 같은 파일의 detail 상호작용 전수 테스트를 강화해 프로젝트별 requirement 입력/저장, 생성 버튼 실행, 파일 반영 확인까지 수행하도록 확장함(End hook 시나리오).
+- `.../assets/web/package.json`에 End hook 전용 명령 `test:e2e:end-hook`를 추가하고, `.../AGENTS.md`에 detail page End hook 강제 규칙을 추가해 완료 전 필수 검증으로 고정함.
+- 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web exec -- tsc --noEmit -p assets/web/tsconfig.json` 통과, `cargo test -q` 통과, `npm --prefix assets/web run test:e2e` 통과(6/6), `npm --prefix assets/web run test:e2e:end-hook` 통과(1/1, sandbox port 제약으로 권한 상승 실행).
+
+## 2026-03-24 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx`에서 `>` 아이콘 핸들러를 requirement 병합 경로(`input-md-generate`)에서 분리하고, `job.md requirement -> drafts.yaml 동기화` 전용 API 호출로 변경함.
+- `.../assets/web/src/pages/api/drafts-sync-from-job.ts`를 추가하고 `.../assets/web/src/server/orc.ts`에 `syncDraftsFromJobRequirements()`를 구현해 `add_orc_drafts`만 실행하도록 분리함(`job.md`는 수정하지 않음).
+- work pane 헤더 높이를 좌/우 모두 `h-9`로 고정해 `draft_item list`/`draft_item detail`의 x축 기준선을 일치시킴.
+- `.../assets/web/tests/web.spec.ts`에 `>` 클릭 전후 `job.md` 불변 검증을 추가하고, drafts 항목 생성은 정규화 이름(`-` -> `_`) 기준으로 검증하도록 보강함.
+- E2E 실행 중 기존 잔여 `astro dev --port 4175` 프로세스가 포트 충돌을 유발해 테스트가 실패하는 원인을 확인하고 프로세스를 제거한 뒤 재검증함.
+- 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web exec -- tsc --noEmit -p assets/web/tsconfig.json` 통과, `cargo test -q` 통과, `npm --prefix assets/web run test:e2e` 통과(6/6), `npm --prefix assets/web run test:e2e:end-hook` 통과(1/1, 권한 상승 실행).
+
+## 2026-03-24 - 작업한일
+- `.../src/cli.rs`에서 `create_input_md` 명령을 `create_job_md`로 교체하고, legacy alias(`cli_create_*`) 매핑을 제거해 명령 해석 경로를 단일화함.
+- `.../src/code.rs`, `.../src/main.rs`에서 생성기/정규화/프롬프트 로더 네이밍(`*_input_md*`)과 상수(`INPUT_MD_PATH`)를 `job.md` 기준(`*_job_md*`, `JOB_MD_PATH`)으로 정리함.
+- `.../assets/web/src/server/orc.ts`와 API 라우트 파일명을 `input-md-*`에서 `job-md-*`로 변경하고, WebApp 호출 경로를 `/api/job-md-generate`로 갱신함.
+- `.../assets/presets/.../build_job_md_auto.txt`로 프롬프트 파일을 리네임하고, draft 프롬프트/문서(`README.md`, `AGENTS.md`, `todo.md`, `job.md`, `plan.md`)의 `input.md` 흔적을 `job.md`로 전면 치환함.
+- 전수 검색(`rg`) 결과 `input.md`, `input-md`, `input_md`, `create_input_md`, `build_input_md_auto`, `cli_create_input_md` 잔존 0건을 확인함.
+- 검증: `cargo test` 통과(39 + 16), `npm --prefix assets/web run test:unit` 통과(2/2), `npm --prefix assets/web run test:e2e:end-hook` 통과(1/1, 샌드박스 포트 제한으로 권한 상승 실행), `/tmp/tmp_project` 및 `/tmp/pw-*` 삭제 후 잔존 0건 확인.
+
+## 2026-03-24 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx`에서 work pane 블록을 drafts 카드 내부에서 분리해 detail 페이지의 독립 섹션(Card)으로 재배치함.
+- requirements 영역을 단일 컨테이너로 재구성해 아이템 목록 overflow를 세로 스크롤로 고정하고, 삭제 버튼은 우상단/삽입 버튼군(`+`, `>`)은 우하단 절대 배치로 정렬함.
+- requirements/work pane 레이아웃 검증을 위해 `requirements-container`, `requirements-top-right-actions`, `requirements-bottom-right-actions` 테스트 식별자를 추가함.
+- `.../assets/web/tests/web.spec.ts`에 배치 검증(우상단/우하단 좌표)과 `work pane`이 drafts 카드 외부 독립 섹션인지 확인하는 E2E assertion을 추가함.
+- `.../.codex/skills/plan-ui/SKILL.md`에 requirements 컨테이너 스크롤/버튼 위치 규칙과 work pane 독립 섹션 규칙을 추가해 이후 UI 설계에 재사용 가능하게 함.
+- 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web run test:e2e:end-hook` 통과, `npm --prefix assets/web run test:e2e -- --grep "drafts pane uses green chevron trigger and icon-only delete layout"` 통과(샌드박스 포트 제한으로 권한 상승 실행), `/tmp/tmp_project` 및 `/tmp/pw-*` 정리 후 잔존 0건.
+
+## 2026-03-24 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx` draft pane을 `current.png` 주석 기준으로 조정해 requirements item 카드에 hover 시 개별 삭제 아이콘이 나타나고, 클릭 시 해당 requirement를 제거하도록 연결함.
+- requirements 컨테이너는 스크롤 유지(`overflow-y-auto`)하고 상단 우측에는 job 삭제 아이콘, 하단 액션 행에는 `+`, `>`, `build`를 배치해 주석 위치와 맞춤.
+- draft pane 우측 하단 액션 그룹에 톱니 아이콘 버튼(`open-draft-pane-settings`)을 추가하고 drafts.yaml 편집 textarea focus 동작으로 연결함.
+- `.../assets/web/src/server/orc.ts`에 `deleteRequirementItem(id, index)`를 추가하고 `.../assets/web/src/pages/api/requirement-item-delete.ts` API를 신설해 requirement index 삭제를 실제 `job.md` 반영까지 수행하게 함.
+- `.../assets/web/tests/web.spec.ts`에 top-right 정렬, 하단 액션 행 위치, item hover 삭제 아이콘 노출, work pane 독립성 검증을 보강함.
+- 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web run test:e2e -- --grep "drafts pane uses green chevron trigger and icon-only delete layout"` 통과, `npm --prefix assets/web run test:e2e:end-hook` 통과, `/tmp/tmp_project` 및 `/tmp/pw-*` 정리 후 잔존 0건.

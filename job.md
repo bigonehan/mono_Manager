@@ -8,7 +8,7 @@
 ## project_documentation
 ## cli_rust_orchestra
 ## cli_help
-## cli_create_input_md
+## cli_create_job_md
 ## cli_create_code_draft
 ## cli_impl_code_draft
 ## cli_test
@@ -48,7 +48,7 @@
 - project_documentation
 - cli_rust_orchestra
 - cli_help
-- cli_create_input_md
+- cli_create_job_md
 - cli_create_code_draft
 - cli_impl_code_draft
 - cli_test
@@ -89,7 +89,7 @@
 - add_orc_drafts project_documentation : codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
 - add_orc_drafts cli_rust_orchestra : codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
 - add_orc_drafts cli_help : codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
-- add_orc_drafts cli_create_input_md : codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+- add_orc_drafts cli_create_job_md : codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
 - add_orc_drafts cli_create_code_draft : codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
 - add_orc_drafts cli_impl_code_draft : codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
 - add_orc_drafts cli_test : codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s

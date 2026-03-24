@@ -1,14 +1,20 @@
 ## 문제
-- `orc add_orc_drafts` 단계에서 LLM이 자연어 설명/머리말을 함께 반환해 YAML 파서가 반복 실패한다.
-- 현재 구현은 `assets/prompts/init_project.md`를 재사용해 draft item 생성 프롬프트가 목적에 맞지 않는다.
+- drafts pane의 `>` 아이콘이 현재 requirement 추가/병합 경로(`job-md-generate`)를 타고 있어 역할이 섞여 있다.
+- 사용자가 원하는 `>` 역할은 "현재 job.md requirement를 drafts.yaml로 변환"이며 requirement 추가는 별도 버튼이어야 한다.
+- draft_item list/detail pane의 x축 정렬 기준선이 헤더 높이 차이로 어긋난다.
 
 ## 해결책
-- `add_orc_drafts`에서 draft-item 전용 프롬프트를 사용하도록 교체하고, 출력 형식을 YAML 단일 item으로 강제한다.
-- 응답 파싱은 `YAML code fence 추출 -> 전체 본문 정리 -> 단일 item 파싱` 순서로 처리하고, 파싱 실패 시 1회 정규화(reformat) 재시도를 수행한다.
-- 실패 메시지에 requirement 이름을 포함해 재시도/원인 추적 가능성을 높인다.
+- 서버에 job.md requirement -> drafts.yaml 동기화 전용 API를 추가하고 `>` 버튼은 해당 API만 호출하도록 변경한다.
+- requirement 추가는 `+` 버튼/모달 경로(`submitRequirementBlocks`)만 담당하도록 분리한다.
+- work pane 좌/우 헤더 높이를 동일 고정하고 본문 높이도 동일치로 맞춰 x축 기준선을 일치시킨다.
+- E2E에서 `>` 클릭 전후 `job.md` 불변 + `drafts.yaml` 갱신을 검증하고 pane 높이 차이를 검증한다.
 
 ## 검증
-- `timeout 180s orc add_orc_drafts` (실패 시 동일 단계 최대 2회 재시도)
-- `timeout 180s orc impl_orc_code`
-- `timeout 180s orc check_orc_code`
-- `timeout 180s orc clit test -p . -m "add_orc_drafts parser output guard"`
+- `npm --prefix assets/web run test:unit`
+- `npm --prefix assets/web exec -- tsc --noEmit -p assets/web/tsconfig.json`
+- `npm --prefix assets/web run test:e2e`
+- `npm --prefix assets/web run test:e2e:end-hook`
+- `cargo test -q`
+- `rm -rf /tmp/tmp_project /tmp/pw-*`
+- `eza -la /tmp | rg 'tmp_project|pw-'` 결과 0건
+- `rg -n 'tmp_project|pw-' configs/project.yaml` 결과 0건

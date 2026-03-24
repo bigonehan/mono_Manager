@@ -9,7 +9,7 @@
 - `orc init_code_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-m <message>] [-a]`
 - `orc init_code_plan [-a]`
 - `orc add_code_plan [-f] [-m <message>] [-a]`
-- `orc create_input_md`
+- `orc create_job_md`
 - `orc create_code_draft`
 - `orc add_code_draft_item [-f] [-m <message>]`
 - `orc impl_code_draft`
@@ -24,7 +24,7 @@
 - `orc open-ui [-w|--web|-b|--build]`
 - `orc serve-web-api [--addr <host:port>]`
 - `orc auto <message>`
-- `orc auto -f` (auto-generate `input.md` from `project.md + plan.yaml`, then continue to implementation)
+- `orc auto -f` (auto-generate `job.md` from `project.md + plan.yaml`, then continue to implementation)
 
 ## UI Mode
 - Enter UI mode:

@@ -14,7 +14,7 @@ const CODE_SUBCOMMAND_TIMEOUT_SEC: u64 = 600;
 const IMPL_DRAFT_LLM_TIMEOUT_SEC: u64 = 240;
 const LONG_WAIT_REPORT_SEC: u64 = 60;
 const ADD_ORC_DRAFTS_SOFT_TIMEOUT_SEC: u64 = 150;
-const CREATE_INPUT_MD_TIMEOUT_SEC: u64 = 120;
+const CREATE_JOB_MD_TIMEOUT_SEC: u64 = 120;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct JobTaskStatus {
@@ -253,41 +253,41 @@ pub(crate) fn init_orc_job() -> Result<String, String> {
     Ok("init_orc_job completed".to_string())
 }
 
-pub(crate) fn create_input_md() -> Result<String, String> {
+pub(crate) fn create_job_md() -> Result<String, String> {
     let project_md_path = Path::new(".project").join("project.md");
     if !project_md_path.exists() {
         return Err("missing .project/project.md".to_string());
     }
     let plan_yaml_path = resolve_plan_yaml_path()?;
 
-    let prompt_template = read_input_md_prompt_template()?;
+    let prompt_template = read_job_md_prompt_template()?;
     let project_md = fs::read_to_string(&project_md_path)
         .map_err(|e| format!("failed to read {}: {}", project_md_path.display(), e))?;
     let plan_yaml = fs::read_to_string(&plan_yaml_path)
         .map_err(|e| format!("failed to read {}: {}", plan_yaml_path.display(), e))?;
-    let prompt = build_create_input_md_prompt(&prompt_template, &project_md, &plan_yaml);
+    let prompt = build_create_job_md_prompt(&prompt_template, &project_md, &plan_yaml);
 
-    let raw = crate::run_codex_exec_capture_with_timeout(&prompt, CREATE_INPUT_MD_TIMEOUT_SEC)?;
-    let normalized = normalize_input_md_content(&raw)?;
-    fs::write(Path::new(crate::INPUT_MD_PATH), normalized)
-        .map_err(|e| format!("failed to write {}: {}", crate::INPUT_MD_PATH, e))?;
-    Ok("create_input_md completed".to_string())
+    let raw = crate::run_codex_exec_capture_with_timeout(&prompt, CREATE_JOB_MD_TIMEOUT_SEC)?;
+    let normalized = normalize_job_md_content(&raw)?;
+    fs::write(Path::new(crate::JOB_MD_PATH), normalized)
+        .map_err(|e| format!("failed to write {}: {}", crate::JOB_MD_PATH, e))?;
+    Ok("create_job_md completed".to_string())
 }
 
-fn read_input_md_prompt_template() -> Result<String, String> {
+fn read_job_md_prompt_template() -> Result<String, String> {
     let candidates = [
         crate::source_root()
             .join("assets")
             .join("presets")
             .join("code")
             .join("prompts")
-            .join("build_input_md_auto.txt"),
+            .join("build_job_md_auto.txt"),
         crate::source_root()
             .join("assets")
             .join("presets")
             .join("mono")
             .join("prompts")
-            .join("build_input_md_auto.txt"),
+            .join("build_job_md_auto.txt"),
     ];
     for path in candidates {
         if path.exists() {
@@ -295,7 +295,7 @@ fn read_input_md_prompt_template() -> Result<String, String> {
                 .map_err(|e| format!("failed to read {}: {}", path.display(), e));
         }
     }
-    Err("missing build_input_md_auto prompt template".to_string())
+    Err("missing build_job_md_auto prompt template".to_string())
 }
 
 fn resolve_plan_yaml_path() -> Result<PathBuf, String> {
@@ -311,7 +311,7 @@ fn resolve_plan_yaml_path() -> Result<PathBuf, String> {
     Err("missing plan.yaml (.project/plan.yaml or ./plan.yaml)".to_string())
 }
 
-fn build_create_input_md_prompt(template: &str, project_md: &str, plan_yaml: &str) -> String {
+fn build_create_job_md_prompt(template: &str, project_md: &str, plan_yaml: &str) -> String {
     format!(
         "{}\n\n# project.md\n{}\n\n# plan.yaml\n{}",
         template.trim(),
@@ -320,7 +320,7 @@ fn build_create_input_md_prompt(template: &str, project_md: &str, plan_yaml: &st
     )
 }
 
-fn normalize_input_md_content(raw: &str) -> Result<String, String> {
+fn normalize_job_md_content(raw: &str) -> Result<String, String> {
     let body = if raw.contains("```") {
         crate::extract_markdown_block(raw)
     } else {
@@ -328,7 +328,7 @@ fn normalize_input_md_content(raw: &str) -> Result<String, String> {
     };
     let normalized = body.trim().to_string();
     if normalized.is_empty() {
-        return Err("create_input_md received empty output".to_string());
+        return Err("create_job_md received empty output".to_string());
     }
     Ok(normalized)
 }
@@ -787,8 +787,8 @@ struct ImplRunResult {
 #[cfg(test)]
 mod tests {
     use super::{
-        add_orc_drafts, build_create_input_md_prompt, build_draft_item_from_requirement,
-        flow_rust_orchestra, get_workspace_state, load_drafts_doc, normalize_input_md_content,
+        add_orc_drafts, build_create_job_md_prompt, build_draft_item_from_requirement,
+        flow_rust_orchestra, get_workspace_state, load_drafts_doc, normalize_job_md_content,
         job_task_state_change, move_job_task_item, set_draft_item_state, transition_impl_result,
         transition_impl_start, CodeDraftsDoc, DraftItemDoc, JobDoc, JobRequirement,
     };
@@ -952,22 +952,22 @@ mod tests {
     }
 
     #[test]
-    fn build_draft_item_from_requirement_keeps_cli_create_input_md_contract() {
+    fn build_draft_item_from_requirement_keeps_cli_create_job_md_contract() {
         let req = JobRequirement {
-            name: "cli_create_input_md".to_string(),
+            name: "cli_create_job_md".to_string(),
             ..Default::default()
         };
 
         let item = build_draft_item_from_requirement(&req);
 
-        assert_eq!(item.name, "cli_create_input_md");
-        assert_eq!(item.scope, vec!["feature:cli_create_input_md".to_string()]);
-        assert_eq!(item.tasks, vec!["implement cli_create_input_md".to_string()]);
+        assert_eq!(item.name, "cli_create_job_md");
+        assert_eq!(item.scope, vec!["feature:cli_create_job_md".to_string()]);
+        assert_eq!(item.tasks, vec!["implement cli_create_job_md".to_string()]);
         assert_eq!(
             item.constraints,
-            vec!["cli_create_input_md -> cli_create_input_md : requirement 기반 draft item 생성".to_string()]
+            vec!["cli_create_job_md -> cli_create_job_md : requirement 기반 draft item 생성".to_string()]
         );
-        assert_eq!(item.check, vec!["verify cli_create_input_md".to_string()]);
+        assert_eq!(item.check, vec!["verify cli_create_job_md".to_string()]);
     }
 
     #[test]
@@ -1091,11 +1091,11 @@ mod tests {
     }
 
     #[test]
-    fn build_create_input_md_prompt_contains_required_sections() {
-        let prompt = build_create_input_md_prompt(
+    fn build_create_job_md_prompt_contains_required_sections() {
+        let prompt = build_create_job_md_prompt(
             "template",
             "# info\nname: demo\n",
-            "drafts:\n  planned:\n    - cli_create_input_md\n",
+            "drafts:\n  planned:\n    - cli_create_job_md\n",
         );
         assert!(prompt.contains("template"));
         assert!(prompt.contains("# project.md"));
@@ -1103,9 +1103,9 @@ mod tests {
     }
 
     #[test]
-    fn normalize_input_md_content_extracts_markdown_block() {
+    fn normalize_job_md_content_extracts_markdown_block() {
         let raw = "```markdown\n# feature\n- rule\n> step\n```";
-        let normalized = normalize_input_md_content(raw).expect("normalize");
+        let normalized = normalize_job_md_content(raw).expect("normalize");
         assert_eq!(normalized, "# feature\n- rule\n> step");
     }
 }
