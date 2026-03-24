@@ -6,19 +6,19 @@
 - `rust-capture`에서 사용한 root `drafts.yaml` 기반 실행 절차 검사가 `orc check_code_draft`에는 연결되어 있지 않아, 코드 검사 시 runtime procedure 결과가 빠진다.
 - 저장소 루트의 `.project/scenario.md`가 `|` 형식이 아니라 `->` 형식으로 남아 있어, `check_code_draft` 자체 검증이 현재 저장소에서는 막힌다.
 - `orc auto "react todo"`의 `init_code_project`가 `bootstrap_code_project` 내부 in-dir LLM 단계에서 timeout 후 재시도까지 타며 지나치게 오래 걸린다.
-- 장기 대기 중 `check-process.md`와 콘솔에 현재 bootstrap 세부 단계, attempt, timeout 기준, 최근 산출물 정보가 부족해 어디서 멈췄는지 즉시 추적하기 어렵다.
+- 장기 대기 중 `job.md`와 콘솔에 현재 bootstrap 세부 단계, attempt, timeout 기준, 최근 산출물 정보가 부족해 어디서 멈췄는지 즉시 추적하기 어렵다.
 - React bootstrap 산출물이 이미 생성된 경우에도 현재 경로는 timeout을 그대로 실패로 처리해 auto 전체가 중단된다.
 - bootstrap 관련 회귀 테스트를 한 번에 두 이름으로 호출해 `cargo test` usage error가 발생했다.
 - `/home/tree/temp`의 `orc auto "react todo"`는 실제 todo UI와 screenshot 검증까지 이어졌지만, `impl_code_draft` timeout 뒤 auto retry loop가 clean exit하지 못한다.
-- current fresh `/home/tree/temp` 재현에서는 message-mode auto retry가 `create_input_md -> add_code_plan -> add_code_draft` 순서로 돌아 첫 시도부터 `plan.yaml` 없는 입력 생성 실패를 남긴다.
+- current fresh `/home/tree/temp` 재현에서는 message-mode auto retry가 `create_job_md -> add_code_plan -> add_code_draft` 순서로 돌아 첫 시도부터 `plan.yaml` 없는 입력 생성 실패를 남긴다.
 - current fresh `/home/tree/temp` 재현에서는 `impl_code_draft` timeout 후 `react_todo`가 `error` 상태로 떨어지고, 다음 retry에서 같은 draft가 `planned`로 복구되지 않아 `impl_code_draft skipped`만 반복된다.
 - current fresh `/home/tree/temp` 산출물은 React fallback hello-world라 screenshot 목표를 만족하지 못한다.
-- current fresh `/home/tree/temp` 재현에서는 retry에 `add_code_draft -f`를 쓰면 `input.md` 기반 일반화 feature인 `vite_react`가 새로 생겨 원래 `react_todo`와 상태가 분리된다.
+- current fresh `/home/tree/temp` 재현에서는 retry에 `add_code_draft -f`를 쓰면 `job.md` 기반 일반화 feature인 `vite_react`가 새로 생겨 원래 `react_todo`와 상태가 분리된다.
 - current fresh `/home/tree/temp` 재현에서는 이미 생성된 React todo 코드가 있어도 fast-path 검증이 `cargo test`만 보기 때문에 JS workspace를 완료로 확정하지 못한다.
 - current fresh `/home/tree/temp` 재현에서는 JS fast-path build 실패가 `impl_code_draft`를 즉시 실패로 전파해 LLM 구현 단계로 들어가기 전에 끊긴다.
 - current fresh `/home/tree/temp` 재현에서는 `node_modules`가 남아 있으면 fast-path가 `npm install`을 건너뛰어 최신 `package.json` 의존성과 실제 설치 상태가 어긋난다.
 - current fresh `/home/tree/temp` 재현에서는 JS fast-path가 bootstrap hello-world scaffold도 build pass만으로 `react_todo` 구현 완료로 판정한다.
-- current fresh `/home/tree/temp` 재현에서는 `detail_code_project`와 `build_input_md_auto` 결과가 `react todo`를 hello-world bootstrap 요구로 축소해 `project.md`와 `input.md`가 todo 기능을 담지 못한다.
+- current fresh `/home/tree/temp` 재현에서는 `detail_code_project`와 `build_job_md_auto` 결과가 `react todo`를 hello-world bootstrap 요구로 축소해 `project.md`와 `job.md`가 todo 기능을 담지 못한다.
 - current fresh `/home/tree/temp` 재현에서는 `src/App.jsx`가 todo UI로 바뀐 뒤에도 `src/App.js`의 hello-world bootstrap 찌꺼기 때문에 fast-path placeholder 검사가 계속 skip된다.
 - current fresh `/home/tree/temp` screenshot 재현에서는 browser snapshot은 todo UI를 보여주지만 `agent-browser screenshot rc-web.png`가 `ENOENT`로 실패하고, rc가 그 실패를 종료 코드에 반영하지 않는다.
 - current fresh `/home/tree/temp`의 `screen-capture.png`/`rect-capture.png`는 웹 앱이 아니라 Windows 전체 화면을 찍고 있어 browser screenshot 대체 근거로 사용할 수 없다.
@@ -41,15 +41,15 @@
 - bootstrap 회귀 검증은 개별 test filter 또는 전체 `cargo test`로 나눠 실행한다.
 - `impl_code_draft`가 이미 생성된 React todo 앱을 fast-path로 완료할 수 있는지, 또는 auto retry loop의 종료 조건이 부족한지 재현 후 원인별로 수정한다.
 - 수정 후 `/home/tree/temp` fresh run에서 `orc auto "react todo"`가 clean exit하는지 다시 검증한다.
-- message-mode auto retry의 실행 순서를 `add_code_plan -> create_input_md -> add_code_draft`로 바로잡고, retry draft 생성은 최신 `input.md`를 우선 사용하도록 고친다.
+- message-mode auto retry의 실행 순서를 `add_code_plan -> create_job_md -> add_code_draft`로 바로잡고, retry draft 생성은 최신 `job.md`를 우선 사용하도록 고친다.
 - 동일 draft가 `error`로 남아 있는 재시도 케이스에서는 `add_code_draft`가 해당 item을 `planned`로 복구해 다음 `impl_code_draft` 대상이 되게 한다.
 - `impl_code_draft` LLM 실행은 단발 timeout으로 종료하지 말고 기본 retry 정책을 타도록 바꾼다.
-- message-mode auto retry는 `create_input_md` 이후에도 원래 요청 메시지로 같은 draft를 다시 열도록 유지하고, `-f`로 다른 feature 이름이 끼어들지 않게 한다.
+- message-mode auto retry는 `create_job_md` 이후에도 원래 요청 메시지로 같은 draft를 다시 열도록 유지하고, `-f`로 다른 feature 이름이 끼어들지 않게 한다.
 - existing project fast-path는 `package.json` workspace에서 `npm run build`를 사용해 React/Vite 결과물을 완료 상태로 판정하게 만든다.
 - JS fast-path 검증 실패는 `impl 계속 진행`으로 처리하고, 기존 산출물 완료 판정은 검증 성공일 때만 `complete`로 승격한다.
 - JS fast-path 검증 전에는 `npm install`을 다시 실행해 현재 `package.json` 의존성을 설치 상태와 맞춘다.
 - JS fast-path 완료 전에는 bootstrap placeholder(`hello world`)가 남아 있는지 검사하고, placeholder 상태면 build pass가 나와도 `impl_code_draft`를 계속 진행하게 만든다.
-- `add_detail_project_code`와 `build_input_md_auto` 프롬프트를 고쳐 user message/plan feature가 bootstrap-only 규칙으로 축소되지 않게 하고, `react todo` 같은 명시 기능은 `project.md`/`input.md`에 그대로 반영되게 만든다.
+- `add_detail_project_code`와 `build_job_md_auto` 프롬프트를 고쳐 user message/plan feature가 bootstrap-only 규칙으로 축소되지 않게 하고, `react todo` 같은 명시 기능은 `project.md`/`job.md`에 그대로 반영되게 만든다.
 - placeholder 검사는 모든 App 후보에 `hello world`가 남아 있을 때만 skip되게 바꾸고, 실제 구현 파일이 하나라도 non-placeholder면 fast-path를 계속 진행하게 만든다.
 - browser screenshot 단계는 절대경로 출력 파일을 사용하고 실제 파일 생성까지 확인한다.
 - rc step 실행은 screenshot 단계 실패를 전체 run 실패로 반영하되, feedback/session log는 실패 케이스에서도 남기도록 흐름을 바꾼다.
@@ -71,5 +71,5 @@
 - `cd /home/tree/temp && orc auto "react todo"`
 - `cd /home/tree/temp && orc clit test -p . -m "react todo screenshot verification"`
 - `/home/tree/temp` fresh run에서 `orc auto "react todo"` 종료 코드와 `.project/feedback.md # 문제` 0건 여부
-- `sed -n '1,260p' /home/tree/temp/.project/check-process.md`
+- `sed -n '1,260p' /home/tree/temp/job.md`
 - `sed -n '1,200p' /home/tree/temp/src/App.jsx`

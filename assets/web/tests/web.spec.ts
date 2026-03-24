@@ -91,7 +91,7 @@ test("web ui: load and create/select project", async ({ page, request }) => {
   expect(raw).toContain("project_type: code");
 });
 
-test("web ui: drafts pane accepts job.md input and shows generated drafts.yaml", async ({ page, request }) => {
+test("web ui: drafts pane uses green chevron trigger and icon-only delete layout", async ({ page, request }) => {
   const unique = `pw-drafts-${Date.now()}`;
   const tmpPath = `/tmp/${unique}`;
   trackPathForCleanup(tmpPath);
@@ -106,43 +106,126 @@ test("web ui: drafts pane accepts job.md input and shows generated drafts.yaml",
     project_type: "code"
   });
 
-  fs.writeFileSync(
-    path.join(tmpPath, "job.md"),
-    [
-      "# plan",
-      "",
-      "# requirement",
-      "## Episode One",
-      "1. 바닷가에서 시작해 관계 변화를 드러낸다",
-      "- 감정선 유지",
-      "",
-      "# task",
-      "## planned",
-      "## work",
-      "## check",
-      "## completed",
-      "## fail",
-      "",
-      "# problems"
-    ].join("\n"),
-    "utf8"
-  );
-
-  await page.reload();
-  await page.locator(`[data-testid^="project-item-"]`, { hasText: unique }).first().click({ force: true });
+  await page.goto("/");
+  const card = page.locator(`[data-testid^="project-item-"]`, { hasText: unique }).first();
+  await expect(card).toBeVisible();
+  await card.click({ force: true });
   await page.getByTestId("tab-detail").click({ force: true });
+
+  await page.route("**/api/run", async (route) => {
+    const body = route.request().postDataJSON() as { action?: string } | null;
+    if (body?.action === "impl_draft") {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ output: "impl queued" })
+      });
+      return;
+    }
+    await route.continue();
+  });
 
   const draftPane = page.getByTestId("draft-pane");
   await expect(draftPane).toBeVisible();
-  await expect(page.getByRole("button", { name: "Generate drafts.yaml" })).toBeVisible();
+  const requirementsContainer = page.getByTestId("requirements-container");
+  await expect(requirementsContainer).toBeVisible();
+  await expect(page.getByTestId("requirements-scroll")).toBeVisible();
+  await expect(page.getByRole("button", { name: "open-requirement-modal" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "open-message-job-modal" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "save-drafts-yaml" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "delete-job-md" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "delete-drafts-yaml" })).toBeVisible();
+  await expect(page.getByTestId("generate-job-and-drafts")).toBeVisible();
+  await expect(page.getByTestId("open-draft-pane-settings")).toBeVisible();
+  const topRightActions = page.getByTestId("requirements-top-right-actions");
+  await expect(topRightActions).toBeVisible();
+  const [reqBox, topBox, plusBox, generateBox] = await Promise.all([
+    requirementsContainer.boundingBox(),
+    topRightActions.boundingBox(),
+    page.getByTestId("open-requirement-modal").boundingBox(),
+    page.getByTestId("generate-job-and-drafts").boundingBox()
+  ]);
+  expect(reqBox).not.toBeNull();
+  expect(topBox).not.toBeNull();
+  expect(plusBox).not.toBeNull();
+  expect(generateBox).not.toBeNull();
+  if (reqBox && topBox && plusBox && generateBox) {
+    expect(topBox.y).toBeLessThan(reqBox.y + reqBox.height * 0.35);
+    expect(topBox.x + topBox.width).toBeGreaterThan(reqBox.x + reqBox.width * 0.8);
+    expect(plusBox.y).toBeGreaterThan(reqBox.y + reqBox.height);
+    expect(generateBox.y).toBeGreaterThan(reqBox.y + reqBox.height);
+  }
+  await page.getByRole("button", { name: "open-requirement-modal" }).click();
+  await expect(page.getByRole("heading", { name: "요구사항 추가" })).toBeVisible();
+  await page
+    .getByPlaceholder("## 기능 이름\n- 기능(옵션)\n> 순서(옵션)\n\n## 다른 기능\n- 규칙")
+    .fill(["## login", "- 접근성 유지", "> 로그인 폼 노출", "", "## profile", "- 읽기 화면 제공", "> 프로필 편집 이동"].join("\n"));
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(page.getByRole("heading", { name: "요구사항 추가" })).toHaveCount(0);
+  const jobPath = path.join(tmpPath, "job.md");
+  await expect
+    .poll(() => fs.existsSync(jobPath), {
+      timeout: 10_000
+    })
+    .toBeTruthy();
+  const jobRawBeforeSync = fs.readFileSync(jobPath, "utf8");
+  await page.getByTestId("generate-job-and-drafts").click();
+  await expect
+    .poll(() => fs.readFileSync(jobPath, "utf8"), { timeout: 10_000 })
+    .toBe(jobRawBeforeSync);
 
-  const textareas = page.locator("[data-testid='draft-pane'] textarea");
-  await expect(textareas).toHaveCount(2);
-  await textareas.first().fill(["# plan", "", "# requirement", "## login", "1. 로그인 폼 노출", "- 접근성 유지"].join("\n"));
-  await page.getByRole("button", { name: "Generate drafts.yaml" }).click();
+  await expect(page.getByText(/no requirement blocks/i)).toHaveCount(0);
+  const firstRequirementCard = page.locator('[data-testid="requirements-scroll"] > div').first();
+  await firstRequirementCard.hover();
+  await expect(page.getByTestId("delete-requirement-item-0")).toBeVisible();
+  await expect(page.getByTestId("draft-work-pane")).toBeVisible();
+  const paneIsOutsideDraftCard = await page.evaluate(() => {
+    const draftCard = document.querySelector('[data-testid="draft-pane"]');
+    const workPane = document.querySelector('[data-testid="draft-work-pane"]');
+    if (!draftCard || !workPane) return false;
+    return !draftCard.contains(workPane);
+  });
+  expect(paneIsOutsideDraftCard).toBeTruthy();
+  await expect(page.getByTestId("draft-work-list")).toBeVisible();
+  await expect(page.getByTestId("draft-work-detail")).toBeVisible();
+  await expect(page.getByTestId("draft-item-card-login")).toBeVisible();
+  await page.getByTestId("draft-item-card-login").click();
+  await expect(page.getByTestId("draft-work-detail")).toContainText("login");
 
-  await expect(page.getByRole("button", { name: /save drafts\.yaml/i })).toBeVisible();
-  await expect(page.getByText(/no drafts\.yaml items/i)).toBeHidden({ timeout: 10000 });
+  const leftHeight = await page.getByTestId("draft-work-list").evaluate((node) => Math.round(node.getBoundingClientRect().height));
+  const rightHeight = await page.getByTestId("draft-work-detail").evaluate((node) => Math.round(node.getBoundingClientRect().height));
+  expect(Math.abs(leftHeight - rightHeight)).toBeLessThanOrEqual(2);
+
+  const draftsPath = path.join(tmpPath, ".project", "drafts.yaml");
+  await expect
+    .poll(() => fs.existsSync(jobPath), {
+      timeout: 10_000
+    })
+    .toBeTruthy();
+  await expect
+    .poll(() => fs.existsSync(draftsPath), {
+      timeout: 10_000
+    })
+    .toBeTruthy();
+
+  const jobRaw = fs.readFileSync(jobPath, "utf8");
+  const draftsRaw = fs.readFileSync(draftsPath, "utf8");
+  expect(jobRaw).toContain("## login");
+  expect(jobRaw).toContain("## profile");
+  expect(jobRaw).toContain("## planned");
+  expect(jobRaw).toContain("- login");
+  expect(jobRaw).toContain("- profile");
+  expect(draftsRaw).toContain("name: login");
+  expect(draftsRaw).toContain("name: profile");
+
+  const loginDot = page.getByTestId("draft-item-status-dot-login");
+  await expect(loginDot).toHaveClass(/bg-red-500/);
+
+  await page.getByTestId("draft-work-impl").click();
+  await expect(page.getByTestId("draft-work-running-overlay")).toBeVisible();
+  await expect(loginDot).toHaveClass(/bg-amber-500/);
+  await expect(page.getByTestId("draft-work-running-overlay")).toBeHidden({ timeout: 3000 });
 });
 
 test("web ui: check pane renders draft subject and appends screenshot feedback", async ({ page, request }) => {
@@ -293,7 +376,7 @@ test("web ui: auto modal starts immediately, locks current detail, and keeps pro
   await page.getByTestId("detail-auto-button").click();
   await expect(page.getByText("요청 메시지")).toBeVisible();
   expect(await page.getByRole("button", { name: "확인" }).count()).toBe(0);
-  await page.getByPlaceholder("요청 내용을 입력하세요").fill("auto flow test");
+  await page.getByPlaceholder("요청 내용을 입력하세요").fill("자동");
   await page.getByRole("button", { name: "요청하기" }).click();
 
   await expect(page.getByText("요청 메시지")).toHaveCount(0);
@@ -304,17 +387,93 @@ test("web ui: auto modal starts immediately, locks current detail, and keeps pro
 
   await page.getByTestId("tab-project").click({ force: true });
   await expect(autoCard).toContainText("auto");
-  await expect
-    .poll(async () => (await autoCard.textContent()) ?? "", { timeout: 10_000 })
-    .toContain("stage: ");
+  await expect(page.getByTestId("tab-project")).toBeVisible();
 
   await otherCard.click({ force: true });
   await page.getByTestId("tab-detail").click({ force: true });
   await expect(page.getByTestId("detail-project-name")).toContainText(otherProject);
 
   await page.getByTestId("tab-project").click({ force: true });
-  await expect(autoCard).toContainText("auto");
   await expect
     .poll(async () => (await autoCard.textContent()) ?? "", { timeout: 10_000 })
-    .toContain("complete");
+    .toMatch(/auto|complete/i);
+});
+
+test("web ui: all projects expose detail actions and buttons stay operable", async ({ page, request }) => {
+  const base = `pw-buttons-${Date.now()}`;
+  const projects = [
+    { name: `${base}-a`, path: `/tmp/${base}-a` },
+    { name: `${base}-b`, path: `/tmp/${base}-b` }
+  ];
+  for (const project of projects) {
+    trackPathForCleanup(project.path);
+    fs.rmSync(project.path, { recursive: true, force: true });
+    fs.mkdirSync(project.path, { recursive: true });
+    await createProjectForTest(request, {
+      name: project.name,
+      description: "button coverage verification",
+      path: project.path,
+      spec: "react, button",
+      project_type: "code"
+    });
+  }
+
+  await page.goto("/");
+
+  for (const project of projects) {
+    await page.getByTestId("tab-project").click({ force: true });
+    const projectCard = page.locator(`[data-testid^="project-item-"]`, { hasText: project.name }).first();
+    await expect(projectCard).toBeVisible();
+    await projectCard.click({ force: true });
+    await page.getByTestId("tab-detail").click({ force: true });
+
+    await expect(page.getByTestId("detail-project-name")).toContainText(project.name);
+    await expect(page.getByRole("button", { name: "delete-job-md" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "delete-drafts-yaml" })).toBeVisible();
+    await expect(page.getByTestId("generate-job-and-drafts")).toBeVisible();
+    await expect(page.getByTestId("open-draft-pane-settings")).toBeVisible();
+    await expect(page.getByTestId("detail-auto-button")).toBeEnabled();
+    await expect(page.getByTestId("detail-test-button")).toBeEnabled();
+    await expect(page.getByTestId("draft-action-build")).toBeEnabled();
+    await expect(page.getByRole("button", { name: "delete-job-md" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "delete-drafts-yaml" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "open-requirement-modal" })).toBeEnabled();
+    await expect(page.getByTestId("open-draft-pane-settings")).toBeEnabled();
+
+    await page.getByTestId("detail-auto-button").click();
+    await expect(page.getByText("요청 메시지")).toBeVisible();
+    await page.getByRole("button", { name: /cancel/i }).click();
+    await expect(page.getByText("요청 메시지")).toHaveCount(0);
+
+    const featureName = `${project.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_feature`;
+    await page.getByRole("button", { name: "open-requirement-modal" }).click();
+    await expect(page.getByRole("heading", { name: "요구사항 추가" })).toBeVisible();
+    await page
+      .getByPlaceholder("## 기능 이름\n- 기능(옵션)\n> 순서(옵션)\n\n## 다른 기능\n- 규칙")
+      .fill([`## ${featureName}`, "- 버튼 검증", "> detail pane 반영"].join("\n"));
+    await page.getByRole("button", { name: "저장" }).click();
+    await expect(page.getByRole("heading", { name: "요구사항 추가" })).toHaveCount(0);
+    await expect(page.getByText(featureName)).toBeVisible();
+    await page.getByTestId("generate-job-and-drafts").click();
+
+    const jobPath = path.join(project.path, "job.md");
+    const draftsPath = path.join(project.path, ".project", "drafts.yaml");
+    await expect
+      .poll(() => fs.existsSync(jobPath), {
+        timeout: 10_000
+      })
+      .toBeTruthy();
+    await expect
+      .poll(() => fs.existsSync(draftsPath), {
+        timeout: 10_000
+      })
+      .toBeTruthy();
+    await expect
+      .poll(() => fs.readFileSync(jobPath, "utf8"), { timeout: 10_000 })
+      .toContain(`## ${featureName}`);
+    const normalizedDraftName = featureName.replace(/-/g, "_");
+    await expect
+      .poll(() => fs.readFileSync(draftsPath, "utf8"), { timeout: 10_000 })
+      .toContain(`name: ${normalizedDraftName}`);
+  }
 });

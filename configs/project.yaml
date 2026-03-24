@@ -1,4 +1,4 @@
-recentActivepane: Vcaq
+recentActivepane: CbgR
 projects:
   - id: CbgR
     name: web/next
@@ -6,7 +6,7 @@ projects:
     description: monorepo template package
     created_at: "1772888984"
     updated_at: "1773993820"
-    selected: false
+    selected: true
     project_type: mono
   - id: Crqr
     name: blender-bots
@@ -277,8 +277,8 @@ projects:
     path: /home/tree/home/template/web/community
     description: monorepo template package
     created_at: "1773300989"
-    updated_at: "1774196325"
-    selected: true
+    updated_at: "1774359803"
+    selected: false
     project_type: mono
   - id: YaLH
     name: web/agent

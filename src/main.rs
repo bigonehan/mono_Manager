@@ -33,7 +33,7 @@ const REGISTRY_PATH: &str = "configs/project.yaml";
 const EXEC_LOG_PATH: &str = ".project/log.md";
 const PROJECT_MD_PATH: &str = ".project/project.md";
 const PRIMARY_DRAFTS_LIST_FILE: &str = "drafts_list.yaml";
-pub(crate) const INPUT_MD_PATH: &str = "input.md";
+pub(crate) const JOB_MD_PATH: &str = "job.md";
 const CHECK_PROCESS_MD_PATH: &str = "job.md";
 const TASK_SESSION_KEY_ENV: &str = "ORC_TASK_SESSION_KEY";
 
@@ -43,9 +43,8 @@ fn is_orc_workspace_runtime_entry(name: &str) -> bool {
         ".project"
             | ".agents"
             | "todo.md"
-            | "input.md"
-            | "report.md"
             | "job.md"
+            | "report.md"
             | "drafts_list.yaml"
     ) || name.starts_with('.')
 }
@@ -478,7 +477,35 @@ pub(crate) fn add_feature_to_planned(name: &str) -> Result<(), String> {
 }
 
 pub(crate) fn run_rc_forward(args: &[String]) -> Result<String, String> {
-    Ok("rc forward skipped".to_string())
+    if args.is_empty() {
+        return Err("rc forward requires at least one argument".to_string());
+    }
+
+    let output = Command::new("rc")
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to execute rc: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}{}", stdout, stderr);
+
+    if combined.contains("rc forward skipped") {
+        return Err("rc forward skipped detected; treat as failure".to_string());
+    }
+
+    if !output.status.success() {
+        let detail = if combined.trim().is_empty() {
+            format!("rc failed with status {}", output.status)
+        } else {
+            combined.trim().to_string()
+        };
+        return Err(detail);
+    }
+
+    Ok(combined.trim().to_string())
 }
 
 #[tokio::main]

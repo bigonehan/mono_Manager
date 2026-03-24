@@ -1546,7 +1546,7 @@ fn start_ai_chat_warmup(modal: &mut AiChatModal, seed_prompt: String) {
 fn start_ai_chat_onboarding(modal: &mut AiChatModal, initial_spec: Option<&str>) {
     let normalized_initial_spec = initial_spec
         .map(str::trim)
-        .filter(|v| !v.is_empty() && !v.eq_ignore_ascii_case("auto"))
+        .filter(|v| !v.is_empty())
         .unwrap_or_default()
         .to_string();
     modal.initial_spec = normalized_initial_spec.clone();
@@ -1649,7 +1649,7 @@ fn open_bootstrap_confirm_with_spec_hint(
     if spec.trim().is_empty() {
         if let Some(hint) = spec_hint {
             let normalized = hint.trim();
-            if !normalized.is_empty() && !normalized.eq_ignore_ascii_case("auto") {
+            if !normalized.is_empty() {
                 spec = normalized.to_string();
             }
         }
@@ -2839,7 +2839,7 @@ fn close_ai_chat_modal_and_open_bootstrap(
         .ai_chat_modal
         .as_ref()
         .map(|modal| modal.initial_spec.trim().to_string())
-        .filter(|v| !v.is_empty() && !v.eq_ignore_ascii_case("auto"));
+        .filter(|v| !v.is_empty());
     cancel_ai_stream(app);
     app.ai_chat_modal = None;
     app.status_line = "ai modal closed".to_string();

@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { applyFormAddInput } from "@/server/orc";
+import { applyFormAddInput, applyRawRequirementInput } from "@/server/orc";
 
 export const prerender = false;
 
@@ -7,6 +7,13 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const body = await request.json();
     const id = String(body.id ?? "");
+    const raw = String(body.raw ?? "").trim();
+    if (raw.length > 0) {
+      const { detail, stages, parsedCount } = await applyRawRequirementInput(id, raw);
+      return new Response(JSON.stringify({ detail, stages, parsedCount }), {
+        headers: { "content-type": "application/json" }
+      });
+    }
     const items = Array.isArray(body.items)
       ? body.items.map((row: Record<string, unknown>) => ({
           title: String(row.title ?? ""),

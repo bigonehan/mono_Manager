@@ -3,6 +3,7 @@ import path from "node:path";
 import net from "node:net";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import YAML from "yaml";
+import { parseRequirementBlocks } from "@/lib/requirement-parser";
 
 export type ProjectRecord = {
   id: string;
@@ -113,6 +114,11 @@ export type ProjectDetail = {
   }>;
   feedbackMdRaw: string;
   hasFeedbackMd: boolean;
+  requirementBlocks?: Array<{
+    title: string;
+    rules: string[];
+    steps: string[];
+  }>;
   screenshots: Array<{
     name: string;
     path: string;
@@ -1511,6 +1517,75 @@ function extractJobEditableSection(raw: string): string {
   return `${withReq.trimEnd()}\n`;
 }
 
+function extractRequirementSection(raw: string): string {
+  const normalized = normalizeRequirementHeader(raw);
+  const lines = normalized.split(/\r?\n/);
+  const out: string[] = [];
+  let inRequirement = false;
+  for (const line of lines) {
+    const trimmed = line.trim().toLowerCase();
+    if (trimmed === "# requirement") {
+      inRequirement = true;
+      continue;
+    }
+    if (inRequirement && trimmed.startsWith("# ")) {
+      break;
+    }
+    if (inRequirement) out.push(line);
+  }
+  return out.join("\n").trim();
+}
+
+function extractPlanSection(editableRaw: string): string {
+  const lines = editableRaw.split(/\r?\n/);
+  const out: string[] = [];
+  let inPlan = false;
+  for (const line of lines) {
+    const trimmed = line.trim().toLowerCase();
+    if (trimmed === "# plan") {
+      inPlan = true;
+      out.push("# plan");
+      continue;
+    }
+    if (trimmed === "# requirement") {
+      break;
+    }
+    if (inPlan) out.push(line);
+  }
+  if (out.length === 0) return "# plan\n";
+  return `${out.join("\n").trimEnd()}\n`;
+}
+
+function renderRequirementBlocks(blocks: Array<{ title: string; rules: string[]; steps: string[] }>): string {
+  if (blocks.length === 0) return "";
+  const out: string[] = [];
+  for (const block of blocks) {
+    out.push(`## ${block.title}`);
+    for (const rule of block.rules) out.push(`- ${rule}`);
+    for (const [index, step] of block.steps.entries()) out.push(`${index + 1}. ${step}`);
+    out.push("");
+  }
+  return out.join("\n").trimEnd();
+}
+
+function parseRequirementItemsFromRaw(raw: string): Array<{ title: string; rule: string; step: string }> {
+  const blocks = parseRequirementBlocks(raw);
+  const items: Array<{ title: string; rule: string; step: string }> = [];
+  for (const block of blocks) {
+    const rules = block.rules.length > 0 ? block.rules : [""];
+    const steps = block.steps.length > 0 ? block.steps : [""];
+    const max = Math.max(rules.length, steps.length, 1);
+    for (let index = 0; index < max; index += 1) {
+      items.push({
+        title: block.title,
+        rule: rules[index] ?? "",
+        step: steps[index] ?? ""
+      });
+    }
+  }
+  return items;
+}
+
 function buildJobMdFromEditable(editableRaw: string, currentRaw: string): string {
   const editable = extractJobEditableSection(editableRaw);
   const managed = extractJobManagedSection(currentRaw);
@@ -1910,6 +1985,7 @@ export function loadProjectDetail(id: string): ProjectDetail {
   const plannedItems = Array.isArray(drafts.planned_items) ? drafts.planned_items : [];
   const memo = fs.existsSync(memoPath(project.path)) ? fs.readFileSync(memoPath(project.path), "utf8") : "";
   const jobMd = readJobMd(project.path);
+  const requirementBlocks = parseRequirementBlocks(extractRequirementSection(jobMd.editableRaw));
   const draftItems = parseDraftItems(project.path);
   const checkPlan = collectCheckPlan(project.path);
   const feedbackMdRaw = readFeedbackMarkdown(project.path);
@@ -1956,6 +2032,7 @@ export function loadProjectDetail(id: string): ProjectDetail {
     checkSteps: checkPlan.steps,
     feedbackMdRaw,
     hasFeedbackMd: feedbackMdRaw.trim().length > 0,
+    requirementBlocks,
     screenshots
   };
 }
@@ -2189,14 +2266,31 @@ export async function applyFormAddInput(
       rule: item.rule.trim(),
       step: item.step.trim()
     }))
-    .filter((item) => item.title.length > 0 && item.rule.length > 0 && item.step.length > 0);
+    .filter((item) => item.title.length > 0);
   if (!normalized.length) {
-    throw new Error("all title/rule/step are empty");
+    throw new Error("all title are empty");
   }
-  const requirementBody = normalized
-    .map((item) => `## ${item.title}\n1. ${item.step}\n- ${item.rule}`)
-    .join("\n");
-  const jobBody = `# plan\n\n# requirement\n${requirementBody}\n\n# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n`;
+
+  const currentRaw = fs.existsSync(path.join(detail.path, "job.md"))
+    ? fs.readFileSync(path.join(detail.path, "job.md"), "utf8")
+    : "";
+  const currentEditable = extractJobEditableSection(currentRaw);
+  const currentBlocks = parseRequirementBlocks(extractRequirementSection(currentEditable));
+  const incomingBlocks = parseRequirementBlocks(
+    normalized
+      .map((item) => {
+        const lines: string[] = [`## ${item.title}`];
+        if (item.rule.length > 0) lines.push(`- ${item.rule}`);
+        if (item.step.length > 0) lines.push(`> ${item.step}`);
+        return lines.join("\n");
+      })
+      .join("\n")
+  );
+  const mergedBlocks = [...currentBlocks, ...incomingBlocks];
+  const planSection = extractPlanSection(currentEditable);
+  const requirementBody = renderRequirementBlocks(mergedBlocks);
+  const editableBody = `${planSection.trimEnd()}\n\n# requirement${requirementBody ? `\n${requirementBody}` : ""}\n`;
+  const jobBody = buildJobMdFromEditable(editableBody, currentRaw);
   const jobPath = path.join(detail.path, "job.md");
   fs.writeFileSync(jobPath, jobBody, "utf8");
 
@@ -2204,7 +2298,56 @@ export async function applyFormAddInput(
   return { detail: loadProjectDetail(id), stages };
 }
 
-export function saveRawInputMd(id: string, raw: string): ProjectDetail {
+export async function applyRawRequirementInput(
+  id: string,
+  raw: string
+): Promise<{ detail: ProjectDetail; stages: string[]; parsedCount: number }> {
+  const detail = loadProjectDetail(id);
+  const normalizedRaw = raw.trim();
+  if (!normalizedRaw) {
+    throw new Error("requirement input is empty");
+  }
+  const parsedItems = parseRequirementItemsFromRaw(normalizedRaw);
+  if (parsedItems.length === 0) {
+    throw new Error("no parseable requirement blocks");
+  }
+  const { detail: nextDetail, stages } = await applyFormAddInput(id, parsedItems);
+  return { detail: nextDetail, stages, parsedCount: parsedItems.length };
+}
+
+export function deleteRequirementItem(
+  id: string,
+  index: number
+): { detail: ProjectDetail; output: string } {
+  const detail = loadProjectDetail(id);
+  if (!Number.isInteger(index) || index < 0) {
+    throw new Error("index must be a non-negative integer");
+  }
+
+  const jobPath = path.join(detail.path, "job.md");
+  if (!fs.existsSync(jobPath)) {
+    throw new Error("job.md not found");
+  }
+
+  const currentRaw = fs.readFileSync(jobPath, "utf8");
+  const currentEditable = extractJobEditableSection(currentRaw);
+  const currentBlocks = parseRequirementBlocks(extractRequirementSection(currentEditable));
+  if (index >= currentBlocks.length) {
+    throw new Error("requirement index out of range");
+  }
+
+  const removed = currentBlocks[index];
+  const nextBlocks = currentBlocks.filter((_, i) => i !== index);
+  const planSection = extractPlanSection(currentEditable);
+  const requirementBody = renderRequirementBlocks(nextBlocks);
+  const editableBody = `${planSection.trimEnd()}\n\n# requirement${requirementBody ? `\n${requirementBody}` : ""}\n`;
+  const jobBody = buildJobMdFromEditable(editableBody, currentRaw);
+  fs.writeFileSync(jobPath, jobBody, "utf8");
+  appendRuntimeLog(id, `[requirement] removed index=${index} title=${removed?.title ?? "unknown"}`);
+  return { detail: loadProjectDetail(id), output: `requirement removed: ${removed?.title ?? index}` };
+}
+
+export function saveRawJobMd(id: string, raw: string): ProjectDetail {
   const detail = loadProjectDetail(id);
   const jobPath = path.join(detail.path, "job.md");
   const currentRaw = fs.existsSync(jobPath) ? fs.readFileSync(jobPath, "utf8") : "";
@@ -2251,57 +2394,72 @@ export function deleteDraftPaneFile(
   return { detail: loadProjectDetail(id), output: "drafts.yaml deleted" };
 }
 
-export async function applyRawInputMd(id: string, raw: string): Promise<{ detail: ProjectDetail; stages: string[] }> {
-  const detail = saveRawInputMd(id, raw);
+export async function applyRawJobMd(id: string, raw: string): Promise<{ detail: ProjectDetail; stages: string[] }> {
+  const detail = saveRawJobMd(id, raw);
   const stages = await runJobMdSyncWorkflow(id, detail.path);
   return { detail: loadProjectDetail(id), stages };
 }
 
-export function generateInputMdFromMessage(id: string, message: string): { detail: ProjectDetail; output: string } {
+export function generateJobMdFromMessage(id: string, message: string): { detail: ProjectDetail; output: string } {
+  const normalized = message.trim();
+  if (!normalized) throw new Error("message is required");
+  const parsedItems = parseRequirementItemsFromRaw(normalized);
+  if (parsedItems.length === 0) {
+    throw new Error("message parse failed: no requirement blocks");
+  }
   const detail = loadProjectDetail(id);
-  const prompt = message.trim();
-  if (!prompt) {
-    throw new Error("message is required");
-  }
+  const currentRaw = fs.existsSync(path.join(detail.path, "job.md"))
+    ? fs.readFileSync(path.join(detail.path, "job.md"), "utf8")
+    : "";
+  const currentEditable = extractJobEditableSection(currentRaw);
+  const currentBlocks = parseRequirementBlocks(extractRequirementSection(currentEditable));
+  const incomingBlocks = parseRequirementBlocks(normalized);
+  const mergedBlocks = [...currentBlocks, ...incomingBlocks];
+  const planSection = extractPlanSection(currentEditable);
+  const requirementBody = renderRequirementBlocks(mergedBlocks);
+  const editableBody = `${planSection.trimEnd()}\n\n# requirement${requirementBody ? `\n${requirementBody}` : ""}\n`;
+  const nextRaw = buildJobMdFromEditable(editableBody, currentRaw);
+  fs.writeFileSync(path.join(detail.path, "job.md"), nextRaw, "utf8");
   const taskKey = createTaskSessionKey("job-generate");
-  const planCommand = resolveOrcCommandArgs(["add_code_plan", "-m", prompt]);
-  appendRuntimeLog(id, `[job-generate] add_code_plan -m "${prompt}"`);
-  const planResult = spawnSync(planCommand.bin, planCommand.args, {
+  const outputs: string[] = [];
+  const stages: Array<{ label: string; args: string[] }> = [{ label: "drafts.yaml", args: ["add_orc_drafts"] }];
+  for (const stage of stages) {
+    appendRuntimeLog(id, `[job-generate] ${stage.label}`);
+    const command = resolveOrcCommandArgs(stage.args);
+    const result = spawnSync(command.bin, command.args, {
+      cwd: detail.path,
+      encoding: "utf8",
+      env: buildTaskCommandEnv(taskKey)
+    });
+    if (result.status !== 0) {
+      const stderr = (result.stderr || "").trim();
+      throw new Error(stderr || `${stage.label} failed: status=${String(result.status)}`);
+    }
+    outputs.push((result.stdout || "").trim() || `${stage.label} completed`);
+  }
+  return { detail: loadProjectDetail(id), output: outputs.join(" | ") };
+}
+
+export function syncDraftsFromJobRequirements(id: string): { detail: ProjectDetail; output: string } {
+  const detail = loadProjectDetail(id);
+  const jobPath = path.join(detail.path, "job.md");
+  if (!fs.existsSync(jobPath)) {
+    throw new Error("job.md not found");
+  }
+  const taskKey = createTaskSessionKey("job-to-drafts");
+  appendRuntimeLog(id, "[job->drafts] drafts.yaml sync start");
+  const command = resolveOrcCommandArgs(["add_orc_drafts"]);
+  const result = spawnSync(command.bin, command.args, {
     cwd: detail.path,
     encoding: "utf8",
     env: buildTaskCommandEnv(taskKey)
   });
-  if (planResult.status !== 0) {
-    const stderr = (planResult.stderr || "").trim();
-    throw new Error(stderr || `add_code_plan failed: status=${String(planResult.status)}`);
+  if (result.status !== 0) {
+    const stderr = (result.stderr || "").trim();
+    throw new Error(stderr || `drafts.yaml sync failed: status=${String(result.status)}`);
   }
-
-  const initJobCommand = resolveOrcCommandArgs(["init_orc_job"]);
-  appendRuntimeLog(id, "[job-generate] init_orc_job");
-  const initJobResult = spawnSync(initJobCommand.bin, initJobCommand.args, {
-    cwd: detail.path,
-    encoding: "utf8",
-    env: buildTaskCommandEnv(taskKey)
-  });
-  if (initJobResult.status !== 0) {
-    const stderr = (initJobResult.stderr || "").trim();
-    throw new Error(stderr || `init_orc_job failed: status=${String(initJobResult.status)}`);
-  }
-
-  const addDraftsCommand = resolveOrcCommandArgs(["add_orc_drafts"]);
-  appendRuntimeLog(id, "[job-generate] add_orc_drafts");
-  const addDraftsResult = spawnSync(addDraftsCommand.bin, addDraftsCommand.args, {
-    cwd: detail.path,
-    encoding: "utf8",
-    env: buildTaskCommandEnv(taskKey)
-  });
-  if (addDraftsResult.status !== 0) {
-    const stderr = (addDraftsResult.stderr || "").trim();
-    throw new Error(stderr || `add_orc_drafts failed: status=${String(addDraftsResult.status)}`);
-  }
-
-  const output = (addDraftsResult.stdout || "").trim() || "add_orc_drafts completed";
-  appendRuntimeLog(id, `[job-generate] ${output}`);
+  const output = (result.stdout || "").trim() || "drafts.yaml synced";
+  appendRuntimeLog(id, `[job->drafts] ${output}`);
   return { detail: loadProjectDetail(id), output };
 }
 
