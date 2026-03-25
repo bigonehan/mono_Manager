@@ -3,14 +3,12 @@ import {
   Ban,
   CheckCircle2,
   ChevronDown,
-  ChevronRight,
   Code2,
   CornerUpLeft,
   FileText,
   FlaskConical,
   FolderOpen,
   GraduationCap,
-  Hammer,
   Menu,
   LayoutGrid,
   List,
@@ -259,6 +257,8 @@ export default function WebApp() {
   const [autoModalOpen, setAutoModalOpen] = useState(false);
   const [autoModalInput, setAutoModalInput] = useState("");
   const [autoRunning, setAutoRunning] = useState(false);
+  const [domainLoading, setDomainLoading] = useState(false);
+  const [domainError, setDomainError] = useState("");
   const [selectedDraftYamlItem, setSelectedDraftYamlItem] = useState<{
     name: string;
     draft: Record<string, unknown>;
@@ -391,7 +391,10 @@ export default function WebApp() {
   const selectedDraftCard = draftsYamlCards.find((item) => item.name === selectedDraftItemName) ?? null;
   const selectedDraftYamlText = selectedDraftYamlItem ? YAML.stringify(selectedDraftYamlItem.draft ?? {}) : "";
   const isSelectedDraftRunning = runningImplDraft && runningImplDraftName === selectedDraftItemName;
+  const hasDraftItems = draftsYamlCards.length > 0;
   const hasGreenDraft = draftsYamlCards.some((item) => item.status === "complete");
+  const isWorkPaneLocked = !hasDraftItems;
+  const isCheckPaneLocked = !hasGreenDraft;
   const checkSubject = detail?.checkSubject?.trim() || "drafts.yaml 기반 수동 check 대상이 없습니다.";
   const checkSteps = detail?.checkSteps ?? [];
   const checkScreenshots = detail?.screenshots ?? [];
@@ -688,24 +691,38 @@ export default function WebApp() {
     }
   }
 
-  async function refreshDomainFeatures() {
-    if (!detail) return;
-    const res = await fetch(apiUrl("/api/domain-refresh"), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: detail.id, domain: selectedDomain || undefined })
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      pushLog(`domain refresh failed: ${String(data.error ?? "unknown error")}`);
-      return;
+  async function refreshDomainFeatures(domainName?: string): Promise<boolean> {
+    if (!detail) return false;
+    setDomainLoading(true);
+    setDomainError("");
+    try {
+      const res = await fetch(apiUrl("/api/domain-refresh"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: detail.id, domain: domainName || selectedDomain || undefined })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const errorMessage = String(data.error ?? "unknown error");
+        pushLog(`domain refresh failed: ${errorMessage}`);
+        setDomainError(errorMessage);
+        return false;
+      }
+      if (data.detail) {
+        setDetail(data.detail);
+      } else {
+        await loadDetail(detail.id);
+      }
+      pushLog(String(data.output ?? "domain features synced"));
+      return true;
+    } catch (error) {
+      const errorMessage = String(error);
+      pushLog(`domain refresh failed: ${errorMessage}`);
+      setDomainError(errorMessage);
+      return false;
+    } finally {
+      setDomainLoading(false);
     }
-    if (data.detail) {
-      setDetail(data.detail);
-    } else {
-      await loadDetail(detail.id);
-    }
-    pushLog(String(data.output ?? "domain features synced"));
   }
 
   useEffect(() => {
@@ -2212,13 +2229,17 @@ export default function WebApp() {
               <div className="fixed left-0 top-20 z-50 h-[calc(100vh-5rem)] w-[82vw] max-w-[320px] overflow-y-auto border-r border-border bg-white p-3 shadow-lg lg:hidden">
                 <div className="mb-1">
                   <div className="relative">
-                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <Input
+                    <Search
+                      data-testid="detail-sidebar-search-mobile-icon"
+                      className="pointer-events-none absolute right-10 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+                    />
+                    <input
                       value={sidebarSearch}
                       onChange={(e) => setSidebarSearch(e.target.value)}
                       placeholder="search folders..."
-                      className="h-9 rounded-xl bg-white pl-8 text-xs"
+                      className="h-9 w-full rounded-xl border border-input bg-white px-3 pr-14 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       aria-label="detail-sidebar-search-mobile"
+                      data-testid="detail-sidebar-search-mobile"
                     />
                     <button
                       type="button"
@@ -2230,7 +2251,7 @@ export default function WebApp() {
                     </button>
                   </div>
                 </div>
-                <Card className="rounded-2xl bg-white">
+                <Card className="rounded-2xl bg-white" data-testid="detail-sidebar-card-mobile">
                   <CardContent className="space-y-2 pt-4">
                     {selectedProject?.project_type === "mono" ? (
                       <div className="space-y-3">
@@ -2264,21 +2285,26 @@ export default function WebApp() {
               </div>
             </>
           )}
-          <div className={`grid gap-4 lg:grid-cols-[220px_1fr] ${addInputApplying ? "blur-sm" : ""}`}>
+          <div className={`${addInputApplying ? "blur-sm" : ""}`}>
           <div className="hidden pt-4 lg:block">
-            <div className="mb-1">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={sidebarSearch}
-                  onChange={(e) => setSidebarSearch(e.target.value)}
-                  placeholder="search folders..."
-                  className="h-9 rounded-xl bg-white pl-8 text-xs"
-                  aria-label="detail-sidebar-search"
-                />
-              </div>
+            <div className="relative w-[220px]">
+              <Search
+                data-testid="detail-sidebar-search-icon"
+                className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+              />
+              <input
+                value={sidebarSearch}
+                onChange={(e) => setSidebarSearch(e.target.value)}
+                placeholder="search folders..."
+                className="h-9 w-full rounded-xl border border-input bg-white px-3 pr-8 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="detail-sidebar-search"
+                data-testid="detail-sidebar-search"
+              />
             </div>
-            <Card className="rounded-2xl bg-white">
+          </div>
+          <div className="grid gap-4 lg:grid-cols-[220px_1fr] lg:gap-0">
+          <div className="hidden lg:block lg:border-r lg:border-border lg:pr-4" data-testid="detail-sidebar-shell">
+            <Card className="rounded-2xl bg-white" data-testid="detail-sidebar-card">
               <CardContent className="space-y-2 pt-4">
                 {selectedProject?.project_type === "mono" ? (
                   <div className="space-y-3">
@@ -2310,7 +2336,7 @@ export default function WebApp() {
               </CardContent>
             </Card>
           </div>
-          <div className="space-y-4 pt-4">
+          <div className="space-y-4 lg:pl-4" data-testid="detail-main-shell">
             <DetailLayoutProvider
               detail={detail}
               showProjectInfo={false}
@@ -2319,7 +2345,9 @@ export default function WebApp() {
               setSelectedPane={setSelectedPane}
               selectedDomain={selectedDomain}
               setSelectedDomain={setSelectedDomain}
-              refreshDomainFeatures={() => void refreshDomainFeatures()}
+              refreshDomainFeatures={refreshDomainFeatures}
+              domainLoading={domainLoading}
+              domainError={domainError}
               openEditor={openEditor}
               actionsDisabled={isAutoRunningDetail}
               memoDraft={memoDraft}
@@ -2332,15 +2360,30 @@ export default function WebApp() {
               <Card data-testid="draft-pane" className={`rounded-2xl border border-border bg-white ${runningImplDraft ? "bg-amber-50" : "bg-white"}`}>
                 <CardContent className="space-y-4 pt-6">
                   <div className="grid gap-4 xl:grid-cols-2">
-                    <div className="space-y-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">requirements (## / - / &gt;)</div>
-                      <div
-                        data-testid="requirements-container"
-                        className="relative h-[320px] rounded-xl border border-border bg-white"
-                      >
+                    <div data-testid="requirements-pane" className="relative space-y-3 pb-12">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">requirements (## / - / &gt;)</div>
+                        <div data-testid="requirements-top-right-actions">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={() => void removeDraftPaneFile("job")}
+                            disabled={isAutoRunningDetail}
+                            aria-label="delete-job-md"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div>
+                        <div
+                          data-testid="requirements-container"
+                          className="relative h-[320px] rounded-xl border border-border bg-white"
+                        >
                         <div
                           data-testid="requirements-scroll"
-                          className="h-full space-y-2 overflow-y-auto px-3 pb-14 pt-12"
+                          className="h-full space-y-2 overflow-y-auto px-3 pb-14 pt-3"
                         >
                           {requirementBlocks.length === 0 && (
                             <div className="px-1 py-2 text-xs text-muted-foreground">no requirement blocks</div>
@@ -2377,24 +2420,20 @@ export default function WebApp() {
                             </div>
                           ))}
                         </div>
-                        <div
-                          data-testid="requirements-top-right-actions"
-                          className="absolute right-3 top-3"
+                        <button
+                          type="button"
+                          className="absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+                          onClick={() => void (isBuildRunning ? stopBuildJob() : startBuildJob())}
+                          disabled={addInputApplying || isAiBusy}
+                          aria-label="build_parallel"
+                          data-testid="draft-action-build"
                         >
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={() => void removeDraftPaneFile("job")}
-                            disabled={isAutoRunningDetail}
-                            aria-label="delete-job-md"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <Pencil className="h-4 w-4" />
+                        </button>
                         </div>
                       </div>
                     </div>
-                    <div className="space-y-3">
+                    <div data-testid="drafts-raw-pane" className="relative space-y-3 pb-12">
                       <div className="flex items-center justify-between gap-2">
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">drafts.yaml (editable)</div>
                         <Button
@@ -2408,93 +2447,49 @@ export default function WebApp() {
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
-                      <Textarea
-                        value={formDraftsRaw}
-                        onChange={(e) => setFormDraftsRaw(e.target.value)}
-                        className="h-[320px] resize-none bg-white"
-                        data-testid="drafts-raw-editor"
-                        placeholder="draft:
+                      <div className="relative h-[320px] rounded-xl border border-border bg-white">
+                        <textarea
+                          value={formDraftsRaw}
+                          onChange={(e) => setFormDraftsRaw(e.target.value)}
+                          className="h-full w-full resize-none rounded-xl border-0 bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          data-testid="drafts-raw-editor"
+                          placeholder="draft:
   - name: ..."
-                      />
+                        />
+                        <button
+                          type="button"
+                          onClick={focusDraftsRawEditor}
+                          disabled={isAutoRunningDetail}
+                          aria-label="open-draft-pane-settings"
+                          data-testid="open-draft-pane-settings"
+                          className="absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
+                  <div className="mt-2 flex items-center gap-2">
                       <Button
                         type="button"
                         variant="outline"
-                        size="icon"
+                        className="h-9 gap-2 px-3 text-sm font-semibold"
                         onClick={() => setRequirementModalOpen(true)}
                         disabled={addInputApplying || jobMessageGenerating || isAutoRunningDetail || isBuildRunning}
                         aria-label="open-requirement-modal"
                         data-testid="open-requirement-modal"
                       >
                         <Plus className="h-4 w-4" />
+                        <span>add</span>
                       </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="border-emerald-500 text-emerald-700 hover:bg-emerald-50"
-                        onClick={() => void syncDraftsFromJobRequirements()}
-                        disabled={jobMessageGenerating || isAutoRunningDetail || isBuildRunning || addInputApplying}
-                        aria-label="generate-job-and-drafts"
-                        data-testid="generate-job-and-drafts"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className={`h-9 gap-2 px-3 text-sm font-semibold ${isBuildRunning ? "border-red-600 bg-red-600 text-white hover:bg-red-700 hover:text-white" : ""}`}
-                        onClick={() => void (isBuildRunning ? stopBuildJob() : startBuildJob())}
-                        disabled={addInputApplying || isAiBusy}
-                        aria-label="build_parallel"
-                        data-testid="draft-action-build"
-                      >
-                        {isBuildRunning ? <Ban className="h-4 w-4" /> : <Hammer className="h-4 w-4" />}
-                        <span>{isBuildRunning ? "stop" : "build"}</span>
-                      </Button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      className="h-9 gap-2 px-3 text-sm font-semibold"
-                      onClick={() => void runQuickAction("retry_incomplete")}
-                      disabled={!isReviewState || addInputApplying || isBuildRunning || isAutoRunningDetail}
-                      aria-label="retry_red_items"
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                      <span>retry red</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="h-9 gap-2 px-3 text-sm font-semibold"
-                      onClick={() => void runQuickAction("finalize_complete")}
-                      disabled={!isReviewState || !hasGreenDraft || addInputApplying || isBuildRunning || isAutoRunningDetail}
-                      aria-label="finalize_green_items"
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span>complete</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={focusDraftsRawEditor}
-                      disabled={isAutoRunningDetail}
-                      aria-label="open-draft-pane-settings"
-                      data-testid="open-draft-pane-settings"
-                    >
-                      <Settings className="h-4 w-4" />
-                    </Button>
-                    </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
             <div>
               <div className={sectionLabelClass}>work pane</div>
-              <Card data-testid="draft-work-pane" className="rounded-2xl border border-border bg-white">
-                <CardContent className="pt-6">
+              <Card data-testid="draft-work-pane" className="relative rounded-2xl border border-border bg-white">
+                <CardContent className={`pb-16 pt-6 transition ${isWorkPaneLocked ? "pointer-events-none blur-[1.5px] select-none" : ""}`}>
                   <div
                     data-testid="draft-work-pane-grid"
                     className="grid gap-3 rounded-2xl border border-border bg-muted/20 p-3 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-stretch"
@@ -2568,13 +2563,45 @@ export default function WebApp() {
                     </div>
                   </div>
                 </CardContent>
+                <div data-testid="work-pane-review-actions" className="absolute bottom-3 right-3 flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-9 gap-2 px-3 text-sm font-semibold"
+                    onClick={() => void runQuickAction("retry_incomplete")}
+                    disabled={!isReviewState || addInputApplying || isBuildRunning || isAutoRunningDetail}
+                    aria-label="retry_red_items"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    <span>retry red</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-9 gap-2 px-3 text-sm font-semibold"
+                    onClick={() => void runQuickAction("finalize_complete")}
+                    disabled={!isReviewState || !hasGreenDraft || addInputApplying || isBuildRunning || isAutoRunningDetail}
+                    aria-label="finalize_green_items"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>complete</span>
+                  </Button>
+                </div>
+                {isWorkPaneLocked && (
+                  <div
+                    data-testid="draft-work-pane-lock-overlay"
+                    className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-white/60"
+                  >
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900">
+                      먼저 add 버튼으로 draft_item을 추가하세요.
+                    </div>
+                  </div>
+                )}
               </Card>
             </div>
 
             <div>
               <div className={sectionLabelClass}>check</div>
-              <Card data-testid="check-pane" className="rounded-2xl border border-border bg-white">
-                <CardContent className="space-y-5 pt-6">
+              <Card data-testid="check-pane" className="relative rounded-2xl border border-border bg-white">
+                <CardContent className={`space-y-5 pt-6 transition ${isCheckPaneLocked ? "pointer-events-none blur-[1.5px] select-none" : ""}`}>
                   <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
                     <div className="space-y-2">
                       <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">subject</div>
@@ -2711,6 +2738,16 @@ export default function WebApp() {
                     </Button>
                   </div>
                 </CardContent>
+                {isCheckPaneLocked && (
+                  <div
+                    data-testid="check-pane-lock-overlay"
+                    className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-white/60"
+                  >
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900">
+                      먼저 work pane에서 draft_item 구현을 완료하세요.
+                    </div>
+                  </div>
+                )}
               </Card>
             </div>
 
@@ -2739,7 +2776,6 @@ export default function WebApp() {
               </div>
             </div>
           )}
-        </div>
         </div>
       )}
 

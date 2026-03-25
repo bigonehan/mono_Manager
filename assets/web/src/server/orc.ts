@@ -547,7 +547,27 @@ function isMonorepoManagedPath(projectPath: string, root: string): boolean {
 }
 
 function monorepoDomainDetails(root: string): Array<{ name: string; description: string; features: string[] }> {
-  return collectMonorepoDomains(root).map((name) => ({ name, description: "", features: [] }));
+  return collectMonorepoDomains(root).map((name) => {
+    const domainPath = path.join(root, "packages", "domains", name);
+    const files = collectSourceFiles(domainPath);
+    const features = new Map<string, string>();
+    for (const filePath of files) {
+      let raw = "";
+      try {
+        raw = fs.readFileSync(filePath, "utf8");
+      } catch {
+        continue;
+      }
+      const relative = path.relative(root, filePath).replace(/\\/g, "/");
+      const functions = extractFunctionNames(filePath, raw);
+      for (const fn of functions) {
+        const key = normalizeFunctionKey(fn);
+        if (!key || features.has(key)) continue;
+        features.set(key, `${fn}: ${relative} 함수`);
+      }
+    }
+    return { name, description: "", features: [...features.values()] };
+  });
 }
 
 export function syncMonorepoProjects(): {

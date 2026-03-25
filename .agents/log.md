@@ -2921,3 +2921,71 @@
 - `.../assets/web/src/server/orc.ts`에 `deleteRequirementItem(id, index)`를 추가하고 `.../assets/web/src/pages/api/requirement-item-delete.ts` API를 신설해 requirement index 삭제를 실제 `job.md` 반영까지 수행하게 함.
 - `.../assets/web/tests/web.spec.ts`에 top-right 정렬, 하단 액션 행 위치, item hover 삭제 아이콘 노출, work pane 독립성 검증을 보강함.
 - 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web run test:e2e -- --grep "drafts pane uses green chevron trigger and icon-only delete layout"` 통과, `npm --prefix assets/web run test:e2e:end-hook` 통과, `/tmp/tmp_project` 및 `/tmp/pw-*` 정리 후 잔존 0건.
+
+## 2026-03-25 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx`에서 draft pane requirements 전체 삭제 버튼(`delete-job-md`)을 requirements wrapper container 내부가 아니라 바깥 우상단(`absolute -right-1 -top-3`)으로 이동함.
+- 같은 수정에서 requirements 목록 컨테이너 상단 여백을 정리해 버튼 이동 후에도 리스트 스크롤 영역이 자연스럽게 보이도록 `pt-12 -> pt-3`로 조정함.
+- 호출 경로 점검: `delete-job-md -> removeDraftPaneFile("job")` 및 `requirements-top-right-actions` 배치 id 유지를 `rg`로 확인함.
+- 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web run test:e2e -- --grep "drafts pane uses green chevron trigger and icon-only delete layout"` 통과, `npm --prefix assets/web run test:e2e:end-hook` 통과, `/tmp/tmp_project` 및 `/tmp/pw-*` 정리 후 잔존 0건.
+
+## 2026-03-25 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx`에서 requirements 헤더를 drafts.yaml 헤더와 동일한 row 구조(라벨 + 삭제 버튼)로 맞춰 좌/우 상단 수평축이 같은 높이에 오도록 조정함.
+- `delete-job-md` 버튼은 requirements wrapper container 밖 우상단 요구를 유지하면서, 절대 배치 대신 헤더 row 우측으로 배치해 빨간선 기준 수평 정렬을 안정화함.
+- requirements container는 기존 높이/스크롤을 유지하고, 상단 여백은 `pt-3`로 유지해 아이템 시작선이 자연스럽게 보이도록 유지함.
+- 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web run test:e2e -- --grep "drafts pane uses green chevron trigger and icon-only delete layout"` 통과, `npm --prefix assets/web run test:e2e:end-hook` 통과, `/tmp/tmp_project` 및 `/tmp/pw-*` 정리 후 잔존 0건.
+
+## 2026-03-25 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx`에서 drafts 하단 액션의 `>` 버튼을 제거하고, `+` 버튼은 `add` 라벨이 붙은 버튼으로 변경해 `+ add`, `build`만 남기도록 조정함.
+- 같은 파일에서 work/check 단계 가이드를 추가해 선행 단계 미충족 시 pane 전체를 blur 처리하고 오버레이 메시지를 노출하도록 구현함.
+  - work pane 잠금 조건: draft_item 없음(`draftsYamlItems.length === 0`) -> `draft-work-pane-lock-overlay`
+  - check pane 잠금 조건: 구현 완료 draft_item 없음(`!hasGreenDraft`) -> `check-pane-lock-overlay`
+- `.../assets/web/tests/web.spec.ts`를 갱신해 새 액션 구조(`add` 존재, `generate-job-and-drafts` 제거)와 단계 잠금 오버레이 노출을 검증하도록 업데이트함.
+- 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web run test:e2e -- --grep "drafts pane uses add/build actions and stage lock overlays"` 통과, `npm --prefix assets/web run test:e2e:end-hook` 통과, `/tmp/tmp_project` 및 `/tmp/pw-*` 정리 후 잔존 0건.
+
+## 2026-03-25 - 작업한일
+- `.../assets/web/src/layouts/detail/CodeDetailLayout.tsx`에서 domain badge 클릭 시 `refreshDomainFeatures(domain)`를 호출하도록 변경하고, 우측 영역에 도메인 기능 로딩/오류/빈 상태를 추가함.
+- `.../assets/web/src/layouts/detail/MonoDetailLayout.tsx`의 하드코딩 도메인(`accounts/catalog/...`)을 제거하고 `detail.domains` 기반 좌/우 분할 pane으로 교체해 mono 프로젝트에서도 동일한 상호작용(배지 클릭 -> 기능 목록) 흐름을 적용함.
+- `.../assets/web/src/components/WebApp.tsx`에 domain 동기화 상태(`domainLoading`, `domainError`)를 추가하고 `refreshDomainFeatures(domain?)`를 Promise 반환으로 확장해 detail 레이아웃과 API 응답을 연결함.
+- `.../assets/web/src/server/orc.ts`의 `monorepoDomainDetails`를 소스 스캔 기반으로 보강해 `packages/domains/<domain>` 하위 함수명을 수집하고 `기능명: 경로 함수` 형식으로 features를 채우도록 수정함.
+- `.../assets/web/tests/web.spec.ts`에 e2e를 보강해 (1) code 프로젝트 domain badge 클릭 시 소스 기반 기능 표시, (2) mono 프로젝트 domains 표시/선택, (3) check pane lock 조건 반영 후 voice/check 시나리오를 검증함.
+- 검증: `npm --prefix assets/web run test:unit` 통과, `npm --prefix assets/web run test:e2e` 통과(8/8).
+
+## 2026-03-25 - 작업한일
+- `.../assets/web/src/layouts/detail/DetailTabsPane.tsx`에서 rules/constraints/features 탭 영역을 절대 배치(`-translate-y-full`)에서 일반 흐름 배치로 변경해 memo 섹션과의 간격이 겹치지 않게 조정함.
+- `.../assets/web/src/components/WebApp.tsx`에서 detail 레이아웃 그리드에 sidebar 경계선(`lg:border-r`)과 본문 좌측 패딩(`lg:pl-4`)을 추가해 sidebar와 본문 수평축 정렬을 맞춤.
+- 같은 파일의 desktop/mobile sidebar search input에서 돋보기 아이콘을 우측으로 이동하고 input padding을 `pr-*` 기준으로 조정함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과(8/8).
+
+## 2026-03-25 - 작업한일
+- `.../assets/web/src/layouts/detail/CodeDetailLayout.tsx`, `.../assets/web/src/layouts/detail/MonoDetailLayout.tsx`, `.../assets/web/src/layouts/detail/MovieDetailLayout.tsx`, `.../assets/web/src/layouts/detail/WriteDetailLayout.tsx`에서 project pane 톱니 아이콘을 제거하고 우하단 초록 배경/흰 연필 아이콘 버튼으로 교체함.
+- `.../assets/web/src/layouts/detail/DetailTabsPane.tsx`에서 rules/constraints/features pane의 톱니 버튼을 제거하고 pane 우하단 초록 연필 버튼으로 이동해 동일 편집 진입(`openEditor`)을 유지함.
+- `.../assets/web/src/components/WebApp.tsx` drafts pane의 `open-draft-pane-settings` 톱니 버튼을 제거하고 카드 우하단 초록 연필 버튼으로 교체해 기존 편집 진입 동작(`focusDraftsRawEditor`)을 유지함.
+- 동작 기준: 값이 비어있어도 동일 버튼으로 편집 모달/에디터를 열어 추가하고, 값이 존재하면 수정하는 단일 진입 버튼으로 통일함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과(8/8).
+
+## 2026-03-25 - 작업한일
+- `.../AGENTS.md`에 sidebar와 우측 detail pane 수평축 정렬 검사를 필수 규칙으로 추가하고, 기준선/경계선/우하단 액션 버튼 y축 점검 항목을 명시함.
+- `.../assets/web/src/components/WebApp.tsx`에서 drafts 텍스트 build 버튼을 제거하고 requirements pane 우하단 초록 연필 버튼(`draft-action-build`)으로 build 동작을 이관함.
+- 같은 파일에서 drafts.yaml(editable) pane 우하단에 초록 연필 버튼(`open-draft-pane-settings`)을 배치해 수정 진입을 수행하도록 조정하고, requirements/build 버튼과 동일 y축으로 정렬함.
+- 같은 파일에서 retry red/complete 버튼을 drafts 카드에서 제거해 work pane 우하단(`work-pane-review-actions`)으로 이동함.
+- drafts.yaml(editable) 입력은 native `textarea`로 교체해 삭제 버튼 아래 녹음 버튼(`drafts-raw-editor-voice`)이 렌더되지 않도록 제거함.
+- sidebar search는 desktop/mobile 모두 native input + 우측 내부 돋보기 아이콘으로 고정하고(`detail-sidebar-search-icon`, `detail-sidebar-search-mobile-icon`), 음성 버튼을 제거함.
+- `.../assets/web/tests/web.spec.ts`에 drafts 두 연필 버튼 y축 정렬, work pane 우하단 retry/complete 위치, drafts.yaml 음성 버튼 미존재, sidebar search 아이콘 우측 내부 위치 검증을 추가함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과(8/8), `npm --prefix assets/web run test:e2e:end-hook` 통과(1/1), `/tmp/tmp_project` 및 `/tmp/pw-*` 정리 후 잔존 0건.
+
+## 2026-03-25 - 작업한일
+- `.../assets/web/src/lib/use-voice-input.ts`에서 음성 입력 처리 방식을 `녹음 종료 시 1회 반영`으로 변경함.
+  - 첫 클릭: 녹음 시작(`continuous=true`) 후 transcript 버퍼만 누적
+  - 두 번째 클릭: 녹음 종료 시(`onend`) 버퍼를 입력값으로 반영
+  - 녹음 중에는 input/textarea 값을 실시간 변경하지 않음
+- `.../assets/web/tests/helpers/mock-speech-recognition.ts`를 토글 흐름에 맞춰 수정해 `start` 시 자동 `onend`를 호출하지 않고 `stop` 시 종료 이벤트를 발생시키도록 정렬함.
+- `.../assets/web/tests/web.spec.ts` 음성 e2e를 `시작 클릭 -> 종료 클릭 -> 값 반영` 시나리오로 갱신함.
+- `.../plan.md`를 이번 음성 토글 요구사항 기준(문제/해결책/검증)으로 갱신함.
+- 검증: `npm --prefix assets/web run test:e2e` 통과(8/8), `npm --prefix assets/web run test:e2e:end-hook` 통과(1/1), `/tmp/tmp_project` 및 `/tmp/pw-*` 정리 후 잔존 0건.
+
+## 2026-03-25 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx`에서 drafts 영역의 두 연필(쓰기) 버튼을 pane 바깥 기준 absolute가 아니라 각 pane 내부 컨테이너 기준 absolute로 재배치함.
+- requirements pane의 build 연필 버튼은 `requirements-container` 내부 우하단(`bottom-3 right-3`)에 고정함.
+- drafts.yaml(editable) 연필 버튼은 textarea 래퍼를 `h-[320px]` pane 컨테이너로 정규화한 뒤 내부 우하단(`bottom-3 right-3`)에 고정함.
+- 결과적으로 `current.png`처럼 두 쓰기 버튼이 pane 경계 안쪽에 보이도록 맞춤.
+- 검증: `npm --prefix assets/web run test:e2e -- --grep \"drafts pane uses add/build actions and stage lock overlays|all projects expose detail actions and buttons stay operable\"` 통과(2/2), `npm --prefix assets/web run test:e2e:end-hook` 통과(1/1).

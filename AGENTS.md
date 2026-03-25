@@ -22,10 +22,22 @@
 - When any task is completed, run `cargo install --path /home/tree/project/mono_Manager --bin orc --force` automatically before finalizing the task.
 - Completion preflight order is fixed: `cargo install` -> `nf -m "<task-name> complete"` -> final response.
 
+## UI Axis Alignment Hard Gate
+- detail page의 sidebar/main 수평축 정렬 규칙은 이 문서를 단일 원천으로 사용한다.
+- UI 변경이 포함된 작업은 항상 `bash scripts/check_front_ui_rules.sh`를 실행한다.
+- 위 검증 실패 시 완료 보고를 금지한다.
+- `current.png` 기준 수평축 규칙:
+- 왼쪽은 `search folders... + mic 버튼` 행이 먼저 나오고, 그 바로 아래 `project sidebar card`가 시작된다.
+- 오른쪽 메인 영역의 첫 카드 시작 y축은 왼쪽 `project sidebar card`의 시작 y축과 같아야 한다(검색 입력 행과는 맞추지 않는다).
+- 오른쪽 메인 카드 묶음의 하단 끝은 왼쪽 `project sidebar card` 하단 끝과 같은 축으로 유지한다.
+- detail desktop 정렬 기준은 `detail-sidebar-shell` vs `detail-main-shell`의 top/height 오차가 각각 2px 이하여야 한다.
+
 ## UI Flow Verification Rule
 - When the user requests a UI change, verify and implement the connected internal behavior flow in the same task.
 - Do not finish with visual/UI text changes only; confirm trigger -> command/action -> state/file update -> UI refresh path is connected end-to-end.
 - Before finalizing, run at least one real execution path (or equivalent CLI path) and report whether the functional flow is actually wired.
+- Sidebar와 우측 detail pane의 수평축 정렬 검사를 필수로 수행한다.
+- 최소 검사 항목: sidebar search 기준선, sidebar-right pane 경계선, 각 pane 우하단 액션 버튼의 동일 y축.
 
 ## Detail End Hook Rule
 - After completing UI interaction fixes, run detail-page end hook verification before final response.
@@ -227,7 +239,7 @@
 - 2026-03-07: `current.png` 요청은 검색 없이 `/mnt/c/Users/tende/Pictures/Screenshots/current.png`를 먼저 연다. 해당 경로 미존재 시 그 경로 부재만 즉시 보고하고 대체 경로를 요청한다.
 - 2026-03-07: 사용자가 개선사항에 `전부`, `모두`, `전체`를 명시하면 부분 개선 보고를 금지하고, 경고/실패가 남지 않을 때까지 연속으로 수정-검증을 반복한 뒤 최종 결과만 보고한다.
 - 2026-03-08: templates asset 모달은 좌측 `PROMPTS/TEMPLATES` 폴더 섹션(접기/펼치기) + 우측 파일 내용 패널 구조를 유지하고, 파일 저장 시 `{수정 파일 경로} 수정 반영 후 관련 항목 전체 갱신` LLM 요청을 자동 실행한다.
-- 2026-03-08: detail pane의 add/build 흐름은 `form_add_input` 모달 기반으로 유지한다. add 확인 시 `job.md`를 생성하고 `orc add_code_plan -f` + `orc add_code_draft -f`를 실행해 `plan.yaml`/`drafts.yaml`를 갱신하며, build는 병렬 실행 상태(`build`)와 `current_job`을 project 카드에 반영한다.
+- 2026-03-08: detail pane의 add/build 흐름은 `form_add_input` 모달 기반으로 유지한다. add 확인 시 `orc create_job_md` 후 `orc add_code_draft_item/add_code_draft`를 실행해 `drafts.yaml`를 갱신하며, build는 `orc impl_code_draft -> orc check_code_draft` 결과와 `current_job`을 project 카드에 반영한다.
 - 2026-03-09: tmux pane 명령 전송은 기본 셸을 `fish -ic`로 고정하고 `bash -lc`/`bash -ic` 래퍼 생성을 금지한다(사용자가 bash를 명시한 경우만 예외).
 - 2026-03-10: repo 루트의 규칙 파일은 `AGENTS.md` 하나로 유지한다. `/home/tree/project/rust-orc` 아래에 `AGENTS.override` 또는 `AGENTS.override.md`를 새로 만들거나 심볼릭 링크로 생성하지 않는다.
 - 2026-03-10: repo 전용 규칙 추가는 `AGENTS.md`에 직접 병합하고, 전역 사용자 동작 규칙만 `/home/tree/ai/codex/AGENTS.override.md`에 기록한다.

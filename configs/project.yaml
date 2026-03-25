@@ -277,7 +277,7 @@ projects:
     path: /home/tree/home/template/web/community
     description: monorepo template package
     created_at: "1773300989"
-    updated_at: "1774359803"
+    updated_at: "1774380646"
     selected: false
     project_type: mono
   - id: YaLH

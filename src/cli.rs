@@ -38,6 +38,7 @@ pub fn print_usage(program: &str) {
         "init_orc_job",
         "add_orc_drafts",
         "create_job_md",
+        "create_input_md",
         "cli_rust_orchestra",
         "impl_code_draft",
         "check_orc_code",
@@ -57,6 +58,7 @@ pub fn print_usage(program: &str) {
 fn canonical_command_for_match(command: &str) -> &str {
     match command {
         "impl_code_draft" => "impl_orc_code",
+        "cli_create_input_md" => "create_input_md",
         other => other,
     }
 }
@@ -102,6 +104,12 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             profile.draft_service().run_parallel().await
         }
         "create_job_md" => {
+            if !tail.is_empty() {
+                return Err(format!("{raw_command} does not accept arguments"));
+            }
+            crate::code::create_job_md()
+        }
+        "create_input_md" => {
             if !tail.is_empty() {
                 return Err(format!("{raw_command} does not accept arguments"));
             }
@@ -208,5 +216,13 @@ mod tests {
     #[test]
     fn canonical_command_keeps_create_job_md() {
         assert_eq!(canonical_command_for_match("create_job_md"), "create_job_md");
+    }
+
+    #[test]
+    fn canonical_command_maps_cli_create_input_md_alias() {
+        assert_eq!(
+            canonical_command_for_match("cli_create_input_md"),
+            "create_input_md"
+        );
     }
 }

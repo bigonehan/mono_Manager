@@ -1,4 +1,4 @@
-import { Folder, RefreshCw, Settings } from "lucide-react";
+import { Folder, Pencil, RefreshCw } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import type { DetailLayoutProps } from "@/layouts/detail/types";
 import { parseSpecTokens } from "@/layouts/detail/types";
@@ -16,6 +16,8 @@ export function CodeDetailLayout({
   selectedDomain,
   setSelectedDomain,
   refreshDomainFeatures,
+  domainLoading = false,
+  domainError = "",
   openEditor,
   actionsDisabled,
   memoDraft,
@@ -30,12 +32,12 @@ export function CodeDetailLayout({
         <div
           data-testid="detail-pane-project"
           onClick={() => setSelectedPane("project_info")}
-          className="relative border-b border-border px-2 pb-5 pt-1 text-sm"
+          className="relative border-b border-border px-2 pb-12 pt-1 text-sm"
         >
           {selectedPane === "project_info" && (
             <button
-              data-testid="pane-edit-gear"
-              className="absolute right-2 top-0 rounded p-1 text-muted-foreground hover:bg-muted"
+              data-testid="pane-edit-pencil"
+              className="absolute bottom-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
               onClick={(e) => {
                 e.stopPropagation();
                 openEditor();
@@ -43,7 +45,7 @@ export function CodeDetailLayout({
               disabled={actionsDisabled}
               aria-label="edit-pane"
             >
-              <Settings className="h-4 w-4" />
+              <Pencil className="h-4 w-4" />
             </button>
           )}
           <div className="flex items-start justify-between gap-4">
@@ -97,6 +99,8 @@ export function CodeDetailLayout({
         selectedDomain={selectedDomain}
         setSelectedDomain={setSelectedDomain}
         refreshDomainFeatures={refreshDomainFeatures}
+        domainLoading={domainLoading}
+        domainError={domainError}
       />
     </>
   );
@@ -106,15 +110,23 @@ function DomainsPane({
   detail,
   selectedDomain,
   setSelectedDomain,
-  refreshDomainFeatures
+  refreshDomainFeatures,
+  domainLoading,
+  domainError
 }: {
   detail: DetailLayoutProps["detail"];
   selectedDomain: string;
   setSelectedDomain: (domain: string) => void;
-  refreshDomainFeatures: () => void;
+  refreshDomainFeatures: (domain?: string) => Promise<boolean>;
+  domainLoading: boolean;
+  domainError: string;
 }) {
   const domains = detail?.domains ?? [];
   const selected = domains.find((domain) => domain.name === selectedDomain) ?? domains[0] ?? null;
+  const onDomainClick = (domainName: string) => {
+    setSelectedDomain(domainName);
+    void refreshDomainFeatures(domainName);
+  };
 
   return (
     <div>
@@ -126,11 +138,12 @@ function DomainsPane({
             <button
               type="button"
               className="rounded p-1 text-muted-foreground hover:bg-muted"
-              onClick={refreshDomainFeatures}
+              onClick={() => void refreshDomainFeatures(selected?.name)}
               aria-label="domains-refresh"
               data-testid="domains-refresh"
+              disabled={domainLoading}
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className={`h-4 w-4 ${domainLoading ? "animate-spin" : ""}`} />
             </button>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -143,7 +156,7 @@ function DomainsPane({
                     ? "border-primary text-foreground font-semibold"
                     : "border-border text-muted-foreground"
                 }`}
-                onClick={() => setSelectedDomain(domain.name)}
+                onClick={() => onDomainClick(domain.name)}
               >
                 {domain.name}
               </span>
@@ -159,21 +172,30 @@ function DomainsPane({
               </div>
               <div>
                 <div className="space-y-2">
-                  {selected.features.length === 0 && (
-                    <span className="text-sm text-muted-foreground">(empty)</span>
+                  {domainLoading && (
+                    <span className="text-sm text-muted-foreground">기능 분석 중...</span>
                   )}
-                  {selected.features.map((feature) => (
-                    <div key={feature} className="rounded-md border border-border/70 px-2 py-1 text-xs">
-                      {feature.includes(":") ? (
-                        <>
-                          <span className="font-semibold text-foreground">{feature.split(":")[0].trim()}</span>
-                          <span className="text-muted-foreground">: {feature.split(":").slice(1).join(":").trim()}</span>
-                        </>
-                      ) : (
-                        <span className="text-foreground">{feature}</span>
-                      )}
+                  {!domainLoading && domainError && (
+                    <div className="rounded-md border border-red-300 bg-red-50 px-2 py-1 text-xs text-red-700">
+                      {domainError}
                     </div>
-                  ))}
+                  )}
+                  {!domainLoading && !domainError && selected.features.length === 0 && (
+                    <span className="text-sm text-muted-foreground">소스에서 추출된 기능이 없습니다.</span>
+                  )}
+                  {!domainLoading &&
+                    !domainError &&
+                    selected.features.map((feature) => {
+                      const [name, ...rest] = feature.split(":");
+                      const title = name.trim();
+                      const description = rest.join(":").trim() || "소스에서 추출된 기능";
+                      return (
+                        <div key={`${selected.name}-${title}-${description}`} className="rounded-md border border-border/70 px-2 py-1 text-xs">
+                          <span className="font-semibold text-foreground">{title || feature.trim()}</span>
+                          <span className="text-muted-foreground">: {description}</span>
+                        </div>
+                      );
+                    })}
                 </div>
               </div>
             </div>

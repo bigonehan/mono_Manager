@@ -29,12 +29,14 @@ export async function installMockSpeechRecognition(
       continuous = true;
       interimResults = true;
       lang = "ko-KR";
+      private started = false;
       onstart: null | (() => void) = null;
       onend: null | (() => void) = null;
       onerror: null | ((event: unknown) => void) = null;
       onresult: null | ((event: unknown) => void) = null;
 
       start() {
+        this.started = true;
         if (this.onstart) this.onstart();
         const transcriptEntry = queuedTranscripts[Math.min(transcriptIndex, queuedTranscripts.length - 1)] ?? "";
         transcriptIndex += 1;
@@ -57,11 +59,12 @@ export async function installMockSpeechRecognition(
               results: eventResults
             });
           }
-          if (this.onend) this.onend();
         }, 50);
       }
 
       stop() {
+        if (!this.started) return;
+        this.started = false;
         if (this.onend) this.onend();
       }
     }

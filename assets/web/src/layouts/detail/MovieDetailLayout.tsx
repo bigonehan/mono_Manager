@@ -1,4 +1,4 @@
-import { Clapperboard, Settings } from "lucide-react";
+import { Clapperboard, Pencil } from "lucide-react";
 import type { DetailLayoutProps } from "@/layouts/detail/types";
 import { parseSpecTokens } from "@/layouts/detail/types";
 import { DetailTabsPane } from "@/layouts/detail/DetailTabsPane";
@@ -17,12 +17,12 @@ export function MovieDetailLayout({
       <section
         data-testid="detail-pane-project"
         onClick={() => setSelectedPane("project_info")}
-        className="relative border-b border-border pb-5 pt-5 text-sm"
+        className="relative border-b border-border pb-12 pt-5 text-sm"
       >
         {selectedPane === "project_info" && (
           <button
-            data-testid="pane-edit-gear"
-            className="absolute right-2 top-2 rounded p-1 text-muted-foreground hover:bg-muted"
+            data-testid="pane-edit-pencil"
+            className="absolute bottom-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
             onClick={(e) => {
               e.stopPropagation();
               openEditor();
@@ -30,7 +30,7 @@ export function MovieDetailLayout({
             disabled={actionsDisabled}
             aria-label="edit-pane"
           >
-            <Settings className="h-4 w-4" />
+            <Pencil className="h-4 w-4" />
           </button>
         )}
         <div className="flex items-center gap-2 text-muted-foreground">
