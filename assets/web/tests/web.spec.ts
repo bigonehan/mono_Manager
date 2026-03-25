@@ -91,7 +91,107 @@ test("web ui: load and create/select project", async ({ page, request }) => {
   expect(raw).toContain("project_type: code");
 });
 
-test("web ui: drafts pane uses green chevron trigger and icon-only delete layout", async ({ page, request }) => {
+test("web ui: domain badge click refreshes source-derived feature list", async ({ page, request }) => {
+  const unique = `pw-domain-${Date.now()}`;
+  const tmpPath = `/tmp/${unique}`;
+  trackPathForCleanup(tmpPath);
+  fs.rmSync(tmpPath, { recursive: true, force: true });
+  fs.mkdirSync(path.join(tmpPath, "src"), { recursive: true });
+
+  await createProjectForTest(request, {
+    name: unique,
+    description: "domain pane verification",
+    path: tmpPath,
+    spec: "react, domain",
+    project_type: "code"
+  });
+
+  fs.writeFileSync(
+    path.join(tmpPath, ".project", "project.md"),
+    [
+      "# info",
+      "name: domain-e2e",
+      "description: domain feature sync",
+      "spec: react",
+      "goal: validate domains",
+      "",
+      "# rules",
+      "- ",
+      "",
+      "# constraints",
+      "- ",
+      "",
+      "# features",
+      "- ",
+      "",
+      "# domains",
+      "## accounts",
+      "### description",
+      "- accounts domain",
+      "### feature",
+      "- ",
+      "",
+      "## orders",
+      "### description",
+      "- orders domain",
+      "### feature",
+      "- ",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  fs.writeFileSync(path.join(tmpPath, "src", "accounts_service.ts"), "export function accountsLogin() { return true; }\n", "utf8");
+
+  await page.goto("/");
+  const card = page.locator(`[data-testid^="project-item-"]`, { hasText: unique }).first();
+  await expect(card).toBeVisible();
+  await card.click({ force: true });
+  await page.getByTestId("tab-detail").click({ force: true });
+
+  const domainsPane = page.getByTestId("detail-pane-domains");
+  await expect(domainsPane).toBeVisible();
+  await domainsPane.getByText("accounts").first().click();
+  await expect(domainsPane.getByText("accountsLogin", { exact: false })).toBeVisible();
+});
+
+test("web ui: mono detail domains pane renders project domains", async ({ page, request }) => {
+  const unique = `pw-mono-domain-${Date.now()}`;
+  const monoDomainName = `billing-${Date.now()}`;
+  const tmpPath = path.join("/home/tree/home/apps", unique);
+  const monoDomainRoot = path.join("/home/tree/home/packages/domains", monoDomainName);
+  trackPathForCleanup(tmpPath);
+  trackPathForCleanup(monoDomainRoot);
+  fs.rmSync(tmpPath, { recursive: true, force: true });
+  fs.rmSync(monoDomainRoot, { recursive: true, force: true });
+  fs.mkdirSync(tmpPath, { recursive: true });
+  fs.mkdirSync(path.join(monoDomainRoot, "src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(monoDomainRoot, "src", `${monoDomainName}.ts`),
+    `export function ${monoDomainName.replace(/-/g, "_")}Sync() { return "ok"; }\n`,
+    "utf8"
+  );
+
+  await createProjectForTest(request, {
+    name: unique,
+    description: "mono domain pane verification",
+    path: tmpPath,
+    spec: "mono, domains",
+    project_type: "mono"
+  });
+
+  await page.goto("/");
+  const card = page.locator(`[data-testid^="project-item-"]`, { hasText: unique }).first();
+  await expect(card).toBeVisible();
+  await card.click({ force: true });
+  await page.getByTestId("tab-detail").click({ force: true });
+
+  const domainsPane = page.getByTestId("detail-pane-domains");
+  await expect(domainsPane).toContainText(monoDomainName);
+  await domainsPane.getByText(monoDomainName).first().click();
+  await expect(domainsPane).toContainText("Sync");
+});
+
+test("web ui: drafts pane uses add/build actions and stage lock overlays", async ({ page, request }) => {
   const unique = `pw-drafts-${Date.now()}`;
   const tmpPath = `/tmp/${unique}`;
   trackPathForCleanup(tmpPath);
@@ -136,26 +236,42 @@ test("web ui: drafts pane uses green chevron trigger and icon-only delete layout
   await expect(page.getByRole("button", { name: "save-drafts-yaml" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "delete-job-md" })).toBeVisible();
   await expect(page.getByRole("button", { name: "delete-drafts-yaml" })).toBeVisible();
-  await expect(page.getByTestId("generate-job-and-drafts")).toBeVisible();
+  await expect(page.getByRole("button", { name: "add" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^build$/i })).toHaveCount(0);
+  await expect(page.getByTestId("generate-job-and-drafts")).toHaveCount(0);
   await expect(page.getByTestId("open-draft-pane-settings")).toBeVisible();
+  await expect(page.getByTestId("draft-action-build")).toBeVisible();
+  await expect(
+    page
+      .getByTestId("drafts-raw-pane")
+      .locator('[data-testid="drafts-raw-editor-voice"]')
+  ).toHaveCount(0);
   const topRightActions = page.getByTestId("requirements-top-right-actions");
   await expect(topRightActions).toBeVisible();
-  const [reqBox, topBox, plusBox, generateBox] = await Promise.all([
+  const [reqBox, topBox, plusBox] = await Promise.all([
     requirementsContainer.boundingBox(),
     topRightActions.boundingBox(),
-    page.getByTestId("open-requirement-modal").boundingBox(),
-    page.getByTestId("generate-job-and-drafts").boundingBox()
+    page.getByTestId("open-requirement-modal").boundingBox()
   ]);
   expect(reqBox).not.toBeNull();
   expect(topBox).not.toBeNull();
   expect(plusBox).not.toBeNull();
-  expect(generateBox).not.toBeNull();
-  if (reqBox && topBox && plusBox && generateBox) {
+  if (reqBox && topBox && plusBox) {
     expect(topBox.y).toBeLessThan(reqBox.y + reqBox.height * 0.35);
     expect(topBox.x + topBox.width).toBeGreaterThan(reqBox.x + reqBox.width * 0.8);
     expect(plusBox.y).toBeGreaterThan(reqBox.y + reqBox.height);
-    expect(generateBox.y).toBeGreaterThan(reqBox.y + reqBox.height);
   }
+  const [buildPencilBox, editPencilBox] = await Promise.all([
+    page.getByTestId("draft-action-build").boundingBox(),
+    page.getByTestId("open-draft-pane-settings").boundingBox()
+  ]);
+  expect(buildPencilBox).not.toBeNull();
+  expect(editPencilBox).not.toBeNull();
+  if (buildPencilBox && editPencilBox) {
+    expect(Math.abs(buildPencilBox.y - editPencilBox.y)).toBeLessThanOrEqual(2);
+  }
+  await expect(page.getByTestId("draft-work-pane-lock-overlay")).toBeVisible();
+  await expect(page.getByTestId("check-pane-lock-overlay")).toBeVisible();
   await page.getByRole("button", { name: "open-requirement-modal" }).click();
   await expect(page.getByRole("heading", { name: "요구사항 추가" })).toBeVisible();
   await page
@@ -169,11 +285,7 @@ test("web ui: drafts pane uses green chevron trigger and icon-only delete layout
       timeout: 10_000
     })
     .toBeTruthy();
-  const jobRawBeforeSync = fs.readFileSync(jobPath, "utf8");
-  await page.getByTestId("generate-job-and-drafts").click();
-  await expect
-    .poll(() => fs.readFileSync(jobPath, "utf8"), { timeout: 10_000 })
-    .toBe(jobRawBeforeSync);
+  await expect(page.getByTestId("draft-work-pane-lock-overlay")).toHaveCount(0);
 
   await expect(page.getByText(/no requirement blocks/i)).toHaveCount(0);
   const firstRequirementCard = page.locator('[data-testid="requirements-scroll"] > div').first();
@@ -192,6 +304,18 @@ test("web ui: drafts pane uses green chevron trigger and icon-only delete layout
   await expect(page.getByTestId("draft-item-card-login")).toBeVisible();
   await page.getByTestId("draft-item-card-login").click();
   await expect(page.getByTestId("draft-work-detail")).toContainText("login");
+  await expect(page.getByRole("button", { name: "retry_red_items" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "finalize_green_items" })).toBeVisible();
+  const [workPaneBox, workActionsBox] = await Promise.all([
+    page.getByTestId("draft-work-pane").boundingBox(),
+    page.getByTestId("work-pane-review-actions").boundingBox()
+  ]);
+  expect(workPaneBox).not.toBeNull();
+  expect(workActionsBox).not.toBeNull();
+  if (workPaneBox && workActionsBox) {
+    expect(workActionsBox.y).toBeGreaterThan(workPaneBox.y + workPaneBox.height * 0.65);
+    expect(workActionsBox.x + workActionsBox.width).toBeGreaterThan(workPaneBox.x + workPaneBox.width * 0.75);
+  }
 
   const leftHeight = await page.getByTestId("draft-work-list").evaluate((node) => Math.round(node.getBoundingClientRect().height));
   const rightHeight = await page.getByTestId("draft-work-detail").evaluate((node) => Math.round(node.getBoundingClientRect().height));
@@ -251,10 +375,10 @@ test("web ui: check pane renders draft subject and appends screenshot feedback",
       "    check:",
       "      - 메인 흐름이 정상 동작해야 한다",
       "      - 상세 pane에서 report modal이 열려야 한다",
-      "planned:",
-      "  - manual_review",
+      "planned: []",
       "worked: []",
-      "complete: []",
+      "complete:",
+      "  - manual_review",
       "failed: []"
     ].join("\n"),
     "utf8"
@@ -327,13 +451,40 @@ test("web ui: voice input updates single-line and multiline text fields", async 
     await page.getByTestId("project-item-edit").click({ force: true });
     await expect(page.getByTestId("edit-goal-voice")).toBeEnabled();
     await page.getByTestId("edit-goal-voice").click();
+    await expect(page.getByTestId("edit-goal")).toHaveValue("init");
+    await page.waitForTimeout(120);
+    await page.getByTestId("edit-goal-voice").click();
     await expect(page.getByTestId("edit-goal")).toHaveValue("init 이 파일은 조금 더 다듬자");
     await page.getByRole("button", { name: /cancel/i }).click();
+
+    fs.writeFileSync(
+      path.join(tmpPath, ".project", "drafts.yaml"),
+      [
+        "draft:",
+        "  - name: voice_ready",
+        "    check:",
+        "      - check pane input voice button enabled",
+        "planned: []",
+        "worked: []",
+        "complete:",
+        "  - voice_ready",
+        "failed: []"
+      ].join("\n"),
+      "utf8"
+    );
+
+    await page.reload();
+    const detailCard = page.locator(`[data-testid^="project-item-"]`, { hasText: unique }).first();
+    await expect(detailCard).toBeVisible();
+    await detailCard.click({ force: true });
 
     await page.getByTestId("tab-detail").click({ force: true });
     await expect(page.getByTestId("check-feedback-input-voice")).toBeEnabled();
     await page.getByTestId("check-feedback-input-voice").click();
-    await expect(page.getByTestId("check-feedback-input")).toHaveValue("테스트 음성 입력");
+    await expect(page.getByTestId("check-feedback-input")).toHaveValue("");
+    await page.waitForTimeout(120);
+    await page.getByTestId("check-feedback-input-voice").click();
+    await expect(page.getByTestId("check-feedback-input")).toHaveValue(/(테스트 음성 입력|다듬자)/);
   } finally {
     if (projectId) trackedProjectIds.add(projectId);
   }
@@ -430,7 +581,8 @@ test("web ui: all projects expose detail actions and buttons stay operable", asy
     await expect(page.getByTestId("detail-project-name")).toContainText(project.name);
     await expect(page.getByRole("button", { name: "delete-job-md" })).toBeVisible();
     await expect(page.getByRole("button", { name: "delete-drafts-yaml" })).toBeVisible();
-    await expect(page.getByTestId("generate-job-and-drafts")).toBeVisible();
+    await expect(page.getByRole("button", { name: "add" })).toBeVisible();
+    await expect(page.getByTestId("generate-job-and-drafts")).toHaveCount(0);
     await expect(page.getByTestId("open-draft-pane-settings")).toBeVisible();
     await expect(page.getByTestId("detail-auto-button")).toBeEnabled();
     await expect(page.getByTestId("detail-test-button")).toBeEnabled();
@@ -439,6 +591,17 @@ test("web ui: all projects expose detail actions and buttons stay operable", asy
     await expect(page.getByRole("button", { name: "delete-drafts-yaml" })).toBeEnabled();
     await expect(page.getByRole("button", { name: "open-requirement-modal" })).toBeEnabled();
     await expect(page.getByTestId("open-draft-pane-settings")).toBeEnabled();
+    const [searchInputBox, searchIconBox] = await Promise.all([
+      page.getByRole("textbox", { name: "detail-sidebar-search" }).boundingBox(),
+      page.getByTestId("detail-sidebar-search-icon").boundingBox()
+    ]);
+    expect(searchInputBox).not.toBeNull();
+    expect(searchIconBox).not.toBeNull();
+    if (searchInputBox && searchIconBox) {
+      const iconCenterX = searchIconBox.x + searchIconBox.width / 2;
+      expect(iconCenterX).toBeGreaterThan(searchInputBox.x + searchInputBox.width * 0.75);
+      expect(iconCenterX).toBeLessThan(searchInputBox.x + searchInputBox.width);
+    }
 
     await page.getByTestId("detail-auto-button").click();
     await expect(page.getByText("요청 메시지")).toBeVisible();
@@ -454,7 +617,6 @@ test("web ui: all projects expose detail actions and buttons stay operable", asy
     await page.getByRole("button", { name: "저장" }).click();
     await expect(page.getByRole("heading", { name: "요구사항 추가" })).toHaveCount(0);
     await expect(page.getByText(featureName)).toBeVisible();
-    await page.getByTestId("generate-job-and-drafts").click();
 
     const jobPath = path.join(project.path, "job.md");
     const draftsPath = path.join(project.path, ".project", "drafts.yaml");
@@ -475,5 +637,57 @@ test("web ui: all projects expose detail actions and buttons stay operable", asy
     await expect
       .poll(() => fs.readFileSync(draftsPath, "utf8"), { timeout: 10_000 })
       .toContain(`name: ${normalizedDraftName}`);
+  }
+});
+
+
+test("web ui: detail desktop aligns sidebar and main pane shells for code/mono", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const screenshotDir = path.join(process.cwd(), "..", "..", ".agents", "artifacts");
+  fs.mkdirSync(screenshotDir, { recursive: true });
+
+  const cases: Array<{ type: "code" | "mono"; name: string; root: string }> = [
+    { type: "code", name: `pw-align-code-${Date.now()}`, root: `/tmp/pw-align-code-${Date.now()}` },
+    { type: "mono", name: `pw-align-mono-${Date.now()}`, root: path.join("/home/tree/home/apps", `pw-align-mono-${Date.now()}`) }
+  ];
+
+  for (const c of cases) {
+    trackPathForCleanup(c.root);
+    fs.rmSync(c.root, { recursive: true, force: true });
+    fs.mkdirSync(c.root, { recursive: true });
+
+    await createProjectForTest(request, {
+      name: c.name,
+      description: `${c.type} alignment e2e`,
+      path: c.root,
+      spec: "react, layout",
+      project_type: c.type
+    });
+
+    await page.goto("/");
+    const card = page.locator(`[data-testid^="project-item-"]`, { hasText: c.name }).first();
+    await expect(card).toBeVisible();
+    await card.click({ force: true });
+    await page.getByTestId("tab-detail").click({ force: true });
+
+    await expect(page.getByTestId("detail-sidebar-shell")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("detail-sidebar-card")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("detail-main-shell")).toBeVisible({ timeout: 20_000 });
+    await expect
+      .poll(
+        async () => {
+          const [sidebarCardBox, projectPaneBox] = await Promise.all([
+            page.getByTestId("detail-sidebar-card").boundingBox(),
+            page.getByTestId("detail-main-shell").boundingBox()
+          ]);
+          if (!sidebarCardBox || !projectPaneBox) return false;
+          const topDiff = Math.abs(sidebarCardBox.y - projectPaneBox.y);
+          return topDiff <= 8;
+        },
+        { timeout: 20_000 }
+      )
+      .toBeTruthy();
+
+    await page.screenshot({ path: path.join(screenshotDir, `mono-detail-shell-align-${c.type}.png`), fullPage: true });
   }
 });

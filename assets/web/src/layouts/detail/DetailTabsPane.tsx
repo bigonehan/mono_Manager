@@ -1,4 +1,4 @@
-import { Settings } from "lucide-react";
+import { Pencil } from "lucide-react";
 import type { DetailPane } from "@/store/orc-store";
 
 const paneLabelClass = "mb-3 px-2 text-base font-bold uppercase tracking-wide text-foreground/80";
@@ -106,10 +106,10 @@ export function DetailTabsPane({
       : "rules";
 
   return (
-    <div>
+    <div className="mt-4">
       {sectionLabel && <div className={paneLabelClass}>{sectionLabel}</div>}
       <div className="relative">
-        <div className="flex flex-wrap items-end justify-end gap-2 lg:absolute lg:right-3 lg:top-0 lg:-translate-y-full">
+        <div className="mb-2 flex flex-wrap items-end justify-end gap-2 px-2">
           {["rules", "constraints", "features"].map((tab) => (
             <button
               key={`detail-tab-${tab}`}
@@ -125,26 +125,26 @@ export function DetailTabsPane({
               {tab}
             </button>
           ))}
-          <button
-            data-testid={`pane-edit-gear-${activePane}`}
-            className="mb-1 rounded p-1 text-muted-foreground hover:bg-muted"
-            onClick={openEditor}
-            disabled={actionsDisabled}
-            aria-label={`edit-pane-${activePane}`}
-          >
-            <Settings className="h-4 w-4" />
-          </button>
         </div>
-        <section data-testid="detail-pane-lists" className="overflow-hidden rounded-2xl border border-border bg-white text-sm lg:border-x lg:border-b lg:border-t-0">
+        <section data-testid="detail-pane-lists" className="relative overflow-hidden rounded-2xl border border-border bg-white text-sm">
         <div
           data-testid={`detail-pane-${activePane}`}
-          className="h-[320px] min-h-[320px] overflow-y-auto bg-white p-3"
+          className="h-[320px] min-h-[320px] overflow-y-auto bg-white p-3 pb-14"
           onClick={() => setSelectedPane(activePane)}
         >
           {activePane === "rules" && <ListRows values={rules} />}
           {activePane === "constraints" && <ListRows values={constraints} />}
           {activePane === "features" && <FeatureRows values={features} />}
         </div>
+        <button
+          data-testid={`pane-edit-pencil-${activePane}`}
+          className="absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
+          onClick={openEditor}
+          disabled={actionsDisabled}
+          aria-label={`edit-pane-${activePane}`}
+        >
+          <Pencil className="h-4 w-4" />
+        </button>
         </section>
       </div>
     </div>

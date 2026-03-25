@@ -10,7 +10,8 @@
     "check": "astro check",
     "test:unit": "node --test --experimental-strip-types tests/unit/*.test.ts",
     "test:e2e": "playwright test",
-    "test:e2e:end-hook": "playwright test --grep \"all projects expose detail actions and buttons stay operable\""
+    "test:e2e:end-hook": "playwright test --grep \"all projects expose detail actions and buttons stay operable\"",
+    "test:e2e:design-rules": "playwright test --grep \"web ui: detail desktop aligns sidebar and main pane shells for code/mono\""
   },
   "dependencies": {
     "@astrojs/node": "^9.5.1",

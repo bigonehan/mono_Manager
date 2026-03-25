@@ -1,6 +1,10 @@
-# plan
-- `orc clit test`/웹 e2e 테스트 이후 테스트 전용 프로젝트를 자동 정리한다.
-- 테스트가 만든 `/tmp` 경로와 API 프로젝트 레코드를 `afterEach`에서 강제 삭제한다.
+
+## status
+- [1774412278] LLM_START | codex exec [# 컨텍스트] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=240s
+- [1774412239] LLM_WAIT | [orc-status] codex exec [# 컨텍스트] attempt 1/2 | elapsed=60s | waiting for llm response
+- [1774412179] LLM_START | codex exec [# 컨텍스트] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=240s
+- [1774412179] LLM_START | codex exec [# 컨텍스트] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=240s
+` 경로와 API 프로젝트 레코드를 `afterEach`에서 강제 삭제한다.
 - ORC 체인(add_orc_drafts -> impl_orc_code -> check_orc_code -> clit test)을 timeout 180s, 단계별 최대 2회 재시도로 실행하고 결과를 기록한다.
 
 # requirement
@@ -44,11 +48,12 @@
 # task
 ## planned
 ## work
+- cli_create_job_md
 - rust_cli_workspace
 - project_documentation
 - cli_rust_orchestra
 - cli_help
-- cli_create_job_md
+- cli_create_input_md
 - cli_create_code_draft
 - cli_impl_code_draft
 - cli_test
@@ -93,3 +98,9 @@
 - add_orc_drafts cli_create_code_draft : codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
 - add_orc_drafts cli_impl_code_draft : codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
 - add_orc_drafts cli_test : codex exec [너는 ORC draft_item 생성기다.] attempt 2/2 timed out after 10s
+
+## status
+- [1774412278] LLM_START | codex exec [# 컨텍스트] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=240s
+- [1774412239] LLM_WAIT | [orc-status] codex exec [# 컨텍스트] attempt 1/2 | elapsed=60s | waiting for llm response
+- [1774412179] LLM_START | codex exec [# 컨텍스트] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=240s
+- [1774412179] LLM_START | codex exec [# 컨텍스트] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=240s

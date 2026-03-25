@@ -385,6 +385,13 @@ fn build_draft_item_from_requirement(req: &JobRequirement) -> DraftItemDoc {
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .collect();
+    let normalized_rules: Vec<String> = req
+        .rules
+        .iter()
+        .map(|r| r.trim())
+        .filter(|r| !r.is_empty())
+        .map(|r| r.to_string())
+        .collect();
     DraftItemDoc {
         name: key.clone(),
         state: "planned".to_string(),
@@ -392,7 +399,7 @@ fn build_draft_item_from_requirement(req: &JobRequirement) -> DraftItemDoc {
         domain: vec!["core".to_string()],
         depends_on: vec![],
         scope: vec![format!("feature:{}", key)],
-        rule: req.rules.clone(),
+        rule: normalized_rules,
         step: if normalized_steps.is_empty() {
             vec!["trigger -> process -> result".to_string()]
         } else {
@@ -981,6 +988,36 @@ mod tests {
         let item = build_draft_item_from_requirement(&req);
 
         assert_eq!(item.step, vec!["trigger -> process -> result".to_string()]);
+    }
+
+    #[test]
+    fn build_draft_item_from_requirement_filters_blank_rules() {
+        let req = JobRequirement {
+            name: "rust_cli_workspace".to_string(),
+            rules: vec![
+                "".to_string(),
+                "   ".to_string(),
+                "must pass unit tests".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        let item = build_draft_item_from_requirement(&req);
+
+        assert_eq!(item.rule, vec!["must pass unit tests".to_string()]);
+    }
+
+    #[test]
+    fn build_draft_item_from_requirement_filters_blank_rules_for_rust_cli_workspace() {
+        let req = JobRequirement {
+            name: "rust_cli_workspace".to_string(),
+            rules: vec!["".to_string(), "   ".to_string(), "must_keep".to_string()],
+            ..Default::default()
+        };
+
+        let item = build_draft_item_from_requirement(&req);
+
+        assert_eq!(item.rule, vec!["must_keep".to_string()]);
     }
 
     #[test]

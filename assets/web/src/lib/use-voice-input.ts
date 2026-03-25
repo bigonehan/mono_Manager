@@ -127,6 +127,8 @@ export function useVoiceInput<T extends VoiceTargetElement>({
 }) {
   const recognitionRef = React.useRef<BrowserSpeechRecognition | null>(null);
   const baseValueRef = React.useRef("");
+  const pendingTranscriptRef = React.useRef("");
+  const commitOnEndRef = React.useRef(false);
   const [supported, setSupported] = React.useState(false);
   const [listening, setListening] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -146,27 +148,35 @@ export function useVoiceInput<T extends VoiceTargetElement>({
     recognition.onstart = () => {
       setListening(true);
       setError("");
+      pendingTranscriptRef.current = "";
+      commitOnEndRef.current = false;
     };
     recognition.onend = () => {
       setListening(false);
+      const element = elementRef.current;
+      if (commitOnEndRef.current && element) {
+        const pending = normalizeTranscript(pendingTranscriptRef.current);
+        if (pending.length > 0) {
+          setElementValue(element, getJoinedTranscript(baseValueRef.current, pending));
+        }
+      }
+      pendingTranscriptRef.current = "";
+      commitOnEndRef.current = false;
     };
     recognition.onerror = (event) => {
       setError(getSpeechErrorMessage(event.error));
       setListening(false);
+      pendingTranscriptRef.current = "";
+      commitOnEndRef.current = false;
     };
     recognition.onresult = (event) => {
-      const element = elementRef.current;
-      if (!element) return;
       const segments: string[] = [];
       for (let index = 0; index < event.results.length; index += 1) {
         const transcript = event.results[index]?.[0]?.transcript ?? "";
         if (normalizeTranscript(transcript).length === 0) continue;
         segments.push(transcript);
       }
-      setElementValue(
-        element,
-        getJoinedTranscript(baseValueRef.current, mergeTranscriptSegments(segments))
-      );
+      pendingTranscriptRef.current = mergeTranscriptSegments(segments);
     };
     recognitionRef.current = recognition;
 
@@ -186,6 +196,7 @@ export function useVoiceInput<T extends VoiceTargetElement>({
 
   React.useEffect(() => {
     if (!disabled || !listening) return;
+    commitOnEndRef.current = false;
     try {
       recognitionRef.current?.stop();
     } catch {
@@ -201,10 +212,13 @@ export function useVoiceInput<T extends VoiceTargetElement>({
       return;
     }
     if (listening) {
+      commitOnEndRef.current = true;
       recognition.stop();
       return;
     }
     baseValueRef.current = element.value ?? "";
+    pendingTranscriptRef.current = "";
+    commitOnEndRef.current = false;
     setError("");
     try {
       recognition.lang =
