@@ -4,3 +4,4 @@
 /assets/web/node_modules/
 build/
 dist/
+/.agents/artifacts/
