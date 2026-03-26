@@ -274,6 +274,11 @@ pub(crate) fn create_job_md() -> Result<String, String> {
     Ok("create_job_md completed".to_string())
 }
 
+pub(crate) fn create_input_md() -> Result<String, String> {
+    add_orc_drafts_from(Path::new("."))?;
+    Ok("create_input_md completed".to_string())
+}
+
 fn read_job_md_prompt_template() -> Result<String, String> {
     let candidates = [
         crate::source_root()
@@ -481,6 +486,7 @@ pub(crate) fn flow_rust_orchestra(root: &Path, args: &[String]) -> Result<String
     }
 
     add_orc_drafts_from(root)?;
+    ensure_draft_item_exists(root, "cli_rust_orchestra")?;
 
     Ok(build_rust_orchestra_result(state))
 }
@@ -490,6 +496,17 @@ fn build_rust_orchestra_result(state: &str) -> String {
         "trigger: {} -> process: validate_workspace+add_orc_drafts -> result: cli_rust_orchestra completed",
         state
     )
+}
+
+fn ensure_draft_item_exists(root: &Path, name: &str) -> Result<(), String> {
+    let drafts = load_drafts_doc_from(root)?;
+    if drafts.draft.iter().any(|item| item.name == name) {
+        return Ok(());
+    }
+    Err(format!(
+        "required draft item not found after add_orc_drafts: {}",
+        name
+    ))
 }
 
 // --- Internal Implementation Helpers ---
@@ -714,8 +731,37 @@ fn extract_plain_list_under_header(markdown: &str, header: &str) -> Vec<String> 
 }
 
 fn normalize_feature_key(name: &str) -> String {
-    name.trim().to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect::<String>()
-        .split('_').filter(|s| !s.is_empty()).collect::<Vec<_>>().join("_")
+    let mut normalized = String::new();
+    let chars: Vec<char> = name.trim().chars().collect();
+
+    for (index, ch) in chars.iter().enumerate() {
+        let is_alnum = ch.is_ascii_alphanumeric();
+
+        if ch.is_ascii_uppercase() && index > 0 {
+            let prev = chars[index - 1];
+            let next_is_lower = chars
+                .get(index + 1)
+                .is_some_and(|next| next.is_ascii_lowercase());
+            if prev.is_ascii_lowercase()
+                || prev.is_ascii_digit()
+                || (prev.is_ascii_uppercase() && next_is_lower)
+            {
+                normalized.push('_');
+            }
+        }
+
+        if is_alnum {
+            normalized.push(ch.to_ascii_lowercase());
+        } else {
+            normalized.push('_');
+        }
+    }
+
+    normalized
+        .split('_')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
 }
 
 #[derive(Default)]
@@ -795,6 +841,7 @@ struct ImplRunResult {
 mod tests {
     use super::{
         add_orc_drafts, build_create_job_md_prompt, build_draft_item_from_requirement,
+        create_input_md,
         flow_rust_orchestra, get_workspace_state, load_drafts_doc, normalize_job_md_content,
         job_task_state_change, move_job_task_item, set_draft_item_state, transition_impl_result,
         transition_impl_start, CodeDraftsDoc, DraftItemDoc, JobDoc, JobRequirement,
@@ -978,6 +1025,42 @@ mod tests {
     }
 
     #[test]
+    fn build_draft_item_from_requirement_normalizes_project_documentation_from_camel_case() {
+        let req = JobRequirement {
+            name: "ProjectDocumentation".to_string(),
+            ..Default::default()
+        };
+
+        let item = build_draft_item_from_requirement(&req);
+
+        assert_eq!(item.name, "project_documentation");
+        assert_eq!(item.scope, vec!["feature:project_documentation".to_string()]);
+        assert_eq!(
+            item.constraints,
+            vec!["project_documentation -> project_documentation : requirement 기반 draft item 생성".to_string()]
+        );
+    }
+
+    #[test]
+    fn build_draft_item_from_requirement_normalizes_rust_cli_workspace_from_acronym_camel_case() {
+        let req = JobRequirement {
+            name: "RustCLIWorkspace".to_string(),
+            ..Default::default()
+        };
+
+        let item = build_draft_item_from_requirement(&req);
+
+        assert_eq!(item.name, "rust_cli_workspace");
+        assert_eq!(item.scope, vec!["feature:rust_cli_workspace".to_string()]);
+        assert_eq!(item.tasks, vec!["implement rust_cli_workspace".to_string()]);
+        assert_eq!(
+            item.constraints,
+            vec!["rust_cli_workspace -> rust_cli_workspace : requirement 기반 draft item 생성".to_string()]
+        );
+        assert_eq!(item.check, vec!["verify rust_cli_workspace".to_string()]);
+    }
+
+    #[test]
     fn build_draft_item_from_requirement_uses_default_step_when_input_steps_are_blank() {
         let req = JobRequirement {
             name: "rust_cli_workspace".to_string(),
@@ -1060,6 +1143,29 @@ mod tests {
     }
 
     #[test]
+    fn create_input_md_generates_cli_create_input_md_draft_from_requirement() {
+        with_locked_workspace("create_input_md_generates_draft", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(
+                "job.md",
+                "# requirement\n## cli_create_input_md\n\n# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n",
+            )
+            .expect("write job");
+            fs::write(".project/drafts.yaml", "draft: []\n").expect("write drafts");
+
+            create_input_md().expect("run create_input_md");
+
+            let drafts = load_drafts_doc().expect("load drafts");
+            assert_eq!(drafts.draft.len(), 1);
+            assert_eq!(drafts.draft[0].name, "cli_create_input_md");
+            assert_eq!(
+                drafts.draft[0].constraints,
+                vec!["cli_create_input_md -> cli_create_input_md : requirement 기반 draft item 생성".to_string()]
+            );
+        });
+    }
+
+    #[test]
     fn get_workspace_state_returns_ready_when_required_files_exist() {
         let root = Path::new("/tmp/cli_rust_orchestra_ready_state");
         let _ = fs::remove_dir_all(root);
@@ -1096,6 +1202,28 @@ mod tests {
         assert_eq!(
             err,
             "cli_rust_orchestra does not accept arguments: --dry-run 1"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn flow_rust_orchestra_fails_when_cli_rust_orchestra_requirement_is_missing() {
+        let root = Path::new("/tmp/cli_rust_orchestra_missing_requirement");
+        let _ = fs::remove_dir_all(root);
+        fs::create_dir_all(root.join(".project")).expect("create .project");
+        fs::write(root.join(".project").join("project.md"), "# info\n").expect("write project.md");
+        fs::write(
+            root.join("job.md"),
+            "# requirement\n## cli_help\n\n# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n",
+        )
+        .expect("write job.md");
+        fs::write(root.join(".project").join("drafts.yaml"), "draft: []\n").expect("write drafts.yaml");
+
+        let err = flow_rust_orchestra(root, &[]).expect_err("missing requirement must fail");
+        assert_eq!(
+            err,
+            "required draft item not found after add_orc_drafts: cli_rust_orchestra"
         );
 
         let _ = fs::remove_dir_all(root);

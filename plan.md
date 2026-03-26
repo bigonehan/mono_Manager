@@ -1,12 +1,11 @@
-## 문제
-- `cli_impl_code_draft` 요구사항에서 생성되는 draft item의 `rule` 값에 공백/빈 문자열이 포함되면 그대로 저장된다.
-- requirement 기반 draft item 생성에서 빈 rule을 제거하지 않으면 후속 검증/비교 시 노이즈가 생긴다.
+# 문제
+- `cli_rust_orchestra`가 workspace가 ready이면 성공을 반환하지만, `job.md`에 `cli_rust_orchestra` requirement가 없어도 성공할 수 있다.
+- 이 경우 "requirement 기반 draft item 생성" 제약을 만족하지 못한 채 완료 메시지가 나올 수 있다.
 
-## 해결책
-- `build_draft_item_from_requirement` 시작부에서 `req.rules`를 trim + 빈 값 제거로 정규화한다.
-- 정규화된 rule 배열을 draft item의 `rule` 필드에만 반영하고 기존 생성 포맷(scope/step/tasks/constraints/check)은 유지한다.
-- 단위테스트를 먼저 추가해 빈 rule 제거 동작을 고정한다.
+# 해결책
+- `flow_rust_orchestra` 경로에 요구 feature(`cli_rust_orchestra`) draft 생성 보장 검증을 추가한다.
+- 먼저 테스트를 추가해 requirement 부재 시 실패를 기대하도록 만들고, 이후 구현을 보완한다.
 
-## 검증
-- `cargo test build_draft_item_from_requirement_filters_blank_rules -- --nocapture`
-- `cargo test build_draft_item_from_requirement -- --nocapture`
+# 검증
+- 단위 테스트: requirement 부재 시 `flow_rust_orchestra`가 에러를 반환한다.
+- 단위 테스트: requirement 존재 시 기존처럼 draft를 생성하고 성공 메시지를 반환한다.
