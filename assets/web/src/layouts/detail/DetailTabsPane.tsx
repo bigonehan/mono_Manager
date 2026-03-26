@@ -1,5 +1,7 @@
 import { Pencil } from "lucide-react";
 import type { DetailPane } from "@/store/orc-store";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 const paneLabelClass = "mb-3 px-2 text-base font-bold uppercase tracking-wide text-foreground/80";
 
@@ -12,82 +14,15 @@ type Props = {
   openEditor: () => void;
   actionsDisabled: boolean;
   sectionLabel?: string;
-};
-
-type FeatureGroup = {
-  group: string;
-  items: Array<{ key: string; description: string }>;
-};
-
-const SUFFIX_VERBS = ["create", "read", "update", "delete", "reply", "list", "add", "remove"];
-
-function titleCase(value: string): string {
-  if (!value) return "Misc";
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function inferFeatureGroup(key: string): string {
-  const normalized = key.trim().toLowerCase();
-  if (!normalized) return "Misc";
-  for (const suffix of SUFFIX_VERBS) {
-    if (normalized.endsWith(suffix) && normalized.length > suffix.length) {
-      return normalized.slice(0, normalized.length - suffix.length);
-    }
-  }
-  return "Misc";
-}
-
-function parseFeatureGroups(features: string[]): FeatureGroup[] {
-  const map = new Map<string, Array<{ key: string; description: string }>>();
-  for (const raw of features) {
-    const text = raw.trim();
-    if (!text) continue;
-    const [keyPart, ...descParts] = text.split(":");
-    const key = keyPart.trim();
-    const description = descParts.join(":").trim();
-    const group = titleCase(inferFeatureGroup(key));
-    const current = map.get(group) ?? [];
-    current.push({ key, description });
-    map.set(group, current);
-  }
-  return [...map.entries()].map(([group, items]) => ({ group, items }));
-}
-
-function ListRows({ values }: { values: string[] }) {
-  if (values.length === 0) {
-    return <div className="text-sm text-muted-foreground">(empty)</div>;
-  }
-  return (
-    <div className="space-y-1 text-sm text-foreground">
-      {values.map((value) => (
-        <div key={value}>- {value}</div>
-      ))}
-    </div>
-  );
-}
-
-function FeatureRows({ values }: { values: string[] }) {
-  const grouped = parseFeatureGroups(values);
-  if (grouped.length === 0) {
-    return <div className="text-sm text-muted-foreground">(empty)</div>;
-  }
-  return (
-    <div className="space-y-4">
-      {grouped.map((group) => (
-        <div key={group.group} className="space-y-1">
-          <div className="text-sm font-semibold text-foreground">{group.group}</div>
-          <div className="space-y-1 text-sm text-foreground">
-            {group.items.map((item) => (
-              <div key={`${group.group}-${item.key}`}>
-                - {item.key}
-                {item.description ? `: ${item.description}` : ""}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  editRules: string;
+  editConstraints: string;
+  editFeatures: string;
+  setEditRules: (value: string) => void;
+  setEditConstraints: (value: string) => void;
+  setEditFeatures: (value: string) => void;
+  saveListPane: (pane: "rules" | "constraints" | "features") => Promise<void>;
+  listSaving: boolean;
+  projectInfoSaving?: boolean;
 }
 
 export function DetailTabsPane({
@@ -98,13 +33,27 @@ export function DetailTabsPane({
   setSelectedPane,
   openEditor,
   actionsDisabled,
-  sectionLabel
+  sectionLabel,
+  editRules,
+  editConstraints,
+  editFeatures,
+  setEditRules,
+  setEditConstraints,
+  setEditFeatures,
+  saveListPane,
+  listSaving
 }: Props) {
   const activePane: "rules" | "constraints" | "features" =
     selectedPane === "rules" || selectedPane === "constraints" || selectedPane === "features"
       ? selectedPane
       : "rules";
-
+  const isSaving = actionsDisabled || listSaving;
+  const activeListValue = activePane === "rules" ? editRules : activePane === "constraints" ? editConstraints : editFeatures;
+  const onChangeActiveList = (next: string) => {
+    if (activePane === "rules") setEditRules(next);
+    if (activePane === "constraints") setEditConstraints(next);
+    if (activePane === "features") setEditFeatures(next);
+  };
   return (
     <div className="mt-4">
       {sectionLabel && <div className={paneLabelClass}>{sectionLabel}</div>}
@@ -129,22 +78,45 @@ export function DetailTabsPane({
         <section data-testid="detail-pane-lists" className="relative overflow-hidden rounded-2xl border border-border bg-white text-sm">
         <div
           data-testid={`detail-pane-${activePane}`}
-          className="h-[320px] min-h-[320px] overflow-y-auto bg-white p-3 pb-14"
+          className="h-[320px] min-h-[320px] overflow-hidden bg-white p-3 pb-14"
           onClick={() => setSelectedPane(activePane)}
         >
-          {activePane === "rules" && <ListRows values={rules} />}
-          {activePane === "constraints" && <ListRows values={constraints} />}
-          {activePane === "features" && <FeatureRows values={features} />}
+          <Textarea
+            value={activeListValue}
+            onChange={(e) => onChangeActiveList(e.target.value)}
+            rows={12}
+            className="h-full resize-none border-0 bg-transparent p-0 text-sm focus-visible:ring-0"
+            aria-label={`${activePane}-editor`}
+            disabled={isSaving}
+            placeholder={
+              activePane === "rules"
+                ? "rules"
+                : activePane === "constraints"
+                  ? "constraints"
+                  : "features"
+            }
+          />
         </div>
-        <button
-          data-testid={`pane-edit-pencil-${activePane}`}
-          className="absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
-          onClick={openEditor}
-          disabled={actionsDisabled}
-          aria-label={`edit-pane-${activePane}`}
-        >
-          <Pencil className="h-4 w-4" />
-        </button>
+        <div className="absolute right-3 bottom-3 flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void saveListPane(activePane)}
+            disabled={actionsDisabled || listSaving}
+          >
+            {listSaving ? "saving..." : "save"}
+          </Button>
+          <button
+            data-testid={`pane-edit-pencil-${activePane}`}
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+            onClick={openEditor}
+            disabled={actionsDisabled}
+            aria-label={`edit-pane-${activePane}`}
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        </div>
         </section>
       </div>
     </div>

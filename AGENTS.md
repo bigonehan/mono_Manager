@@ -61,8 +61,8 @@
 - When path validation fails, report the broken stage explicitly and fix wiring before finalizing.
 
 ## Failure Retry Rule
-- If a run fails or a problem is detected, append the failure cause and retry strategy to `.project/feedback.md` immediately.
-- After updating `.project/feedback.md`, apply a concrete fix and rerun the same execution path.
+- If a run fails or a problem is detected, append the failure cause and retry strategy to `job.md` (# clit feedback section) immediately.
+- After updating `job.md` feedback section, apply a concrete fix and rerun the same execution path.
 - Continue this loop until the target path no longer reports the same blocking failure.
 
 ## YAML/MD Format Enforcement Rule
@@ -153,6 +153,16 @@
 - Line 5: `일어날 결과`
 - Keep this output concise and always place it immediately before implementation.
 
+## Full-Scope Execution Gate Rule
+- 사용자가 `전부`, `모두`, `전체`, `다`, `다 지워`, `다 바꿔`를 포함해 지시하면 `Full-Scope Mode`를 강제한다.
+- `Full-Scope Mode`에서는 단일 파일 추정 수정을 금지하고, 먼저 저장소 `tracked file` 전체를 검사한다.
+- 기본 검사 표면은 `git ls-files` 결과 전체다.
+- 1차 검사: 사용자 원문 기준 `primary pattern`을 전수 검색한다.
+- 2차 검사: 경로 변형/출력문구/escape 표현을 포함한 `alias pattern`을 전수 검색한다.
+- 수정 완료 판단은 `primary 0건` + `alias 0건` 동시 충족일 때만 허용한다.
+- 두 조건 중 하나라도 실패하면 완료 보고를 금지하고 같은 루프(검색 -> 수정 -> 재검색)를 즉시 반복한다.
+- 최종 보고에는 검사 범위(`tracked files`), 검사 패턴(`primary/alias`), 0건 확인 결과를 반드시 포함한다.
+
 ## Screenshot Path Memory Rule
 - When the user says `current.png`, resolve it to this fixed directory by default:
   - `/mnt/c/Users/tende/Pictures/Screenshots/current.png`
@@ -169,9 +179,9 @@
   1) 문제 제시 + 해결책 + 검증 기준 설정후 `plan.md` 생성 
   2) 해결책 시도
   3) 검증 실행
-  4) 실패 시  `.project/feedback.md` 생성후 이를 바탕으로 `plan.md`문제를 재설계 
+  4) 실패 시 `job.md`의 `# clit feedback`를 생성/갱신 후 이를 바탕으로 `plan.md`문제를 재설계 
   5) 재 정비된 plan.md 문서를 바탕으로 처음부터 전체 재시작
-- On failure, write/update `.project/feedback.md` and append retry reason to `plan.md` before restarting.
+- On failure, write/update `job.md` (# clit feedback) and append retry reason to `plan.md` before restarting.
 - Do not stop at intermediate logs only; continue until pass or max retry reached.
 
 ## Rule-First Enforcement (Highest Priority)
@@ -184,12 +194,12 @@
   1) write/update `plan.md`
   2) remove and recreate `/home/tree/temp`
   3) run `orc auto` for requested app
-  4) if failed, write `/home/tree/temp/.project/feedback.md` with 문제/미해결점
+  4) if failed, write `/home/tree/temp/job.md`의 `# clit feedback`에 문제/미해결점
   5) reflect feedback into next plan and restart from step 1
 - Keep looping until verification passes or hard technical blocker is confirmed.
 
 ## Feedback->Plan Merge Rule (Highest Priority)
-- After any failure, write/update `.project/feedback.md` first with `문제` and `미해결점`.
+- After any failure, write/update `job.md` first with `문제` and `미해결점`.
 - Then update `plan.md` by merging prior plan + new feedback deltas.
 - The updated `plan.md` must include:
   - new/changed problem statements
@@ -228,7 +238,7 @@
 - 2026-03-06: profile 종속 범위는 prompt/template 로딩(project.md, plan.yaml, drafts.yaml, parallel run) 및 해당 호출 프롬프트로 한정한다.
 - 2026-03-06: 공통 인터페이스는 project/plan/draft/feedback 흐름을 우선 제공하고, 기본 구현체는 code profile로 유지한다.
 - 2026-03-07: 모든 작업 완료 시 `nf -m "<task-name> complete"` 실행을 강제한다. 별도 요청이 없어도 필수로 실행하며 `notify.fish` 직접 호출은 금지한다.
-- 2026-03-07: 사용자가 `/temp` 검증 루프를 요청하면 `/home/tree/temp`를 삭제/재생성 후 `orc auto`를 실행하고, 실패 시 `/home/tree/temp/todo.md`와 `/home/tree/temp/.project/feedback.md`를 작성한 뒤 plan 갱신 후 재시도한다.
+- 2026-03-07: 사용자가 `/temp` 검증 루프를 요청하면 `/home/tree/temp`를 삭제/재생성 후 `orc auto`를 실행하고, 실패 시 `/home/tree/temp/todo.md`와 `/home/tree/temp/job.md`의 `# clit feedback`을 작성한 뒤 plan 갱신 후 재시도한다.
 - 2026-03-07: 사용자가 web UI 확장(`open-ui -w`, assets 기반 frontend, playwright 검증 루프)을 요청한 경우, TUI 기능 목록을 먼저 추출해 `job.md`에 반영한 뒤 구현/검증을 반복한다.
 - 2026-03-07: web UI는 `project`/`detail` 탭 분리 구조를 유지하고, detail 편집은 pane 선택 시 우상단 gear 아이콘으로 진입하는 읽기전용 기본 화면으로 제공한다.
 - 2026-03-07: web UI 상태는 로컬 useState보다 `zustand` 스토어를 우선 사용해 탭/선택/편집/로그를 중앙 관리한다.

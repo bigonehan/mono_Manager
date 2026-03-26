@@ -294,6 +294,8 @@ export default function WebApp() {
   const [sidebarFoldOpen, setSidebarFoldOpen] = useState<Record<string, boolean>>({});
   const [sidebarSearch, setSidebarSearch] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [projectInfoSaving, setProjectInfoSaving] = useState(false);
+  const [detailListSaving, setDetailListSaving] = useState(false);
   const lastSavedMemoRef = useRef("");
   const codeSectionRef = useRef<HTMLDivElement | null>(null);
   const monorepoSectionRef = useRef<HTMLDivElement | null>(null);
@@ -742,6 +744,19 @@ export default function WebApp() {
   }, [detail?.id, detail?.jobEditableRaw, detail?.draftsYamlRaw]);
 
   useEffect(() => {
+    if (!detail) {
+      return;
+    }
+    setEditName(detail.name);
+    setEditDescription(detail.description);
+    setEditSpec(detail.spec);
+    setEditGoal(detail.goal);
+    setEditRules(detail.rules.join("\n"));
+    setEditConstraints(detail.constraints.join("\n"));
+    setEditFeatures(detail.features.join("\n"));
+  }, [detail?.id, detail?.name, detail?.description, detail?.spec, detail?.goal, detail?.rules, detail?.constraints, detail?.features]);
+
+  useEffect(() => {
     if (tab === "project") {
       void loadProjects();
     }
@@ -1151,7 +1166,7 @@ export default function WebApp() {
         pushLog(`feedback add failed: ${String(data.error ?? "unknown error")}`);
         return;
       }
-      pushLog(String(data.output ?? ".project/feedback.md updated"));
+      pushLog(String(data.output ?? "job.md updated"));
       setCheckFeedbackInput("");
       setDetail(data.detail);
     } finally {
@@ -1815,6 +1830,67 @@ export default function WebApp() {
     setEditOpen(false);
   }
 
+  async function saveProjectInfo() {
+    if (!detail) return;
+    setProjectInfoSaving(true);
+    try {
+      const res = await fetch(apiUrl("/api/project-info"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: detail.id,
+          name: editName,
+          description: editDescription,
+          spec: editSpec,
+          goal: editGoal
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        pushLog(`save info failed: ${data.error}`);
+        return;
+      }
+      setDetail(data.detail);
+      pushLog("project info saved");
+      await loadProjects();
+    } catch (error) {
+      pushLog(`save info failed: ${String(error)}`);
+    } finally {
+      setProjectInfoSaving(false);
+    }
+  }
+
+  async function saveListPane(pane: "rules" | "constraints" | "features") {
+    if (!detail) return;
+    setDetailListSaving(true);
+    try {
+      const nextRules = pane === "rules" ? parseLines(editRules) : detail.rules;
+      const nextConstraints = pane === "constraints" ? parseLines(editConstraints) : detail.constraints;
+      const nextFeatures = pane === "features" ? parseLines(editFeatures) : detail.features;
+      const res = await fetch(apiUrl("/api/project-lists"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: detail.id,
+          rules: nextRules,
+          constraints: nextConstraints,
+          features: nextFeatures
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        pushLog(`save lists failed: ${data.error}`);
+        return;
+      }
+      setDetail(data.detail);
+      pushLog("rules/constraints/features saved");
+    } catch (error) {
+      pushLog(`save lists failed: ${String(error)}`);
+    } finally {
+      setDetailListSaving(false);
+    }
+  }
+
   useEffect(() => {
     if (!detail) {
       return;
@@ -2354,6 +2430,24 @@ export default function WebApp() {
               updateMemo={updateMemoRealtime}
               flushMemo={flushMemo}
               memoSaving={memoSaving}
+              editName={editName}
+              editDescription={editDescription}
+              editSpec={editSpec}
+              editGoal={editGoal}
+              setEditName={setEditName}
+              setEditDescription={setEditDescription}
+              setEditSpec={setEditSpec}
+              setEditGoal={setEditGoal}
+              editRules={editRules}
+              editConstraints={editConstraints}
+              editFeatures={editFeatures}
+              setEditRules={setEditRules}
+              setEditConstraints={setEditConstraints}
+              setEditFeatures={setEditFeatures}
+              saveProjectInfo={saveProjectInfo}
+              saveListPane={saveListPane}
+              projectInfoSaving={projectInfoSaving}
+              listSaving={detailListSaving}
             />
             <div>
               <div className={sectionLabelClass}>drafts</div>
@@ -2777,8 +2871,9 @@ export default function WebApp() {
             </div>
           )}
         </div>
+      </div>
+    </div>
       )}
-
       {screenshotPreviewItem && (
         <div className="fixed inset-0 z-50 bg-black/40 p-4">
           <Card className="mx-auto flex h-full w-full max-w-6xl flex-col rounded-2xl">
@@ -2814,7 +2909,7 @@ export default function WebApp() {
           <Card className="mx-auto flex h-full w-full max-w-5xl flex-col rounded-2xl">
             <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
               <div className="min-w-0">
-                <CardTitle className="truncate">.project/feedback.md report</CardTitle>
+                <CardTitle className="truncate">job.md feedback report</CardTitle>
                 <div className="mt-1 text-sm text-muted-foreground">{detail?.name ?? "selected project"}</div>
               </div>
               <button

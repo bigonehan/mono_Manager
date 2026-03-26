@@ -384,8 +384,31 @@ test("web ui: check pane renders draft subject and appends screenshot feedback",
     "utf8"
   );
   fs.writeFileSync(
-    path.join(tmpPath, ".project", "feedback.md"),
-    ["# 결과", "- rc done", "", "# 미해결", "- 없음", "", "# 보완", "- 초기 보완"].join("\n"),
+    path.join(tmpPath, "job.md"),
+    [
+      "# plan",
+      "",
+      "# requirement",
+      "## manual_review",
+      "",
+      "# task",
+      "## planned",
+      "## work",
+      "## check",
+      "## complete",
+      "## fail",
+      "",
+      "# problems",
+      "# clit feedback",
+      "## 결과",
+      "- rc done",
+      "",
+      "### 미해결",
+      "- 없음",
+      "",
+      "### 보완",
+      "- 초기 보완"
+    ].join("\n"),
     "utf8"
   );
   fs.mkdirSync(path.join(tmpPath, ".project", "screenshot"), { recursive: true });
@@ -415,7 +438,7 @@ test("web ui: check pane renders draft subject and appends screenshot feedback",
   await page.getByTestId("check-feedback-add").click();
 
   await expect
-    .poll(() => fs.readFileSync(path.join(tmpPath, ".project", "feedback.md"), "utf8"), {
+    .poll(() => fs.readFileSync(path.join(tmpPath, "job.md"), "utf8"), {
       timeout: 10_000
     })
     .toContain(`{${path.join(tmpPath, ".project", "screenshot", "capture-one.png")}}에서 버튼 여백을 정리한다`);

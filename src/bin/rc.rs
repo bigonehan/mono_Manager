@@ -18,14 +18,14 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const FEEDBACK_FILE: &str = ".project/feedback.md";
-const PLAN_FILE: &str = "plan.yaml";
-const DRAFTS_FILE: &str = "drafts.yaml";
+const DRAFTS_FILE: &str = ".project/drafts.yaml";
+const JOB_FILE: &str = "job.md";
 const SESSION_LOG_FILE: &str = ".rc-session-log.json";
 const EXECUTION_RECORD_FILE: &str = ".rc-execution-records.jsonl";
 const RUN_LOCK_FILE: &str = ".rc-run.lock";
 const PROJECT_DIR: &str = ".project";
 const PROJECT_LOG_FILE: &str = ".project/log.md";
+const SCREENSHOT_DIR: &str = ".project/screenshot";
 const STEP_HEARTBEAT_SEC: u64 = 15;
 
 #[derive(Debug, Parser)]
@@ -413,6 +413,11 @@ fn execute_test(input: ParsedCliInput, config: &Config) -> Result<()> {
     let _run_lock = acquire_run_lock(&workdir)?;
     fs::create_dir_all(workdir.join(PROJECT_DIR))
         .with_context(|| format!("failed to create {}", PROJECT_DIR))?;
+    fs::create_dir_all(workdir.join(SCREENSHOT_DIR))
+        .with_context(|| format!("failed to create {}", SCREENSHOT_DIR))?;
+    cleanup_legacy_rc_artifacts(&workdir)?;
+    fs::create_dir_all(input.target_path.join(SCREENSHOT_DIR))
+        .with_context(|| format!("failed to create {}", SCREENSHOT_DIR))?;
     let runner = detect_runner(&input.target_path)?;
     let plan_body = build_plan(
         &input.target_path,
@@ -421,8 +426,7 @@ fn execute_test(input: ParsedCliInput, config: &Config) -> Result<()> {
         input.headed,
         config,
     )?;
-    fs::write(workdir.join(PLAN_FILE), &plan_body)
-        .with_context(|| format!("failed to write {}", PLAN_FILE))?;
+    append_to_job_md(&workdir.join(JOB_FILE), &format!("{}\n", plan_body))?;
     let drafts = build_drafts(
         &input.target_path,
         &input.mode,
@@ -461,7 +465,7 @@ fn execute_test(input: ParsedCliInput, config: &Config) -> Result<()> {
     recorder.record(
         "plan",
         "generated",
-        format!("{} generated", PLAN_FILE),
+        "job.md plan appended".to_string(),
         true,
     );
     let check_result = run_check(&input.target_path, &drafts, &mut log, config, &mut recorder);
@@ -683,7 +687,7 @@ fn fallback_plan_body(
     config: &Config,
 ) -> String {
     format!(
-        "# plan\n\n- path: {}\n- runner: {:?}\n- headed: {:?}\n- mode: {}\n- execute: {}\n- expected: .project/feedback.md, drafts.yaml, session logs, captures\n",
+        "# plan\n\n- path: {}\n- runner: {:?}\n- headed: {:?}\n- mode: {}\n- execute: {}\n- expected: job.md, .project/drafts.yaml, session logs, captures\n",
         target_path.display(),
         runner,
         headed,
@@ -791,7 +795,7 @@ fn build_web_procedure(
             responses: build_responses(mode),
         });
     }
-    let screenshot_path = target_path.join("rc-web.png");
+    let screenshot_path = target_path.join(SCREENSHOT_DIR).join("rc-web.png");
     steps.push(Step {
         command_template: format!(
             "{}; if [ -f .rc-web-server.pid ]; then kill $(cat .rc-web-server.pid) >/dev/null 2>&1 || true; fi",
@@ -1227,9 +1231,12 @@ fn write_session_cache(cache: &SessionCache) -> Result<()> {
 fn collect_captures(log: &mut SessionLog) -> Result<()> {
     let bridge = PowerShellWindowsBridge;
     let workdir = std::env::current_dir()?;
+    let screenshot_dir = workdir.join(SCREENSHOT_DIR);
+    fs::create_dir_all(&screenshot_dir)
+        .with_context(|| format!("failed to create {}", screenshot_dir.display()))?;
     let terminal_capture = capture_terminal_session(&workdir)?;
     log.captures.push(terminal_capture);
-    let browser_capture = workdir.join("rc-web.png");
+    let browser_capture = screenshot_dir.join("rc-web.png");
     if browser_capture.exists() {
         log.captures.push(browser_capture);
     }
@@ -1245,9 +1252,9 @@ fn collect_captures(log: &mut SessionLog) -> Result<()> {
         }
     }
     log.captures
-        .push(bridge.capture_rect_to(&workdir.join("rect-capture.png"))?);
+        .push(bridge.capture_rect_to(&screenshot_dir.join("rect-capture.png"))?);
     log.captures
-        .push(bridge.capture_screen_to(&workdir.join("screen-capture.png"))?);
+        .push(bridge.capture_screen_to(&screenshot_dir.join("screen-capture.png"))?);
     fs::write(
         workdir.join(SESSION_LOG_FILE),
         serde_json::to_string_pretty(log)?,
@@ -1257,7 +1264,7 @@ fn collect_captures(log: &mut SessionLog) -> Result<()> {
 }
 
 fn capture_terminal_session(workdir: &Path) -> Result<PathBuf> {
-    let output_path = workdir.join("terminal-capture.txt");
+    let output_path = workdir.join(SCREENSHOT_DIR).join("terminal-capture.txt");
     let capture = if let Ok(pane) = std::env::var("TMUX_PANE") {
         let output = Command::new("tmux")
             .args(["capture-pane", "-p", "-t", &pane])
@@ -1294,10 +1301,10 @@ fn write_feedback(workdir: &Path, log: &SessionLog) -> Result<()> {
         "- 현재 draft 절차가 체크리스트 기준을 만족했고 화면 근거(snapshot/screenshot)가 기록됐다."
             .to_string()
     } else {
-        "- feedback를 기준으로 plan/drafts 절차를 갱신해야 한다.".to_string()
+        "- clit 결과를 기준으로 plan/drafts 절차를 갱신해야 한다.".to_string()
     };
     let result = format!(
-        "# 결과\n- runner: {:?}\n- detected command: {}\n- steps: {}\n- captures: {}\n\n# 체크리스트\n{}\n\n# 미해결\n{}\n\n# 보완\n{}\n",
+        "\n# clit feedback\n\n## 결과\n- runner: {:?}\n- detected command: {}\n- steps: {}\n- captures: {}\n\n### 체크리스트\n{}\n\n### 미해결\n{}\n\n### 보완\n{}\n",
         log.runner,
         log.detected_command,
         log.steps
@@ -1319,13 +1326,50 @@ fn write_feedback(workdir: &Path, log: &SessionLog) -> Result<()> {
         unresolved,
         improvements
     );
-    let feedback_path = workdir.join(FEEDBACK_FILE);
-    if let Some(parent) = feedback_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create {}", parent.display()))?;
+    let job_path = workdir.join(JOB_FILE);
+    let mut job_body = fs::read_to_string(&job_path).unwrap_or_default();
+    if !job_body.ends_with('\n') {
+        job_body.push('\n');
     }
-    fs::write(&feedback_path, result)
-        .with_context(|| format!("failed to write {}", feedback_path.display()))?;
+    if !job_body.contains("# clit feedback") {
+        job_body.push_str(&result);
+    } else {
+        job_body.push_str(&result);
+    }
+    fs::write(&job_path, job_body)
+        .with_context(|| format!("failed to write {}", job_path.display()))?;
+    Ok(())
+}
+
+fn append_to_job_md(job_path: &Path, addition: &str) -> Result<()> {
+    let mut body = fs::read_to_string(job_path).unwrap_or_default();
+    if !body.ends_with('\n') {
+        body.push('\n');
+    }
+    if !body.is_empty() {
+        body.push('\n');
+    }
+    body.push_str(addition);
+    fs::write(job_path, body).with_context(|| format!("failed to write {}", job_path.display()))
+}
+
+fn cleanup_legacy_rc_artifacts(workdir: &Path) -> Result<()> {
+    let screenshot_dir = workdir.join(SCREENSHOT_DIR);
+    for (legacy, target) in [
+        (workdir.join("drafts.yaml"), workdir.join(".project").join("drafts.yaml")),
+        (workdir.join("terminal-capture.txt"), screenshot_dir.join("terminal-capture.txt")),
+        (workdir.join("rect-capture.png"), screenshot_dir.join("rect-capture.png")),
+        (workdir.join("screen-capture.png"), screenshot_dir.join("screen-capture.png")),
+        (workdir.join("rc-web.png"), screenshot_dir.join("rc-web.png")),
+    ] {
+        if legacy.exists() {
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("failed to create {}", parent.display()))?;
+            }
+            let _ = fs::rename(&legacy, &target);
+        }
+    }
     Ok(())
 }
 
@@ -1496,7 +1540,7 @@ fn maybe_spawn_codex_worker(workdir: &Path) -> Result<()> {
     if pane_id.is_empty() {
         return Ok(());
     }
-    let message = ".project/feedback.md를 읽고 해결할 수 있는 문제와 개선점을 쳐아서 개선하라"
+    let message = "job.md를 읽고 해결할 수 있는 문제와 개선점을 쳐서 개선하라"
         .replace('"', "\\\"");
     let danger_flag = if std::env::var("CODEX_DANGEROUSLY_BYPASS_APPROVALS_AND_SANDBOX").is_ok() {
         ""
@@ -1782,10 +1826,10 @@ mod tests {
             captures: vec![],
         };
         write_feedback(dir.path(), &log).expect("feedback");
-        let body = fs::read_to_string(dir.path().join(FEEDBACK_FILE)).expect("read");
-        assert!(body.contains("# 결과"));
-        assert!(body.contains("# 미해결"));
-        assert!(body.contains("# 보완"));
+        let body = fs::read_to_string(dir.path().join(JOB_FILE)).expect("read");
+        assert!(body.contains("## 결과"));
+        assert!(body.contains("### 미해결"));
+        assert!(body.contains("### 보완"));
     }
 
     #[test]

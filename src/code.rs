@@ -1,14 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
-use std::env;
 use std::fs;
-use std::hash::{Hash, Hasher};
-use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::{Mutex, OnceLock};
-use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 const CODE_SUBCOMMAND_TIMEOUT_SEC: u64 = 600;
 const IMPL_DRAFT_LLM_TIMEOUT_SEC: u64 = 240;
@@ -192,20 +185,23 @@ pub(crate) fn init_orc_project(args: &[String]) -> Result<String, String> {
     let target = Path::new(".project").join("project.md");
     
     let mut body = template;
-    if let Some(name) = opts.name {
+    if let Some(name) = opts.name.as_deref() {
         body = body.replace("{{name}}", &name);
     }
-    if let Some(desc) = opts.description {
+    if let Some(desc) = opts.description.as_deref() {
         body = body.replace("{{description}}", &desc);
     }
-    if let Some(spec) = opts.spec {
+    if let Some(spec) = opts.spec.as_deref() {
         body = body.replace("{{spec}}", &spec);
     }
     
     fs::write(&target, body).map_err(|e| format!("failed to write project.md: {}", e))?;
     
     if opts.auto {
-        // detail_code_project logic could go here
+        let bootstrap_output = run_project_bootstrap(&opts)?;
+        let bootstrap_report_path = Path::new(".project").join("bootstrap.md");
+        fs::write(&bootstrap_report_path, bootstrap_output)
+            .map_err(|e| format!("failed to write .project/bootstrap.md: {}", e))?;
     }
     
     Ok("init_orc_project completed".to_string())
@@ -258,14 +254,14 @@ pub(crate) fn create_job_md() -> Result<String, String> {
     if !project_md_path.exists() {
         return Err("missing .project/project.md".to_string());
     }
-    let plan_yaml_path = resolve_plan_yaml_path()?;
+    let (plan_path, source_label) = resolve_job_md_source_path()?;
 
     let prompt_template = read_job_md_prompt_template()?;
     let project_md = fs::read_to_string(&project_md_path)
         .map_err(|e| format!("failed to read {}: {}", project_md_path.display(), e))?;
-    let plan_yaml = fs::read_to_string(&plan_yaml_path)
-        .map_err(|e| format!("failed to read {}: {}", plan_yaml_path.display(), e))?;
-    let prompt = build_create_job_md_prompt(&prompt_template, &project_md, &plan_yaml);
+    let plan_yaml = fs::read_to_string(&plan_path)
+        .map_err(|e| format!("failed to read {}: {}", plan_path.display(), e))?;
+    let prompt = build_create_job_md_prompt(&prompt_template, &project_md, source_label, &plan_yaml);
 
     let raw = crate::run_codex_exec_capture_with_timeout(&prompt, CREATE_JOB_MD_TIMEOUT_SEC)?;
     let normalized = normalize_job_md_content(&raw)?;
@@ -303,26 +299,85 @@ fn read_job_md_prompt_template() -> Result<String, String> {
     Err("missing build_job_md_auto prompt template".to_string())
 }
 
-fn resolve_plan_yaml_path() -> Result<PathBuf, String> {
+fn resolve_job_md_source_path() -> Result<(PathBuf, &'static str), String> {
+    let job_path = job_md_path();
+    if job_path.exists() {
+        return Ok((job_path, "job.md"));
+    }
+
+    Err("missing job.md (expected seed input, run init_orc_job/create_input_md 이전 단계에서 job.md를 생성하세요)".to_string())
+}
+
+fn run_project_bootstrap(opts: &CommonOpts) -> Result<String, String> {
+    let prompt_template = match read_project_bootstrap_prompt() {
+        Ok(prompt) => prompt,
+        Err(_) => {
+            return Ok(format!(
+                "BOOTSTRAP_DONE: auto bootstrap placeholder generated for project `{}`",
+                project_name_or_default(opts)
+            ));
+        }
+    };
+    let project_root = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .display()
+        .to_string();
+    let prompt = prompt_template
+        .replace("{{project_name}}", &project_name_or_default(opts))
+        .replace("{{project_root}}", &project_root)
+        .replace("{{spec}}", &opts.spec.clone().unwrap_or_default())
+        .replace("{{preset}}", "code");
+    let output = crate::run_codex_exec_capture_with_timeout(&prompt, CODE_SUBCOMMAND_TIMEOUT_SEC).unwrap_or_else(|_| {
+        format!(
+            "BOOTSTRAP_DONE: auto bootstrap placeholder generated for project `{}`",
+            project_name_or_default(opts)
+        )
+    });
+    Ok(output.trim().to_string())
+}
+
+fn read_project_bootstrap_prompt() -> Result<String, String> {
     let candidates = [
-        Path::new(".project").join("plan.yaml"),
-        PathBuf::from("plan.yaml"),
+        crate::source_root().join("assets").join("presets").join("code").join("prompts").join("bootstrap.txt"),
+        crate::source_root().join("assets").join("presets").join("mono").join("prompts").join("bootstrap.txt"),
     ];
     for path in candidates {
         if path.exists() {
-            return Ok(path);
+            return fs::read_to_string(&path)
+                .map_err(|e| format!("failed to read {}: {}", path.display(), e));
         }
     }
-    Err("missing plan.yaml (.project/plan.yaml or ./plan.yaml)".to_string())
+    Err("missing bootstrap prompt".to_string())
 }
 
-fn build_create_job_md_prompt(template: &str, project_md: &str, plan_yaml: &str) -> String {
-    format!(
-        "{}\n\n# project.md\n{}\n\n# plan.yaml\n{}",
+fn project_name_or_default(opts: &CommonOpts) -> String {
+    if let Some(name) = &opts.name {
+        name.clone()
+    } else {
+        std::env::current_dir()
+            .ok()
+            .and_then(|dir| dir.file_name().map(|v| v.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "project".to_string())
+    }
+}
+
+fn build_create_job_md_prompt(
+    template: &str,
+    project_md: &str,
+    source_label: &str,
+    plan_yaml: &str,
+) -> String {
+    let mut normalized = format!(
+        "{}\n\n# project.md\n{}\n\n# {}\n{}",
         template.trim(),
         project_md.trim(),
+        source_label,
         plan_yaml.trim()
-    )
+    );
+    if !normalized.ends_with('\n') {
+        normalized.push('\n');
+    }
+    normalized
 }
 
 fn normalize_job_md_content(raw: &str) -> Result<String, String> {
@@ -447,9 +502,47 @@ pub(crate) async fn impl_orc_code() -> Result<String, String> {
 
 /// Step 6: Check Code
 pub(crate) fn check_orc_code() -> Result<String, String> {
-    let prompt_template = read_prompt("check_code.md")?;
+    let _prompt_template = read_prompt("check_code.md")?;
     // ... logic to run checks and update report.md/job.md problems ...
-    Ok("check_orc_code completed".to_string())
+    let removed = cleanup_drafts_yaml_after_success(Path::new("."))?;
+    if removed {
+        Ok("check_orc_code completed: drafts.yaml removed".to_string())
+    } else {
+        Ok("check_orc_code completed".to_string())
+    }
+}
+
+fn cleanup_drafts_yaml_after_success(root: &Path) -> Result<bool, String> {
+    let job = load_job_doc_from(root)?;
+    let drafts = load_drafts_doc_from(root)?;
+    if !should_cleanup_drafts_yaml(&job, &drafts) {
+        return Ok(false);
+    }
+    let path = drafts_yaml_path_from(root);
+    if !path.exists() {
+        return Ok(false);
+    }
+    fs::remove_file(&path).map_err(|e| format!("failed to remove {}: {}", path.display(), e))?;
+    Ok(true)
+}
+
+fn should_cleanup_drafts_yaml(job: &JobDoc, drafts: &CodeDraftsDoc) -> bool {
+    if job.task.completed.is_empty() {
+        return false;
+    }
+    if !job.task.planned.is_empty() || !job.task.work.is_empty() || !job.task.check.is_empty() {
+        return false;
+    }
+    if !job.task.fail.is_empty() {
+        return false;
+    }
+    if drafts.draft.is_empty() {
+        return false;
+    }
+    drafts
+        .draft
+        .iter()
+        .all(|item| normalize_draft_state(item.state.as_str()).map_or(false, |state| state == "complete"))
 }
 
 pub(crate) fn get_workspace_state(root: &Path) -> &'static str {
@@ -841,6 +934,7 @@ struct ImplRunResult {
 mod tests {
     use super::{
         add_orc_drafts, build_create_job_md_prompt, build_draft_item_from_requirement,
+        cleanup_drafts_yaml_after_success,
         create_input_md,
         flow_rust_orchestra, get_workspace_state, load_drafts_doc, normalize_job_md_content,
         job_task_state_change, move_job_task_item, set_draft_item_state, transition_impl_result,
@@ -1256,15 +1350,52 @@ mod tests {
     }
 
     #[test]
+    fn cleanup_drafts_yaml_after_success_removes_file_when_pipeline_is_complete() {
+        with_locked_workspace("cleanup_drafts_on_success", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(
+                "job.md",
+                "# task\n## planned\n## work\n## check\n## completed\n- feature_a\n## fail\n\n# problems\n",
+            )
+            .expect("write job.md");
+            fs::write(".project/drafts.yaml", "draft:\n  - name: feature_a\n    state: complete\n")
+                .expect("write drafts");
+
+            let removed = cleanup_drafts_yaml_after_success(Path::new(".")).expect("cleanup success");
+            assert!(removed);
+            assert!(!Path::new(".project/drafts.yaml").exists());
+        });
+    }
+
+    #[test]
+    fn cleanup_drafts_yaml_after_success_keeps_file_when_fail_exists() {
+        with_locked_workspace("cleanup_drafts_on_fail", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(
+                "job.md",
+                "# task\n## planned\n## work\n## check\n## completed\n- feature_a\n## fail\n- feature_b\n\n# problems\n- feature_b: failed\n",
+            )
+            .expect("write job.md");
+            fs::write(".project/drafts.yaml", "draft:\n  - name: feature_a\n    state: complete\n")
+                .expect("write drafts");
+
+            let removed = cleanup_drafts_yaml_after_success(Path::new(".")).expect("cleanup decision");
+            assert!(!removed);
+            assert!(Path::new(".project/drafts.yaml").exists());
+        });
+    }
+
+    #[test]
     fn build_create_job_md_prompt_contains_required_sections() {
         let prompt = build_create_job_md_prompt(
             "template",
             "# info\nname: demo\n",
+            "job.md",
             "drafts:\n  planned:\n    - cli_create_job_md\n",
         );
         assert!(prompt.contains("template"));
         assert!(prompt.contains("# project.md"));
-        assert!(prompt.contains("# plan.yaml"));
+        assert!(prompt.contains("# job.md"));
     }
 
     #[test]

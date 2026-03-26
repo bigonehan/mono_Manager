@@ -1109,7 +1109,7 @@
       - generic [ref=e1192]: "pushLog(`feedback add failed: ${String(data.error ?? \"unknown error\")}`);"
       - generic [ref=e1193]: return;
       - generic [ref=e1194]: "}"
-      - generic [ref=e1195]: pushLog(String(data.output ?? ".project/feedback.md updated"));
+      - generic [ref=e1195]: pushLog(String(data.output ?? "job.md updated"));
       - generic [ref=e1196]: setCheckFeedbackInput("");
       - generic [ref=e1197]: setDetail(data.detail);
       - generic [ref=e1198]: "} finally {"
@@ -2731,7 +2731,7 @@
       - generic [ref=e2856]: <Card className="mx-auto flex h-full w-full max-w-5xl flex-col rounded-2xl">
       - generic [ref=e2857]: <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
       - generic [ref=e2858]: <div className="min-w-0">
-      - generic [ref=e2859]: <CardTitle className="truncate">.project/feedback.md report</CardTitle>
+      - generic [ref=e2859]: <CardTitle className="truncate">job.md feedback report</CardTitle>
       - generic [ref=e2860]: "<div className=\"mt-1 text-sm text-muted-foreground\">{detail?.name ?? \"selected project\"}</div>"
       - generic [ref=e2861]: </div>
       - generic [ref=e2862]: <button

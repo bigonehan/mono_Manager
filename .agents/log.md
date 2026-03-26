@@ -2989,3 +2989,16 @@
 - drafts.yaml(editable) 연필 버튼은 textarea 래퍼를 `h-[320px]` pane 컨테이너로 정규화한 뒤 내부 우하단(`bottom-3 right-3`)에 고정함.
 - 결과적으로 `current.png`처럼 두 쓰기 버튼이 pane 경계 안쪽에 보이도록 맞춤.
 - 검증: `npm --prefix assets/web run test:e2e -- --grep \"drafts pane uses add/build actions and stage lock overlays|all projects expose detail actions and buttons stay operable\"` 통과(2/2), `npm --prefix assets/web run test:e2e:end-hook` 통과(1/1).
+
+## 2026-03-26 - 작업한일
+- `src/chat.rs`에서 `run_codex_exec_capture_with_timeout`의 중복 실행-재시도 로직을 `run_codex_exec_capture_in_dir_with_attempts_labeled`로 위임해 코드 중복을 제거하고 유지보수 경로를 단일화함.
+- `cli_rust_orchestra`를 임시 워크스페이스에서 실행해 `flow_rust_orchestra`가 `add_orc_drafts`를 통해 `cli_rust_orchestra` draft item을 생성·기록하는지 실행 확인함.
+- `cargo test`, `cargo run --bin orc -- --help`, 임시 워크스페이스 `cli_rust_orchestra` 실행으로 `draft_item` 기반 상태 전이 및 구현 흐름(명령→LLM 호출용 프롬프트 생성) 검증을 완료함.
+## 2026-03-26 - 작업한일
+- `cargo test` 경고 해소를 위해 `src/code.rs`, `src/draft.rs`, `src/main.rs`의 실제 미사용 import/재노출 항목을 정리해 경고 없는 상태로 컴파일-테스트가 끝나도록 정비함.
+- `cli_rust_orchestra` 실행 경로를 임시 워크스페이스에서 재검증해 `add_orc_drafts`가 draft 항목을 실제로 생성/반영하는 동작을 그대로 확인함.
+- `cargo test`, `cargo run --bin orc -- --help`, 임시 워크스페이스 `orc cli_rust_orchestra` 실행 검증으로 수정 안정성 확인 후 결과를 반영함.
+## 2026-03-27 - 작업한일
+- `AGENTS.md`에 `Full-Scope Execution Gate Rule`을 추가해 `전부/모두/전체/다` 계열 지시를 받으면 단일 파일 추정을 금지하고 `tracked file` 전체 검사로 시작하도록 고정함.
+- 완료 조건을 `primary pattern 0건 + alias pattern 0건` 동시 충족으로 강제하고, 미충족 시 `검색 -> 수정 -> 재검색` 반복을 의무화함.
+- 최종 보고에 검사 범위/패턴/0건 결과를 반드시 포함하도록 명시해 범위 누락 재발을 차단함.
