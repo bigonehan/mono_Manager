@@ -10,7 +10,7 @@ pub fn program_name(args: &[String]) -> &str {
 pub fn is_help_command(args: &[String]) -> bool {
     if matches!(
         args.get(1).map(String::as_str),
-        Some("help" | "-h" | "--help")
+        Some("help" | "cli_help" | "-h" | "--help")
     ) {
         return true;
     }
@@ -18,7 +18,7 @@ pub fn is_help_command(args: &[String]) -> bool {
         && super::profile::is_known_profile_name(args[1].as_str())
         && matches!(
             args.get(2).map(String::as_str),
-            Some("help" | "-h" | "--help")
+            Some("help" | "cli_help" | "-h" | "--help")
         )
     {
         return true;
@@ -31,7 +31,7 @@ pub fn print_usage(program: &str) {
     println!("usage:");
     println!("  {program} [profile] <command> [args...]");
     let mut commands = [
-        "help | -h | --help",
+        "help | cli_help | -h | --help",
         "clit <args...>  (forward to rc CLI)",
         "init_orc_project [-n <name>] [-s <spec>] [-d <description>] [-a]",
         "build_orc_domains",
@@ -40,7 +40,7 @@ pub fn print_usage(program: &str) {
         "create_job_md",
         "create_input_md",
         "cli_rust_orchestra",
-        "impl_code_draft",
+        "impl_code_draft | cli_impl_code_draft",
         "check_orc_code",
         "open-ui [-w|--web|-b|--build]",
         "serve-web-api [--addr <host:port>]",
@@ -57,7 +57,7 @@ pub fn print_usage(program: &str) {
 
 fn canonical_command_for_match(command: &str) -> &str {
     match command {
-        "impl_code_draft" => "impl_orc_code",
+        "impl_code_draft" | "cli_impl_code_draft" => "impl_orc_code",
         "cli_create_input_md" => "create_input_md",
         other => other,
     }
@@ -113,7 +113,7 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             if !tail.is_empty() {
                 return Err(format!("{raw_command} does not accept arguments"));
             }
-            crate::code::create_job_md()
+            crate::code::create_input_md()
         }
         "check_orc_code" => {
             profile.feedback_service().check()
@@ -201,11 +201,19 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::canonical_command_for_match;
+    use super::{canonical_command_for_match, is_help_command};
 
     #[test]
     fn canonical_command_maps_impl_code_draft_alias() {
         assert_eq!(canonical_command_for_match("impl_code_draft"), "impl_orc_code");
+    }
+
+    #[test]
+    fn canonical_command_maps_cli_impl_code_draft_alias() {
+        assert_eq!(
+            canonical_command_for_match("cli_impl_code_draft"),
+            "impl_orc_code"
+        );
     }
 
     #[test]
@@ -224,5 +232,11 @@ mod tests {
             canonical_command_for_match("cli_create_input_md"),
             "create_input_md"
         );
+    }
+
+    #[test]
+    fn is_help_command_accepts_cli_help_alias() {
+        let args = vec!["orc".to_string(), "cli_help".to_string()];
+        assert!(is_help_command(&args));
     }
 }

@@ -6,6 +6,7 @@
 
 ## Main Commands (orc)
 - `orc help`
+- `orc cli_help`
 - `orc init_code_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-m <message>] [-a]`
 - `orc init_code_plan [-a]`
 - `orc add_code_plan [-f] [-m <message>] [-a]`
