@@ -15,19 +15,15 @@ mod ui;
 mod web;
 mod web_api;
 
-pub(crate) use draft::{DraftDoc, DraftsListDoc, PlannedItem};
+pub(crate) use draft::{DraftDoc, DraftsListDoc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::{self, BufRead, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const REGISTRY_PATH: &str = "configs/project.yaml";
 const EXEC_LOG_PATH: &str = ".project/log.md";
@@ -535,7 +531,6 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
 
     fn make_temp_dir(prefix: &str) -> PathBuf {
         let base = std::env::temp_dir();

@@ -392,6 +392,10 @@ function projectMdPath(projectPath: string): string {
   return path.join(projectMetaDir(projectPath), "project.md");
 }
 
+function jobMdPath(projectPath: string): string {
+  return path.join(projectPath, "job.md");
+}
+
 function draftsListPath(projectPath: string): string {
   return path.join(projectMetaDir(projectPath), "drafts_list.yaml");
 }
@@ -400,16 +404,12 @@ function draftsYamlPath(projectPath: string): string {
   return path.join(projectMetaDir(projectPath), "drafts.yaml");
 }
 
-function planYamlPath(projectPath: string): string {
-  return path.join(projectMetaDir(projectPath), "plan.yaml");
-}
-
 function memoPath(projectPath: string): string {
   return path.join(projectMetaDir(projectPath), "memo.md");
 }
 
-function feedbackPath(projectPath: string): string {
-  return path.join(projectMetaDir(projectPath), "feedback.md");
+function planYamlPath(projectPath: string): string {
+  return path.join(projectMetaDir(projectPath), "plan.yaml");
 }
 
 function screenshotDirPath(projectPath: string): string {
@@ -1215,10 +1215,16 @@ function guessMimeType(filePath: string): string {
 }
 
 function ensureFeedbackFile(projectPath: string): string {
-  const file = feedbackPath(projectPath);
+  const file = jobMdPath(projectPath);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   if (!fs.existsSync(file)) {
-    fs.writeFileSync(file, "# 결과\n- pending\n\n# 미해결\n- 없음\n\n# 보완\n- 없음\n", "utf8");
+    const fallback = "# plan\n\n# requirement\n\n# task\n## planned\n## work\n## check\n## completed\n## failed\n\n# problems\n# clit feedback\n\n## 결과\n- pending\n\n### 미해결\n- 없음\n\n### 보완\n- 없음\n";
+    fs.writeFileSync(file, fallback, "utf8");
+    return file;
+  }
+  const body = fs.readFileSync(file, "utf8");
+  if (!body.includes("# clit feedback")) {
+    fs.writeFileSync(file, `${body.trimEnd()}\n\n# clit feedback\n\n## 결과\n- pending\n\n### 미해결\n- 없음\n\n### 보완\n- 없음\n`, "utf8");
   }
   return file;
 }
@@ -1226,9 +1232,9 @@ function ensureFeedbackFile(projectPath: string): string {
 function defaultInstructionRetryContent(): string {
   return [
     "# instruction_retry",
-    "- .project/feedback.md 내용을 먼저 읽고, 현재 지적된 문제를 기준으로 재시도 범위를 다시 정리한다.",
-    "- 현재 ORC 워크플로 산출물 기준으로 plan.yaml부터 drafts.yaml을 다시 만들고 병렬 처리 과정을 처음부터 다시 시작한다.",
-    "- 이미 완료된 수정 요약이 아니라, feedback에 적힌 문제를 해결하기 위한 새 계획과 구현 순서를 우선 작성한다.",
+    "- job.md의 # clit feedback 내용을 먼저 읽고, 현재 지적된 문제를 기준으로 재시도 범위를 다시 정리한다.",
+    "- 현재 ORC 워크플로 산출물 기준으로 drafts.yaml을 다시 만들고 병렬 처리 과정을 다시 시작한다.",
+    "- 이미 완료된 수정 요약이 아니라, # clit feedback 문제를 해결하기 위한 새 계획과 구현 순서를 우선 작성한다.",
     "- 필요한 경우 job.md를 다시 갱신하되, 최종 목적은 job.md -> drafts.yaml -> 병렬 처리 재실행이다."
   ].join("\n");
 }
@@ -1277,7 +1283,25 @@ function appendMarkdownBullet(filePath: string, headers: string[], bullet: strin
 }
 
 function readFeedbackMarkdown(projectPath: string): string {
-  return safeReadFile(feedbackPath(projectPath));
+  const raw = safeReadFile(jobMdPath(projectPath));
+  const marker = "# clit feedback";
+  const index = raw.toLowerCase().indexOf(marker);
+  if (index < 0) {
+    return "";
+  }
+  const start = raw.toLowerCase().indexOf(marker);
+  if (start < 0) {
+    return "";
+  }
+  const lines = raw.slice(start).split(/\r?\n/);
+  const selected: string[] = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    if (i > 0 && lines[i].startsWith("# ")) {
+      break;
+    }
+    selected.push(lines[i]);
+  }
+  return `${lines[0]}\n${selected.join("\n")}`.trim();
 }
 
 function listScreenshotItems(
@@ -2786,7 +2810,7 @@ export function appendCheckFeedback(
   appendRuntimeLog(id, `[check-feedback] ${bullet}`);
   return {
     detail: loadProjectDetail(id),
-    output: ".project/feedback.md updated"
+    output: "job.md updated"
   };
 }
 
@@ -2794,7 +2818,7 @@ export function retryFromFeedback(id: string): { detail: ProjectDetail; output: 
   const detail = loadProjectDetail(id);
   const feedback = readFeedbackMarkdown(detail.path).trim();
   if (!feedback) {
-    throw new Error(".project/feedback.md not found");
+    throw new Error("job.md # clit feedback not found");
   }
   const instructionFile = ensureInstructionRetryFile(detail.path);
   const instruction = fs.readFileSync(instructionFile, "utf8").trim();
@@ -2804,10 +2828,10 @@ export function retryFromFeedback(id: string): { detail: ProjectDetail; output: 
     `project: ${detail.name}`,
     `project_path: ${detail.path}`,
     "",
-    ".project/feedback.md:",
+    "# clit feedback:",
     feedback,
     "",
-    "반드시 feedback을 기준으로 plan.yaml부터 drafts.yaml을 다시 만들고 병렬 처리 과정을 처음부터 다시 시작한다."
+    "반드시 # clit feedback 을 기준으로 drafts.yaml을 다시 만들고 병렬 처리 과정을 처음부터 다시 시작한다."
   ].join("\n");
   appendRuntimeLog(id, `[check-retry] instruction loaded: ${instructionFile}`);
   appendRuntimeLog(id, `[check-retry] auto retry start: ${detail.name}`);

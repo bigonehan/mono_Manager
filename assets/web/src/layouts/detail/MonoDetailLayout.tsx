@@ -1,4 +1,6 @@
 import { Boxes, Pencil, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { DetailLayoutProps } from "@/layouts/detail/types";
 import { parseSpecTokens } from "@/layouts/detail/types";
 import { DetailTabsPane } from "@/layouts/detail/DetailTabsPane";
@@ -16,7 +18,25 @@ export function MonoDetailLayout({
   domainLoading = false,
   domainError = "",
   openEditor,
-  actionsDisabled
+  actionsDisabled,
+  editName,
+  editDescription,
+  editSpec,
+  editGoal,
+  setEditName,
+  setEditDescription,
+  setEditSpec,
+  setEditGoal,
+  saveProjectInfo,
+  projectInfoSaving,
+  editRules,
+  editConstraints,
+  editFeatures,
+  setEditRules,
+  setEditConstraints,
+  setEditFeatures,
+  saveListPane,
+  listSaving
 }: DetailLayoutProps) {
   const domains = detail?.domains ?? [];
   const selected = domains.find((domain) => domain.name === selectedDomain) ?? domains[0] ?? null;
@@ -48,8 +68,39 @@ export function MonoDetailLayout({
         )}
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-4xl font-extrabold tracking-tight">{detail?.name ?? ""}</div>
-            <div className="mt-1 text-xl text-muted-foreground">{detail?.description ?? ""}</div>
+            <Input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="mb-3 text-4xl font-extrabold tracking-tight"
+              disabled={actionsDisabled || projectInfoSaving}
+            />
+            <Input
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              className="mt-1"
+              disabled={actionsDisabled || projectInfoSaving}
+            />
+            <Input
+              value={editSpec}
+              onChange={(e) => setEditSpec(e.target.value)}
+              className="mt-1"
+              disabled={actionsDisabled || projectInfoSaving}
+            />
+            <Input
+              value={editGoal}
+              onChange={(e) => setEditGoal(e.target.value)}
+              className="mt-1"
+              disabled={actionsDisabled || projectInfoSaving}
+            />
+            <Button
+              type="button"
+              size="sm"
+              className="mt-3"
+              onClick={() => void saveProjectInfo()}
+              disabled={actionsDisabled || projectInfoSaving}
+            >
+              {projectInfoSaving ? "저장중..." : "저장"}
+            </Button>
           </div>
           <span className="rounded-lg bg-muted px-3 py-1 text-xs font-bold uppercase">{detail?.state ?? "wait"}</span>
         </div>
@@ -57,7 +108,10 @@ export function MonoDetailLayout({
           <span className="inline-flex rounded-xl border border-border bg-muted p-2 text-foreground">
             <Boxes className="h-5 w-5" />
           </span>
-          {parseSpecTokens(detail?.spec ?? "").map((token) => (
+          {(parseSpecTokens(editSpec).length > 0
+            ? parseSpecTokens(editSpec)
+            : ["(empty)"]
+          ).map((token) => (
             <span key={token} className="rounded-md border border-border px-2 py-1 text-sm font-medium">
               {token}
             </span>
@@ -73,6 +127,14 @@ export function MonoDetailLayout({
         setSelectedPane={setSelectedPane}
         openEditor={openEditor}
         actionsDisabled={actionsDisabled}
+        editRules={editRules}
+        editConstraints={editConstraints}
+        editFeatures={editFeatures}
+        setEditRules={setEditRules}
+        setEditConstraints={setEditConstraints}
+        setEditFeatures={setEditFeatures}
+        saveListPane={saveListPane}
+        listSaving={listSaving}
       />
       <div>
         <div className={sectionLabelClass}>domains</div>

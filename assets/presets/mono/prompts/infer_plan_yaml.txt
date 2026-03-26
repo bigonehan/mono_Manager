@@ -5,4 +5,4 @@ infer_plan_yaml prompt
 - plan template 스키마를 유지한다.
 - 허용 키는 `goal`, `domains`, `drafts`만 사용한다.
 - `drafts` 내부 키는 `planned`, `worked`, `complete`만 사용한다.
-- `project.md`를 읽고 현재 프로젝트 목적/도메인에 맞게 plan.yaml 값을 채운다.
+- `project.md`를 읽고 현재 프로젝트 목적/도메인에 맞게 `job.md`를 갱신한다.

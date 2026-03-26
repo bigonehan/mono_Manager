@@ -277,86 +277,15 @@ pub(crate) fn run_codex_exec_capture_with_timeout(
 ) -> Result<String, String> {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let prompt = normalize_exec_prompt(prompt);
-    append_chat_log(&cwd, "LLM_PROMPT", &prompt);
     let model_bin = crate::default_model_bin();
-    let dangerous = crate::model_supports_dangerous_flag(&model_bin);
-    let total_attempts = llm_retry_count();
-    let trace_label = prompt_trace_label(&prompt);
-    let mut last_error = "unknown llm error".to_string();
-    for attempt in 1..=total_attempts {
-        let base_label = format!("{} exec [{}]", model_bin, trace_label);
-        let attempt_label = if total_attempts > 1 {
-            format!("{} attempt {}/{}", base_label, attempt, total_attempts)
-        } else {
-            base_label.clone()
-        };
-        let start_detail = format!(
-            "{} | cwd={} | timeout={}s",
-            attempt_label,
-            cwd.display(),
-            timeout_sec
-        );
-        append_chat_log(&cwd, "LLM_START", &start_detail);
-        let _ = crate::append_check_process_status("LLM_START", &start_detail);
-        if should_use_tmux_for_llm() {
-            match run_llm_via_tmux(
-                &cwd,
-                &model_bin,
-                &prompt,
-                timeout_sec,
-                false,
-                dangerous,
-                &attempt_label,
-            ) {
-                Ok(result) => {
-                    if result.success {
-                        append_chat_log(&cwd, "LLM_RESPONSE", &result.stdout);
-                        return Ok(result.stdout);
-                    }
-                    last_error = result.stderr;
-                }
-                Err(e) => {
-                    last_error = e;
-                }
-            }
-        } else {
-            let mut command = Command::new(&model_bin);
-            command.arg("exec");
-            if dangerous {
-                command.arg(CODEX_DANGEROUS_FLAG);
-            }
-            command.arg(&prompt);
-            match run_command_with_timeout(
-                command,
-                timeout_sec,
-                &attempt_label,
-                &cwd,
-                "waiting for llm response",
-            ) {
-                Ok(output) if output.status.success() => {
-                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    append_chat_log(&cwd, "LLM_RESPONSE", &stdout);
-                    return Ok(stdout);
-                }
-                Ok(output) => {
-                    last_error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                }
-                Err(e) => {
-                    last_error = e;
-                }
-            }
-        }
-        append_chat_log(
-            &cwd,
-            "LLM_RETRY",
-            &format!(
-                "attempt {}/{} failed: {}",
-                attempt, total_attempts, last_error
-            ),
-        );
-    }
-    append_chat_log(&cwd, "LLM_ERROR", &last_error);
-    Err(last_error)
+    let trace_label = format!("{} exec [{}]", model_bin, prompt_trace_label(&prompt));
+    run_codex_exec_capture_in_dir_with_attempts_labeled(
+        &cwd,
+        &prompt,
+        timeout_sec,
+        llm_retry_count(),
+        Some(&trace_label),
+    )
 }
 
 pub(crate) fn run_codex_exec_capture(prompt: &str) -> Result<String, String> {

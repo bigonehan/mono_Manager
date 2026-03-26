@@ -33,7 +33,7 @@
 - 관련 회귀 테스트와 로그 문서 `.../.agents/log.md`를 함께 갱신한다.
 - 재시도 사유: `rc` 직접 실행 형식을 잘못 써서 `test` subcommand usage error가 발생했다.
 - 실패 원인 해결: 실제 smoke 확인은 `orc clit test ...` 브리지 또는 `rc`의 허용 형식으로 다시 실행한다.
-- `check_code_draft`는 root `drafts.yaml`의 `runner/procedures/steps` 형식을 읽을 수 있으면 runtime 절차를 실행하고 결과를 `report.md`와 `.project/feedback.md`에 함께 반영한다.
+- `check_code_draft`는 root `drafts.yaml`의 `runner/procedures/steps` 형식을 읽을 수 있으면 runtime 절차를 실행하고 결과를 `report.md`와 `job.md`(`clit feedback`)에 함께 반영한다.
 - runtime 절차 통합 여부를 검증하는 단위 테스트와 로그 문서 `.../.agents/log.md`를 함께 갱신한다.
 - `.project/scenario.md`는 현재 validator가 요구하는 `명령 | 실행/변경 파일 | 파생 결과` 형식으로 고쳐서 저장소 루트 `check_code_draft` 실행도 다시 통과시킨다.
 - `bootstrap_code_project`는 stage/spec/attempt/timeout/최근 산출물을 로그에 남기고, timeout 시에도 bootstrap 산출물이 검증되면 성공으로 판정하도록 고친다.
@@ -70,6 +70,6 @@
 - `cargo install --path /home/tree/project/rust-orc`
 - `cd /home/tree/temp && orc auto "react todo"`
 - `cd /home/tree/temp && orc clit test -p . -m "react todo screenshot verification"`
-- `/home/tree/temp` fresh run에서 `orc auto "react todo"` 종료 코드와 `.project/feedback.md # 문제` 0건 여부
+- `/home/tree/temp` fresh run에서 `orc auto "react todo"` 종료 코드와 `job.md # clit feedback # 문제` 0건 여부
 - `sed -n '1,260p' /home/tree/temp/job.md`
 - `sed -n '1,200p' /home/tree/temp/src/App.jsx`

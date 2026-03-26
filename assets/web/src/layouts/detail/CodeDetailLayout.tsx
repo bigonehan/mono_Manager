@@ -1,4 +1,6 @@
 import { Folder, Pencil, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { DetailLayoutProps } from "@/layouts/detail/types";
 import { parseSpecTokens } from "@/layouts/detail/types";
@@ -23,7 +25,25 @@ export function CodeDetailLayout({
   memoDraft,
   updateMemo,
   flushMemo,
-  memoSaving
+  memoSaving,
+  editName,
+  editDescription,
+  editSpec,
+  editGoal,
+  setEditName,
+  setEditDescription,
+  setEditSpec,
+  setEditGoal,
+  saveProjectInfo,
+  projectInfoSaving,
+  editRules,
+  editConstraints,
+  editFeatures,
+  setEditRules,
+  setEditConstraints,
+  setEditFeatures,
+  saveListPane,
+  listSaving
 }: DetailLayoutProps) {
   return (
     <>
@@ -49,29 +69,49 @@ export function CodeDetailLayout({
             </button>
           )}
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div data-testid="detail-project-name" className="text-5xl font-extrabold tracking-tight text-foreground">
-                {detail?.name ?? ""}
+            <div className="min-w-0 space-y-2">
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} disabled={actionsDisabled || projectInfoSaving} />
+              <Input
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                disabled={actionsDisabled || projectInfoSaving}
+              />
+              <Input
+                value={editSpec}
+                onChange={(e) => setEditSpec(e.target.value)}
+                disabled={actionsDisabled || projectInfoSaving}
+              />
+              <Input
+                value={editGoal}
+                onChange={(e) => setEditGoal(e.target.value)}
+                disabled={actionsDisabled || projectInfoSaving}
+              />
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                {(parseSpecTokens(editSpec ?? "").length > 0
+                  ? parseSpecTokens(editSpec ?? "")
+                  : ["(empty)"]
+                ).map((token) => (
+                  <span
+                    key={token}
+                    className="rounded-full border border-border bg-white px-2 py-1 text-xs text-foreground/80"
+                  >
+                    {token}
+                  </span>
+                ))}
               </div>
-              <div className="my-3 text-sm text-muted-foreground">{detail?.description ?? ""}</div>
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <div className="flex flex-wrap gap-2">
-                  {(parseSpecTokens(detail?.spec ?? "").length > 0
-                    ? parseSpecTokens(detail?.spec ?? "")
-                    : ["(empty)"]
-                  ).map((token) => (
-                    <span
-                      key={token}
-                      className="rounded-full border border-border bg-white px-2 py-1 text-xs text-foreground/80"
-                    >
-                      {token}
-                    </span>
-                  ))}
-                </div>
-                <div className="flex max-w-[45%] items-center gap-2 text-sm text-muted-foreground">
-                  <Folder className="h-4 w-4 shrink-0" />
-                  <span className="truncate text-right">{detail?.path ?? ""}</span>
-                </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void saveProjectInfo()}
+                  disabled={actionsDisabled || projectInfoSaving}
+                >
+                  {projectInfoSaving ? "저장중..." : "저장"}
+                </Button>
+              </div>
+              <div className="flex max-w-[45%] items-center gap-2 text-sm text-muted-foreground">
+                <Folder className="h-4 w-4 shrink-0" />
+                <span className="truncate text-right">{detail?.path ?? ""}</span>
               </div>
             </div>
           </div>
@@ -93,6 +133,14 @@ export function CodeDetailLayout({
         setSelectedPane={setSelectedPane}
         openEditor={openEditor}
         actionsDisabled={actionsDisabled}
+        editRules={editRules}
+        editConstraints={editConstraints}
+        editFeatures={editFeatures}
+        setEditRules={setEditRules}
+        setEditConstraints={setEditConstraints}
+        setEditFeatures={setEditFeatures}
+        saveListPane={saveListPane}
+        listSaving={listSaving}
       />
       <DomainsPane
         detail={detail}

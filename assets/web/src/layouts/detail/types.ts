@@ -12,12 +12,30 @@ export type DetailLayoutProps = {
   refreshDomainFeatures: (domain?: string) => Promise<boolean>;
   domainLoading?: boolean;
   domainError?: string;
+  editName: string;
+  editDescription: string;
+  editSpec: string;
+  editGoal: string;
+  setEditName: (value: string) => void;
+  setEditDescription: (value: string) => void;
+  setEditSpec: (value: string) => void;
+  setEditGoal: (value: string) => void;
+  editRules: string;
+  editConstraints: string;
+  editFeatures: string;
+  setEditRules: (value: string) => void;
+  setEditConstraints: (value: string) => void;
+  setEditFeatures: (value: string) => void;
   openEditor: () => void;
   actionsDisabled: boolean;
   memoDraft: string;
   updateMemo: (value: string) => void;
   flushMemo: () => void;
   memoSaving: boolean;
+  saveProjectInfo: () => Promise<void>;
+  saveListPane: (pane: "rules" | "constraints" | "features") => Promise<void>;
+  projectInfoSaving: boolean;
+  listSaving: boolean;
 };
 
 export function parseSpecTokens(input: string): string[] {
