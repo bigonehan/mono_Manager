@@ -1,6 +1,6 @@
 # info
 name : reset-task-feedback
-description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, feedback 경로를 .project/feedback.md로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, 피드백 경로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
 spec : astro, react, typescript, zustand
 path : /home/tree/project/rust-orc
 
@@ -17,8 +17,6 @@ path : /home/tree/project/rust-orc
 - cli_check_draft
 - cli_code
 - cli_init_code_project
-- cli_init_code_plan
-- cli_add_code_plan
 - cli_add_code_draft
 - cli_add_code_draft_item
 - cli_check_code_draft

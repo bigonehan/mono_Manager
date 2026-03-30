@@ -296,6 +296,9 @@ export default function WebApp() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [projectInfoSaving, setProjectInfoSaving] = useState(false);
   const [detailListSaving, setDetailListSaving] = useState(false);
+  const [domainEditOpen, setDomainEditOpen] = useState(false);
+  const [domainEditorValue, setDomainEditorValue] = useState("");
+  const [domainSaving, setDomainSaving] = useState(false);
   const lastSavedMemoRef = useRef("");
   const codeSectionRef = useRef<HTMLDivElement | null>(null);
   const monorepoSectionRef = useRef<HTMLDivElement | null>(null);
@@ -1891,6 +1894,50 @@ export default function WebApp() {
     }
   }
 
+  function openDomainEditor() {
+    if (!detail) return;
+    const currentDomain = detail.domains.find((domain) => domain.name === selectedDomain) ?? detail.domains[0];
+    if (!currentDomain) return;
+    setSelectedDomain(currentDomain.name);
+    setDomainEditorValue(currentDomain.features.join("\n"));
+    setDomainEditOpen(true);
+  }
+
+  async function saveDomainPane() {
+    if (!detail) return;
+    const currentDomain = detail.domains.find((domain) => domain.name === selectedDomain) ?? detail.domains[0];
+    if (!currentDomain) return;
+    setDomainSaving(true);
+    try {
+      const nextFeatures = parseLines(domainEditorValue);
+      const nextDomains = detail.domains.map((domain) =>
+        domain.name === currentDomain.name
+          ? { name: domain.name, description: domain.description, features: nextFeatures }
+          : { name: domain.name, description: domain.description, features: domain.features }
+      );
+      const res = await fetch(apiUrl("/api/project-domains"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: detail.id,
+          domains: nextDomains
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        pushLog(`save domains failed: ${data.error}`);
+        return;
+      }
+      setDetail(data.detail);
+      pushLog(`domain usecases saved: ${currentDomain.name}`);
+      setDomainEditOpen(false);
+    } catch (error) {
+      pushLog(`save domains failed: ${String(error)}`);
+    } finally {
+      setDomainSaving(false);
+    }
+  }
+
   useEffect(() => {
     if (!detail) {
       return;
@@ -2422,6 +2469,7 @@ export default function WebApp() {
               selectedDomain={selectedDomain}
               setSelectedDomain={setSelectedDomain}
               refreshDomainFeatures={refreshDomainFeatures}
+              openDomainEditor={openDomainEditor}
               domainLoading={domainLoading}
               domainError={domainError}
               openEditor={openEditor}
@@ -2446,6 +2494,7 @@ export default function WebApp() {
               setEditFeatures={setEditFeatures}
               saveProjectInfo={saveProjectInfo}
               saveListPane={saveListPane}
+              domainSaving={domainSaving}
               projectInfoSaving={projectInfoSaving}
               listSaving={detailListSaving}
             />
@@ -2996,6 +3045,35 @@ export default function WebApp() {
                   Save
                 </Button>
                 <Button variant="outline" onClick={() => setEditOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {domainEditOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <Card className="w-full max-w-2xl rounded-2xl">
+            <CardHeader>
+              <CardTitle>{`Edit Domain Usecases${selectedDomain ? `: ${selectedDomain}` : ""}`}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Label>Usecases</Label>
+              <Textarea
+                data-testid="domain-editor-textarea"
+                value={domainEditorValue}
+                onChange={(e) => setDomainEditorValue(e.target.value)}
+                rows={10}
+                placeholder="한 줄에 하나씩 usecase를 입력하세요"
+                voiceInputDisabled
+              />
+              <div className="flex justify-end gap-2">
+                <Button data-testid="domain-editor-save" onClick={() => void saveDomainPane()} disabled={domainSaving}>
+                  {domainSaving ? "저장중..." : "Save"}
+                </Button>
+                <Button variant="outline" onClick={() => setDomainEditOpen(false)} disabled={domainSaving}>
                   Cancel
                 </Button>
               </div>

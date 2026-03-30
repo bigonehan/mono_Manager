@@ -5,7 +5,15 @@ import type { DetailLayoutProps } from "@/layouts/detail/types";
 import { parseSpecTokens } from "@/layouts/detail/types";
 import { DetailTabsPane } from "@/layouts/detail/DetailTabsPane";
 
-const sectionLabelClass = "mt-8 mb-3 px-2 text-base font-bold uppercase tracking-wide text-foreground/80";
+const domainHeaderClass = "mt-8 mb-3 flex items-center justify-between gap-4";
+const domainTitleClass = "text-[2.1rem] font-black uppercase tracking-[0.08em] text-slate-700";
+const domainActionBoxClass = "inline-flex items-center gap-1 border border-border/70 bg-white px-3 py-2 shadow-sm";
+const domainPanelClass =
+  "overflow-hidden rounded-[2rem] border border-stone-200/80 bg-white/95 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.06)]";
+const domainRailClass = "flex min-h-[128px] flex-wrap content-start gap-4 rounded-[1.6rem] border border-stone-200/80 bg-stone-50/60 p-4";
+const domainChipClass =
+  "inline-flex items-center rounded-[1.1rem] border px-5 py-3 text-[1.05rem] font-medium transition";
+const domainFeatureCardClass = "rounded-2xl border border-border/70 bg-stone-50/70 px-3 py-2 text-xs";
 
 export function MonoDetailLayout({
   detail,
@@ -15,6 +23,7 @@ export function MonoDetailLayout({
   selectedDomain,
   setSelectedDomain,
   refreshDomainFeatures,
+  openDomainEditor,
   domainLoading = false,
   domainError = "",
   openEditor,
@@ -36,6 +45,7 @@ export function MonoDetailLayout({
   setEditConstraints,
   setEditFeatures,
   saveListPane,
+  domainSaving = false,
   listSaving
 }: DetailLayoutProps) {
   const domains = detail?.domains ?? [];
@@ -137,43 +147,65 @@ export function MonoDetailLayout({
         listSaving={listSaving}
       />
       <div>
-        <div className={sectionLabelClass}>domains</div>
-        <section data-testid="detail-pane-domains" className="rounded-2xl border border-border bg-white p-2 text-sm">
-          <div className="grid gap-0 md:grid-cols-[220px_1fr] md:divide-x md:divide-border">
-            <div className="p-2">
-              <div className="mb-2 flex items-center justify-end">
+        <div data-testid="detail-pane-domains-header" className={domainHeaderClass}>
+          <div className={domainTitleClass}>domains</div>
+          <div className={domainActionBoxClass}>
+            <button
+              type="button"
+              className="rounded-md p-2 text-slate-600 transition hover:bg-stone-100"
+              onClick={() => openDomainEditor()}
+              aria-label="domains-edit"
+              data-testid="domains-edit"
+              disabled={!selected || domainSaving}
+            >
+              <Pencil className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              className="rounded-md p-2 text-slate-600 transition hover:bg-stone-100"
+              onClick={() => void refreshDomainFeatures(selected?.name)}
+              aria-label="domains-refresh"
+              data-testid="domains-refresh"
+              disabled={domainLoading}
+            >
+              <RefreshCw className={`h-5 w-5 ${domainLoading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+        </div>
+        <section data-testid="detail-pane-domains" className={`text-sm ${domainPanelClass}`}>
+          <div className="grid gap-4 md:grid-cols-[minmax(260px,320px)_1fr] md:items-start">
+            <div className={domainRailClass}>
+              {domains.length === 0 && <span className="text-xs text-muted-foreground">(none)</span>}
+              {domains.map((domain) => (
                 <button
                   type="button"
-                  className="rounded p-1 text-muted-foreground hover:bg-muted"
-                  onClick={() => void refreshDomainFeatures(selected?.name)}
-                  aria-label="domains-refresh"
-                  data-testid="domains-refresh"
-                  disabled={domainLoading}
+                  key={domain.name}
+                  data-testid={`mono-domain-chip-${domain.name}`}
+                  className={`${domainChipClass} ${
+                    selected?.name === domain.name
+                      ? "border-emerald-500 bg-emerald-50 text-slate-900 shadow-sm"
+                      : domain.is_active
+                        ? "border-amber-400 bg-amber-50 text-amber-900"
+                        : "border-stone-300 bg-white text-slate-600 hover:border-stone-400 hover:text-slate-800"
+                  }`}
+                  onClick={() => onDomainClick(domain.name)}
                 >
-                  <RefreshCw className={`h-4 w-4 ${domainLoading ? "animate-spin" : ""}`} />
+                  <span>{domain.name}</span>
+                  {domain.is_active && (
+                    <span
+                      data-testid={`mono-domain-active-${domain.name}`}
+                      className="ml-2 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800"
+                    >
+                      active
+                    </span>
+                  )}
                 </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {domains.length === 0 && <span className="text-xs text-muted-foreground">(none)</span>}
-                {domains.map((domain) => (
-                  <span
-                    key={domain.name}
-                    className={`inline-flex cursor-pointer rounded-md border px-2 py-1 text-xs ${
-                      selected?.name === domain.name
-                        ? "border-primary text-foreground font-semibold"
-                        : "border-border text-muted-foreground"
-                    }`}
-                    onClick={() => onDomainClick(domain.name)}
-                  >
-                    {domain.name}
-                  </span>
-                ))}
-              </div>
+              ))}
             </div>
-            <div className="p-2">
+            <div className="min-h-[128px] border-l border-stone-200/80 pl-5">
               {!selected && <div className="text-sm text-muted-foreground">선택된 domain이 없습니다.</div>}
               {selected && (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div className="text-sm text-foreground">{selected.description || "(empty)"}</div>
                   <div className="space-y-2">
                     {domainLoading && (
@@ -194,7 +226,7 @@ export function MonoDetailLayout({
                         const title = name.trim();
                         const description = rest.join(":").trim() || "소스에서 추출된 기능";
                         return (
-                          <div key={`${selected.name}-${title}-${description}`} className="rounded-md border border-border/70 px-2 py-1 text-xs">
+                          <div key={`${selected.name}-${title}-${description}`} className={domainFeatureCardClass}>
                             <span className="font-semibold text-foreground">{title || feature.trim()}</span>
                             <span className="text-muted-foreground">: {description}</span>
                           </div>

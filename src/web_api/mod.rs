@@ -623,11 +623,21 @@ fn browse_project_dirs(
 }
 
 fn monorepo_root_path() -> PathBuf {
+    let mut candidates = vec![];
     if let Ok(v) = std::env::var("ORC_MONOREPO_ROOT") {
-        return PathBuf::from(v);
+        if !v.trim().is_empty() {
+            candidates.push(PathBuf::from(v));
+        }
     }
     if let Ok(home) = std::env::var("HOME") {
-        return Path::new(&home).join("home");
+        candidates.push(Path::new(&home).join("oneMono"));
+        candidates.push(Path::new(&home).join("home"));
+    }
+    for candidate in candidates {
+        let domains_dir = candidate.join("packages").join("domains");
+        if domains_dir.is_dir() {
+            return candidate;
+        }
     }
     PathBuf::from("/home/tree/home")
 }
@@ -1049,7 +1059,7 @@ fn load_project_detail(repo_root: &Path, id: &str) -> Result<ProjectDetail, Stri
         .map_err(|e| format!("failed to read project.md: {}", e))?;
     let parsed = parse_project_md(&raw);
     let monorepo_root = monorepo_root_path();
-    let domains = if is_monorepo_managed_path(&project_path, &monorepo_root) {
+    let domains = if project.project_type == ProjectType::Mono {
         monorepo_domain_details(&monorepo_root)
     } else {
         parsed.domains.clone()
@@ -1613,4 +1623,69 @@ fn write_project_md(project_path: &Path, doc: &ParsedProjectMd) -> Result<(), St
     }
     fs::write(project_md_path(project_path), lines.join("\n"))
         .map_err(|e| format!("failed to write project.md: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        create_project, delete_project, load_registry, project_md_path, CreateProjectRequest,
+        ProjectType,
+    };
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn with_locked_repo_root<T>(test_name: &str, run: impl FnOnce(&Path) -> T) -> T {
+        static REPO_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let _guard = REPO_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("repo lock");
+
+        let root = std::env::temp_dir().join(format!(
+            "mono_manager_web_api_{}_{}_{}",
+            test_name,
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&root).expect("create repo root");
+        let result = run(&root);
+        let _ = fs::remove_dir_all(&root);
+        result
+    }
+
+    fn build_temp_test_project_request(repo_root: &Path, suffix: &str) -> CreateProjectRequest {
+        let trimmed = suffix.trim().trim_start_matches("test_");
+        let project_name = format!("test_{}", trimmed);
+        CreateProjectRequest {
+            name: project_name.clone(),
+            description: "temporary test project".to_string(),
+            path: repo_root.join(&project_name).display().to_string(),
+            spec: String::new(),
+            project_type: Some(ProjectType::Code),
+        }
+    }
+
+    #[test]
+    fn temp_test_project_name_uses_test_prefix_and_is_removed_on_delete() {
+        with_locked_repo_root("temp_project_cleanup", |repo_root| {
+            let request = build_temp_test_project_request(repo_root, "project_cleanup");
+            let project_path = PathBuf::from(&request.path);
+
+            let created = create_project(repo_root, request).expect("create project");
+            assert!(created.name.starts_with("test_"));
+            assert!(project_path.exists());
+            assert!(project_md_path(&project_path).exists());
+
+            delete_project(repo_root, &created.id).expect("delete project");
+
+            let registry = load_registry(repo_root).expect("load registry");
+            assert!(registry.projects.is_empty());
+            assert!(!project_path.exists());
+        });
+    }
 }

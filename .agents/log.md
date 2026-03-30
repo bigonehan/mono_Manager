@@ -1,3 +1,22 @@
+## 2026-03-27 - 작업한일
+- `.../src/code.rs`의 `impl_code_draft` LLM 실행을 `180초 즉시 실패` 대신 `180초 이후 진행 상태 감시 -> 정체 시 중단 -> 정상 진행이면 계속` 흐름으로 바꿈.
+- `.../src/chat.rs`에 workspace 파일 변경/LLM 출력 변화를 기반으로 soft timeout 이후 진행 여부를 판별하는 감시 로직과 테스트를 추가함.
+
+## 2026-03-27 - 작업한일
+- bootstrap 프롬프트(`.../assets/presets/code/bootstrap.txt`, `.../assets/presets/mono/bootstrap.txt`, `.../assets/prompts/init_bootstrap.md`)에 `.gitignore`가 항상 `*.png` ignore 규칙을 포함하도록 명시함.
+- `.../src/ui/mod.rs`의 bootstrap 프롬프트 테스트에 `*.png` 규칙 검증을 추가해 회귀를 막음.
+
+## 2026-03-27 - 작업한일
+- 삭제 명령 처리 시 사용자 원문을 기존 규칙보다 먼저 평가하도록 전역 설정에 `User Instruction Priority Gate`를 추가함.
+- 전역 설정의 `Full Delete Memory Rule`을 강화해 삭제 작업은 `Delete Verification Mode`로 전환되고, 저장소 전체 `rg` 전수 검색과 0건 검증만 완료 기준으로 쓰도록 고정함.
+- 저장소 규칙의 `Full-Scope Execution Gate Rule`에서 `tracked files` 기반 완료 판단을 제거하고, 삭제 작업은 저장소 전체 `rg`와 명시적 예외 경로만 허용하도록 교체함.
+
+## 2026-03-27 - 작업한일
+- `plan.md`, `todo.md`, `.project/plan.yaml`, `.project/feedback.md`와 plan 계열 preset 템플릿/프롬프트 파일을 삭제해 해당 산출물 경로를 정리함.
+- `README.md`, `AGENTS.md`, `src/main.rs`, `src/bin/rc.rs`, `src/code.rs`, `src/ui/mod.rs`, `.project/project.md`, `.project/drafts.yaml`, `.project/check_list.md`에서 `plan.md`, `plan.yaml`, `feedback.md`, `todo.md`, `add_code_plan`, `init_code_plan` 계열 참조를 제거함.
+- `assets/web/src/server/orc.ts`에서 `plan.yaml` 전용 타입/경로/병합 로직을 삭제하고 `drafts.yaml` 단일 상태만 사용하도록 정리함.
+- 검증은 `cargo test` 전체 통과와 `git grep -nE "plan\\.md|plan\\.yaml|feedback\\.md|todo\\.md|plan_yaml|add_code_plan|init_code_plan|cli_init_code_plan|cli_add_code_plan" -- AGENTS.md README.md src assets .project ':(exclude).project/chat.log'` 0건으로 확인함.
+
 ## 2026-03-10 - 작업한일
 - `src/story.rs`의 story 초기화/초안 생성 경로를 `.../templates/draft_item.yaml`과 `.project/draft_item.yaml` 기준으로 바꿔 구형 `draft.yaml` 산출물을 제거함.
 - `assets/web/src/server/orc.ts`의 draft 폼 템플릿 로더를 `.../templates/draft_item.yaml`로 전환해 web 편집 기준 템플릿을 단일 item 스키마와 맞춤.
@@ -3002,3 +3021,79 @@
 - `AGENTS.md`에 `Full-Scope Execution Gate Rule`을 추가해 `전부/모두/전체/다` 계열 지시를 받으면 단일 파일 추정을 금지하고 `tracked file` 전체 검사로 시작하도록 고정함.
 - 완료 조건을 `primary pattern 0건 + alias pattern 0건` 동시 충족으로 강제하고, 미충족 시 `검색 -> 수정 -> 재검색` 반복을 의무화함.
 - 최종 보고에 검사 범위/패턴/0건 결과를 반드시 포함하도록 명시해 범위 누락 재발을 차단함.
+
+## 2026-03-27 - 작업한일
+- `.../assets/web/src/server/orc.ts`의 수동 웹 체크 경로를 `rc test`가 아니라 실제 현재 CLI 구조인 `rc clit test -p . -m <mission>`으로 수정함.
+- ORC CLI로 `.../temp/react_todo_e2e` 프로젝트를 생성해 `project.md -> job.md -> drafts.yaml -> impl -> check -> clit test` 체인을 완주시키고 `.../.project/screenshot/rc-web.png` 생성까지 확인함.
+- 웹 서버 경로로 `.../temp/react_todo_e2e_web_probe3` 프로젝트를 생성해 `job.md`, `drafts.yaml`, draft item 생성과 구현 완료 상태를 확인함.
+- 같은 웹 프로젝트에 대해 `.../api/check-run`, `.../api/run-dev`, Playwright 상세 화면 확인, `http://localhost:4834/` 실제 앱 열림 검증을 완료함.
+
+## 2026-03-27 - 작업한일
+- `.../src/cli.rs`에 `auto_add_function <message>`를 실제 CLI 명령으로 추가해 web auto mode가 더 이상 `unknown command: auto_add_function`으로 실패하지 않도록 수정함.
+- `.../src/code.rs`에 auto orchestration을 추가해 `job seed 병합 -> create_job_md -> add_orc_drafts -> impl_orc_code -> check_orc_code` 체인을 Codex 공용 실행 경로로 묶음.
+- 같은 파일에서 `build_job_md_auto`의 outline 출력(`# feature / - rule / > step`)을 실제 `job.md` 구조로 보정하는 파서를 추가해 web auto mode 이후 `drafts.yaml`이 비지 않도록 수정함.
+- `.../temp/web_auto_codex_check_v2` 경로에서 Web UI `auto-run` 실경로를 Codex 설정으로 재검증해 `job.md`, `drafts.yaml`, `package.json`, `src/main.tsx`, `src/todo-app.tsx` 생성까지 확인함.
+
+## 2026-03-27 - 작업한일
+- `.../src/cli.rs`의 `orc clit` 래퍼가 `test ...` 입력을 자동으로 `clit test ...`로 보정하도록 변경해 표준 호출을 `orc clit test -p <path> -m <mode>`로 정리함.
+- 기존 `orc clit clit test ...` 형태는 내부 정규화로 계속 동작하게 유지해 기존 사용 흐름을 깨지 않도록 함.
+- `.../AGENTS.override.md`, `.../orc-cli-workflow/SKILL.md`, `.../src/cli.rs` help/오류 예시를 전부 `orc clit test ...` 기준으로 갱신함.
+
+## 2026-03-30 - 작업한일
+- `.../src/web_api/mod.rs`에 temp용 test 프로젝트 생성 헬퍼를 추가해 테스트 이름이 항상 `test_` 접두를 사용하도록 고정함.
+- 같은 모듈에 생성 후 삭제 회귀 테스트를 추가해 프로젝트 생성 직후 `test_` 이름과 `project.md` 생성 여부를 확인하고, 삭제 후 레지스트리와 디렉터리 잔존이 없는지 검증함.
+- 검증: `cargo test temp_test_project_name_uses_test_prefix_and_is_removed_on_delete` 통과(1/1).
+
+## 2026-03-30 - 작업한일
+- `.../assets/web/src/server/orc.ts`에서 mono 프로젝트 상세 응답의 domains를 monorepo 전체 목록으로 유지하면서 현재 프로젝트가 사용하는 domain에 `is_active` 플래그를 부여하도록 변경함.
+- `.../assets/web/src/layouts/detail/MonoDetailLayout.tsx`에서 domains pane이 모든 domain을 계속 표시하고, 현재 사용중인 domain에는 `active` 배지를 노출하도록 수정함.
+- `.../assets/web/tests/web.spec.ts`에 mono detail domains pane 회귀 검증을 보강해 전체 domain 노출과 active 배지 표시를 함께 확인함.
+- 검증: `npm --prefix assets/web run test:e2e -- --grep "web ui: mono detail domains pane renders project domains"` 통과(1/1). `npm --prefix assets/web run check` 는 `@astrojs/check` 미설치로 인터랙티브 설치 프롬프트에서 중단됨.
+
+## 2026-03-30 - 작업한일
+- `.../assets/web/src/server/orc.ts`의 monorepo root 해석을 `ORC_MONOREPO_ROOT -> .../oneMono -> .../home` 순으로 재탐색하도록 바꿔 실제 `packages/domains` 위치를 우선 사용하게 수정함.
+- mono 상세의 domain 로딩 조건을 경로 포함 여부가 아니라 `project_type === mono` 기준으로 바꿔 `app/web` 같은 mono 프로젝트가 실제 domain 루트를 읽도록 수정함.
+- 같은 기준을 `.../src/web_api/mod.rs`에도 반영해 Rust API와 Web API의 monorepo domain 해석이 다르게 갈라지지 않게 맞춤.
+- 검증: `cargo test temp_test_project_name_uses_test_prefix_and_is_removed_on_delete` 통과(1/1), `api/project-detail?id=gMsN` 확인 결과 `app/web`의 domains가 `article`, `message`, `user` 3건으로 반환됨. Playwright 직접 캡처 스크립트는 프로젝트 카드 locator 대기 중 타임아웃으로 스크린샷 저장까지 마치지 못함.
+
+## 2026-03-30 - 작업한일
+- `.../AGENTS.md`에 ORC tmux 구현 루프 하드게이트를 추가해 `/plan` 이후 구현은 반드시 worker pane 위임, worker done 이후 manager의 `job.md` 재검토, e2e, 스크린샷 확인, 실패 시 `job.md` 갱신 후 재시도 반복을 강제함.
+- `.../orc-cli-workflow/SKILL.md`에도 같은 규칙을 반영해 manager pane/worker pane 역할, `job.md 재확인 -> e2e -> .project/captures 스크린샷 -> 완료/실패 판정` 순서를 고정함.
+- 검증: `rg -n "ORC Tmux Worker Loop Hard Gate|Manager Recheck Hard Gate|Failed Manager Review Hard Gate" AGENTS.md`, `rg -n "job.md 재확인|.project/captures|다음 worker 작업" /home/tree/ai/skills/orc-cli-workflow/SKILL.md` 확인.
+
+## 2026-03-30 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx`에 domain usecase 편집 모달과 저장 로직을 추가해 domains pane에서 선택한 domain의 usecase를 직접 수정하고 `project.md`에 반영할 수 있게 함.
+- `.../assets/web/src/layouts/detail/CodeDetailLayout.tsx`, `.../assets/web/src/layouts/detail/MonoDetailLayout.tsx`, `.../assets/web/src/layouts/detail/types.ts`에 domains pane 편집 버튼과 저장 상태 props를 연결해 code/mono 상세 모두 같은 편집 진입점을 사용하게 맞춤.
+- `.../assets/web/src/server/orc.ts`, `.../assets/web/src/pages/api/project-domains.ts`에 domain 저장 API를 추가하고 mono 상세는 `project.md` 도메인 정의와 monorepo source 도메인을 merge 하도록 보강함.
+- `.../assets/web/tests/web.spec.ts`에 domain usecase 편집 e2e를 추가하고, code detail domains pane 런타임 크래시를 일으키던 props 누락을 수정함.
+- 검증: `npm --prefix assets/web run test:e2e -- --grep "web ui: domain pane edit saves usecases and reflects in project md"` 통과(1/1), `bash scripts/check_front_ui_rules.sh` 통과. domain 관련 3건 묶음 e2e 재실행에서는 mono domain 카드 노출 대기에서 기존 회귀 1건이 남아 있음.
+
+## 2026-03-30 - 작업한일
+- `current.png` 기준으로 `.../assets/web/src/layouts/detail/CodeDetailLayout.tsx`, `.../assets/web/src/layouts/detail/MonoDetailLayout.tsx`의 domains pane 헤더를 큰 타이틀과 우측 액션 박스 구조로 재배치함.
+- 같은 두 레이아웃의 domains shell을 더 큰 라운드 패널과 좌측 chip rail, 우측 detail pane 구조로 바꿔 스크린샷의 칩 배치와 여백 비율에 맞춤.
+- post-change 캡처를 `.../.project/captures/domain-pane-current-fix.png`, `.../.project/captures/domain-pane-current-fix-full.png`로 저장해 실제 `web/app` 상세 화면에서 레이아웃을 재확인함.
+- 검증: `npm --prefix assets/web run test:e2e -- --grep "web ui: domain pane edit saves usecases and reflects in project md|web ui: detail desktop aligns sidebar and main pane shells for code/mono"` 통과(2/2), `bash scripts/check_front_ui_rules.sh` 통과.
+
+## 2026-03-30 - 작업한일
+- `.../assets/web/src/layouts/detail/CodeDetailLayout.tsx`, `.../assets/web/src/layouts/detail/MonoDetailLayout.tsx`에 `detail-pane-domains-header` test id를 추가하고 domains header의 좌우 기준선을 panel 외곽선과 맞도록 정렬함.
+- `.../assets/web/tests/web.spec.ts`의 detail alignment e2e를 강화해 `detail-sidebar-shell` vs `detail-main-shell` 시작 y축 2px, `detail-pane-domains-header` vs `detail-pane-domains` 좌우 기준선 2px을 함께 검증하도록 수정함.
+- mono alignment e2e는 monorepo sync 후 실제 registry path/name을 기준으로 프로젝트를 선택하게 바꿔 false negative를 줄임.
+- `.../AGENTS.md`의 UI Axis Alignment Hard Gate를 갱신해 pane 내부 정렬 변경 시 outer shell만 검사하는 것을 금지하고, pane 전용 test id와 2px alignment assertion을 필수 조건으로 고정함.
+- 검증: `npm --prefix assets/web run test:e2e -- --grep "web ui: detail desktop aligns sidebar and main pane shells for code/mono"` 통과(1/1), `bash scripts/check_front_ui_rules.sh` 통과.
+
+## 2026-03-30 - 작업한일
+- `.../src/code.rs`의 `normalize_feature_key`를 Unicode 기준으로 바꿔 한글 requirement 이름이 빈 key로 소거되지 않고 draft item name으로 유지되게 수정함.
+- 같은 파일의 `parse_job_md`에 `# requirement` 섹션의 `> step` 파싱을 추가해 한글 requirement 입력의 단계 문장이 더 이상 기본 `trigger -> process -> result`로 대체되지 않게 수정함.
+- `.../src/code.rs`에 한글 requirement가 `drafts.yaml` draft item으로 실제 생성되는 회귀 테스트와 한글 key 보존 테스트를 추가함.
+- 검증: `cargo test build_draft_item_from_requirement -- --nocapture` 통과(8/8), `cargo test add_orc_drafts -- --nocapture` 통과(3/3).
+
+## 2026-03-30 - 작업한일
+- `.../src/code.rs`와 `.../src/chat.rs`에 impl draft runtime progress snapshot 기록을 추가해 300초 이상 장기 실행 시 `running`, `soft_timeout_monitoring`, `slow_progress`, `suspected_stall`, `hard_timeout`, `completed`, `failed` 상태를 draft별로 남기게 수정함.
+- impl 진행 상태는 `.../.project/runtime/impl_progress/<draft>.json` 과 집계 파일 `.../.project/runtime/impl_progress.json` 에 기록되며, soft timeout 이후 실제 진행 중인지 정체인지 detail 메시지와 경과시간으로 구분 가능하게 함.
+- impl 시작/성공/실패 시에도 같은 runtime snapshot을 갱신하도록 연결해 장기 실행 이후 결과 상태를 외부에서 바로 읽을 수 있게 함.
+- 검증: `cargo test update_impl_draft_progress_from_watch_writes_runtime_snapshot_for_korean_name -- --nocapture` 통과(1/1), `cargo test add_orc_drafts -- --nocapture` 통과(3/3), `cargo test build_draft_item_from_requirement -- --nocapture` 통과(8/8).
+
+## 2026-03-30 - 작업한일
+- `.../ai/skills/orc_manager/SKILL.md`를 새로 생성해 `/plan -> ORC worker pane -> job.md/drafts.yaml/impl -> ORC check worker -> 개선 판단 -> 추가 개선 탐색` manager 루프를 전용 skill로 정의함.
+- skill 본문에 worker 완료 메시지 회수 형식, `orc send-tmux` 전송 규칙, `job.md` 재확인 순서, `현재 job.md 이외에 개선할 사항을 개선해` 추가 탐색 규칙, 하드게이트를 함께 기록함.
+- 검증: `sed -n '1,240p' /home/tree/ai/skills/orc_manager/SKILL.md`로 본문 확인, `rg -n "^name: orc_manager|/plan|orc send-tmux|worker:<pane_id>:done|orc clit|현재 job.md 이외에 개선할 사항을 개선해|하드게이트" /home/tree/ai/skills/orc_manager/SKILL.md` 확인.

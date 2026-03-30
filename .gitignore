@@ -5,3 +5,9 @@
 build/
 dist/
 /.agents/artifacts/
+/.project/log.md
+/.project/screenshot/
+/.rc-execution-records.jsonl
+/.rc-session-log.json
+/feedback.md
+/plan.yaml

@@ -5,7 +5,7 @@ projects:
     path: /home/tree/home/template/web/next
     description: monorepo template package
     created_at: "1772888984"
-    updated_at: "1773993820"
+    updated_at: "1774849379"
     selected: true
     project_type: mono
   - id: Crqr
@@ -21,7 +21,7 @@ projects:
     path: /home/tree/home/apps/api
     description: monorepo app package
     created_at: "1772888760"
-    updated_at: "1773992526"
+    updated_at: "1774843828"
     selected: false
     project_type: mono
   - id: T4Yu
@@ -29,15 +29,15 @@ projects:
     path: /home/tree/home/apps/mobile
     description: monorepo app package
     created_at: "1772888760"
-    updated_at: "1773992631"
+    updated_at: "1774843827"
     selected: false
     project_type: mono
   - id: gMsN
-    name: app/web
+    name: web/app
     path: /home/tree/home/apps/web
     description: monorepo app package
     created_at: "1772888760"
-    updated_at: "1772947539"
+    updated_at: "1774847049"
     selected: false
     project_type: mono
   - id: 3ert
@@ -296,3 +296,300 @@ projects:
     updated_at: "1774191703"
     selected: false
     project_type: mono
+  - id: e7uv
+    name: react_todo_e2e_web
+    path: /home/tree/temp/react_todo_e2e_web
+    description: web e2e react todo project
+    created_at: "1774591574"
+    updated_at: "1774591840"
+    selected: false
+    project_type: code
+  - id: EX45
+    name: react_todo_e2e_web_probe
+    path: /home/tree/temp/react_todo_e2e_web_probe
+    description: probe
+    created_at: "1774591866"
+    updated_at: "1774591866"
+    selected: false
+    project_type: code
+  - id: WvZH
+    name: react_todo_e2e_web_probe2
+    path: /home/tree/temp/react_todo_e2e_web_probe2
+    description: probe2
+    created_at: "1774591920"
+    updated_at: "1774591921"
+    selected: false
+    project_type: code
+  - id: CqFJ
+    name: react_todo_e2e_web_probe3
+    path: /home/tree/temp/react_todo_e2e_web_probe3
+    description: probe3
+    created_at: "1774591941"
+    updated_at: "1774592789"
+    selected: false
+    project_type: code
+  - id: mP68
+    name: react_todo_e2e_web_local
+    path: /home/tree/temp/react_todo_e2e_web_local
+    description: web local e2e react todo project
+    created_at: "1774592339"
+    updated_at: "1774592339"
+    selected: false
+    project_type: code
+  - id: aNkr
+    name: web_auto_codex_check
+    path: /home/tree/temp/web_auto_codex_check
+    description: web auto codex check
+    created_at: "1774594142"
+    updated_at: "1774842852"
+    selected: false
+    project_type: code
+    state: complete
+  - id: qxme
+    name: pw-mono-shot-1774843945001/app
+    path: /home/tree/home/apps/pw-mono-shot-1774843945001
+    description: monorepo app package
+    created_at: "1774843945"
+    updated_at: "1774843950"
+    selected: false
+    project_type: mono
+  - id: BfR7
+    name: pw-mono-shot-1774843907346/app
+    path: /home/tree/home/apps/pw-mono-shot-1774843907346
+    description: monorepo app package
+    created_at: "1774843949"
+    updated_at: "1774843949"
+    selected: false
+    project_type: mono
+  - id: FR9F
+    name: api/app
+    path: /home/tree/oneMono/apps/api
+    description: monorepo app package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: MGr3
+    name: mobile/app
+    path: /home/tree/oneMono/apps/mobile
+    description: monorepo app package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: Riaf
+    name: script/app
+    path: /home/tree/oneMono/apps/script
+    description: monorepo app package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: 6bJ6
+    name: web/agent
+    path: /home/tree/oneMono/apps/web/agent
+    description: monorepo app package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: ewY4
+    name: web/PageEditor
+    path: /home/tree/oneMono/apps/web/PageEditor
+    description: monorepo app package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: NT9d
+    name: web/structure_viewer
+    path: /home/tree/oneMono/apps/web/structure_viewer
+    description: monorepo app package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: WawM
+    name: article
+    path: /home/tree/oneMono/packages/features/article
+    description: monorepo feature package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: MKuA
+    name: auth
+    path: /home/tree/oneMono/packages/features/auth
+    description: monorepo feature package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: VzCi
+    name: comment
+    path: /home/tree/oneMono/packages/features/comment
+    description: monorepo feature package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: QQUr
+    name: dashboard
+    path: /home/tree/oneMono/packages/features/dashboard
+    description: monorepo feature package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: 3S7B
+    name: editor
+    path: /home/tree/oneMono/packages/features/editor
+    description: monorepo feature package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: gTuN
+    name: reader
+    path: /home/tree/oneMono/packages/features/reader
+    description: monorepo feature package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: dxub
+    name: user
+    path: /home/tree/oneMono/packages/features/user
+    description: monorepo feature package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: 5Vhw
+    name: desktop/basic
+    path: /home/tree/oneMono/template/desktop/basic
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: ms5A
+    name: mobile/expo
+    path: /home/tree/oneMono/template/mobile/expo
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: MAYM
+    name: mobile/reader
+    path: /home/tree/oneMono/template/mobile/reader
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: 83ML
+    name: server/lecture
+    path: /home/tree/oneMono/template/server/lecture
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: DHSu
+    name: web/astro
+    path: /home/tree/oneMono/template/web/astro
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: jWkH
+    name: web/blog
+    path: /home/tree/oneMono/template/web/blog
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: bzPJ
+    name: web/blog-feature-gapfix
+    path: /home/tree/oneMono/template/web/blog-feature-gapfix
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: CDuC
+    name: web/community
+    path: /home/tree/oneMono/template/web/community
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: nAxN
+    name: web/dir
+    path: /home/tree/oneMono/template/web/dir
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: cvpq
+    name: web/donation
+    path: /home/tree/oneMono/template/web/donation
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: qJ8u
+    name: web/game
+    path: /home/tree/oneMono/template/web/game
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: NtRF
+    name: web/landing
+    path: /home/tree/oneMono/template/web/landing
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: uLqH
+    name: web/lecture
+    path: /home/tree/oneMono/template/web/lecture
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: LtFx
+    name: web/next
+    path: /home/tree/oneMono/template/web/next
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: ZK4P
+    name: web/references
+    path: /home/tree/oneMono/template/web/references
+    description: monorepo template package
+    created_at: "1774845186"
+    updated_at: "1774845186"
+    selected: false
+    project_type: mono
+  - id: KnMi
+    name: dbg-domain-1774846184674
+    path: /tmp/dbg-domain-1774846184674
+    description: dbg
+    created_at: "1774846184"
+    updated_at: "1774846187"
+    selected: false
+    project_type: code

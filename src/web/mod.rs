@@ -185,10 +185,7 @@ fn run_web_build(web_dir: &Path) -> Result<(), String> {
     if status.success() {
         Ok(())
     } else {
-        Err(format!(
-            "web build failed with status: {:?}",
-            status.code()
-        ))
+        Err(format!("web build failed with status: {:?}", status.code()))
     }
 }
 
@@ -542,8 +539,11 @@ mod tests {
 
     #[test]
     fn ensure_web_assets_exist_reports_missing_package_json_path() {
-        let missing_dir = crate::source_root().join(".temp").join("missing-web-assets-test");
-        let err = ensure_web_assets_exist(&missing_dir).expect_err("missing package.json should fail");
+        let missing_dir = crate::source_root()
+            .join(".temp")
+            .join("missing-web-assets-test");
+        let err =
+            ensure_web_assets_exist(&missing_dir).expect_err("missing package.json should fail");
         assert!(err.contains("web assets not found:"));
         assert!(err.contains("missing-web-assets-test/package.json"));
     }

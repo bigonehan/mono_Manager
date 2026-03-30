@@ -18,6 +18,19 @@ function trackPathForCleanup(targetPath: string): void {
   trackedPaths.add(targetPath);
 }
 
+function resolveMonorepoRootForTest(): string {
+  const envRoot = (process.env.ORC_MONOREPO_ROOT ?? "").trim();
+  const home = process.env.HOME ?? "/home/tree";
+  const candidates = [envRoot, path.join(home, "oneMono"), path.join(home, "home")].filter(Boolean);
+  for (const candidate of candidates) {
+    const domainsDir = path.join(candidate, "packages", "domains");
+    if (fs.existsSync(domainsDir) && fs.statSync(domainsDir).isDirectory()) {
+      return candidate;
+    }
+  }
+  return path.join(home, "home");
+}
+
 async function createProjectForTest(request: APIRequestContext, payload: CreateProjectPayload) {
   trackPathForCleanup(payload.path);
   const response = await request.post("http://127.0.0.1:4175/api/projects", {
@@ -29,7 +42,7 @@ async function createProjectForTest(request: APIRequestContext, payload: CreateP
   if (typeof projectId === "string" && projectId.length > 0) {
     trackedProjectIds.add(projectId);
   }
-  return response;
+  return { response, projectId };
 }
 
 test.afterEach(async ({ request }) => {
@@ -154,20 +167,111 @@ test("web ui: domain badge click refreshes source-derived feature list", async (
   await expect(domainsPane.getByText("accountsLogin", { exact: false })).toBeVisible();
 });
 
+test("web ui: domain pane edit saves usecases and reflects in project md", async ({ page, request }) => {
+  const unique = `pw-domain-edit-${Date.now()}`;
+  const tmpPath = `/tmp/${unique}`;
+  trackPathForCleanup(tmpPath);
+  fs.rmSync(tmpPath, { recursive: true, force: true });
+  fs.mkdirSync(path.join(tmpPath, "src"), { recursive: true });
+
+  const created = await createProjectForTest(request, {
+    name: unique,
+    description: "domain pane edit verification",
+    path: tmpPath,
+    spec: "react, domain",
+    project_type: "code"
+  });
+
+  fs.writeFileSync(
+    path.join(tmpPath, ".project", "project.md"),
+    [
+      "# info",
+      "name: domain-edit-e2e",
+      "description: domain edit",
+      "spec: react",
+      "goal: validate domain edit",
+      "",
+      "# rules",
+      "- ",
+      "",
+      "# constraints",
+      "- ",
+      "",
+      "# features",
+      "- ",
+      "",
+      "# domains",
+      "## accounts",
+      "### description",
+      "- accounts domain",
+      "### feature",
+      "- login",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  expect(created.projectId).toBeTruthy();
+  const detailRes = await request.get(`http://127.0.0.1:4175/api/project-detail?id=${created.projectId}`);
+  expect(detailRes.ok()).toBeTruthy();
+  const detailBody = (await detailRes.json()) as { detail?: { domains?: Array<{ name: string }> } };
+  expect(detailBody.detail?.domains?.map((domain) => domain.name)).toContain("accounts");
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Code" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Code" })).toBeVisible();
+  const card = page.locator(`[data-testid^="project-item-"]`, { hasText: unique }).first();
+  await expect(card).toBeVisible();
+  await card.click({ force: true });
+  await request.post("http://127.0.0.1:4175/api/project-select", { data: { id: created.projectId } });
+  await card.click({ force: true });
+  await page.getByTestId("tab-detail").click({ force: true });
+
+  const domainsPane = page.getByTestId("detail-pane-domains");
+  await expect
+    .poll(async () => await domainsPane.textContent(), { timeout: 10_000 })
+    .toContain("accounts");
+  await domainsPane.getByText("accounts").first().click();
+  await page.getByTestId("domains-edit").click();
+  await page.getByTestId("domain-editor-textarea").fill(["login", "registerUser", "resetPassword"].join("\n"));
+  await page.getByTestId("domain-editor-save").click();
+  await expect(page.getByTestId("domain-editor-textarea")).toHaveCount(0);
+  await expect(domainsPane).toContainText("registerUser");
+  await expect(domainsPane).toContainText("resetPassword");
+
+  const projectMd = path.join(tmpPath, ".project", "project.md");
+  await expect
+    .poll(() => fs.readFileSync(projectMd, "utf8"), {
+      timeout: 10_000
+    })
+    .toContain("registerUser");
+});
+
 test("web ui: mono detail domains pane renders project domains", async ({ page, request }) => {
   const unique = `pw-mono-domain-${Date.now()}`;
   const monoDomainName = `billing-${Date.now()}`;
-  const tmpPath = path.join("/home/tree/home/apps", unique);
-  const monoDomainRoot = path.join("/home/tree/home/packages/domains", monoDomainName);
+  const passiveDomainName = `support-${Date.now()}`;
+  const monorepoRoot = resolveMonorepoRootForTest();
+  const tmpPath = path.join(monorepoRoot, "apps", unique);
+  const monoDomainRoot = path.join(monorepoRoot, "packages", "domains", monoDomainName);
+  const passiveDomainRoot = path.join(monorepoRoot, "packages", "domains", passiveDomainName);
   trackPathForCleanup(tmpPath);
   trackPathForCleanup(monoDomainRoot);
+  trackPathForCleanup(passiveDomainRoot);
   fs.rmSync(tmpPath, { recursive: true, force: true });
   fs.rmSync(monoDomainRoot, { recursive: true, force: true });
+  fs.rmSync(passiveDomainRoot, { recursive: true, force: true });
   fs.mkdirSync(tmpPath, { recursive: true });
   fs.mkdirSync(path.join(monoDomainRoot, "src"), { recursive: true });
+  fs.mkdirSync(path.join(passiveDomainRoot, "src"), { recursive: true });
   fs.writeFileSync(
     path.join(monoDomainRoot, "src", `${monoDomainName}.ts`),
     `export function ${monoDomainName.replace(/-/g, "_")}Sync() { return "ok"; }\n`,
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(passiveDomainRoot, "src", `${passiveDomainName}.ts`),
+    `export function ${passiveDomainName.replace(/-/g, "_")}Lookup() { return "ok"; }\n`,
     "utf8"
   );
 
@@ -178,8 +282,39 @@ test("web ui: mono detail domains pane renders project domains", async ({ page, 
     spec: "mono, domains",
     project_type: "mono"
   });
+  const syncRes = await request.post("http://127.0.0.1:4175/api/monorepo-sync");
+  expect(syncRes.ok()).toBeTruthy();
+  fs.writeFileSync(
+    path.join(tmpPath, ".project", "project.md"),
+    [
+      "# info",
+      `name: ${unique}`,
+      "description: mono domain pane verification",
+      "spec: mono, domains",
+      "goal: show all domains with active state",
+      "",
+      "# rules",
+      "- ",
+      "",
+      "# constraints",
+      "- ",
+      "",
+      "# features",
+      "- ",
+      "",
+      "# domains",
+      `## ${monoDomainName}`,
+      "### description",
+      `- ${monoDomainName} is currently used`,
+      "### feature",
+      "- sync billing state",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
 
   await page.goto("/");
+  await page.reload();
   const card = page.locator(`[data-testid^="project-item-"]`, { hasText: unique }).first();
   await expect(card).toBeVisible();
   await card.click({ force: true });
@@ -187,6 +322,9 @@ test("web ui: mono detail domains pane renders project domains", async ({ page, 
 
   const domainsPane = page.getByTestId("detail-pane-domains");
   await expect(domainsPane).toContainText(monoDomainName);
+  await expect(domainsPane).toContainText(passiveDomainName);
+  await expect(page.getByTestId(`mono-domain-active-${monoDomainName}`)).toBeVisible();
+  await expect(page.getByTestId(`mono-domain-active-${passiveDomainName}`)).toHaveCount(0);
   await domainsPane.getByText(monoDomainName).first().click();
   await expect(domainsPane).toContainText("Sync");
 });
@@ -462,8 +600,7 @@ test("web ui: voice input updates single-line and multiline text fields", async 
       spec: "react, voice",
       project_type: "code"
     });
-    const createBody = (await createRes.json()) as { project?: { id?: string } };
-    projectId = createBody.project?.id ?? "";
+    projectId = createRes.projectId ?? "";
 
     await page.goto("/");
     const card = page.locator(`[data-testid^="project-item-"]`, { hasText: unique }).first();
@@ -668,10 +805,11 @@ test("web ui: detail desktop aligns sidebar and main pane shells for code/mono",
   await page.setViewportSize({ width: 1440, height: 900 });
   const screenshotDir = path.join(process.cwd(), "..", "..", ".agents", "artifacts");
   fs.mkdirSync(screenshotDir, { recursive: true });
+  const monorepoRoot = resolveMonorepoRootForTest();
 
   const cases: Array<{ type: "code" | "mono"; name: string; root: string }> = [
     { type: "code", name: `pw-align-code-${Date.now()}`, root: `/tmp/pw-align-code-${Date.now()}` },
-    { type: "mono", name: `pw-align-mono-${Date.now()}`, root: path.join("/home/tree/home/apps", `pw-align-mono-${Date.now()}`) }
+    { type: "mono", name: `pw-align-mono-${Date.now()}`, root: path.join(monorepoRoot, "apps", `pw-align-mono-${Date.now()}`) }
   ];
 
   for (const c of cases) {
@@ -679,33 +817,59 @@ test("web ui: detail desktop aligns sidebar and main pane shells for code/mono",
     fs.rmSync(c.root, { recursive: true, force: true });
     fs.mkdirSync(c.root, { recursive: true });
 
-    await createProjectForTest(request, {
+    const created = await createProjectForTest(request, {
       name: c.name,
       description: `${c.type} alignment e2e`,
       path: c.root,
       spec: "react, layout",
       project_type: c.type
     });
+    let targetProjectId = created.projectId ?? "";
+    let targetProjectName = c.name;
+    if (c.type === "mono") {
+      const syncRes = await request.post("http://127.0.0.1:4175/api/monorepo-sync");
+      expect(syncRes.ok()).toBeTruthy();
+      const projectsRes = await request.get("http://127.0.0.1:4175/api/projects");
+      expect(projectsRes.ok()).toBeTruthy();
+      const projectsBody = (await projectsRes.json()) as { projects?: Array<{ id: string; name: string; path: string }> };
+      const syncedProject = projectsBody.projects?.find((project) => project.path === c.root);
+      targetProjectId = syncedProject?.id ?? targetProjectId;
+      targetProjectName = syncedProject?.name ?? targetProjectName;
+    }
+    expect(targetProjectId).toBeTruthy();
+    const selectRes = await request.post("http://127.0.0.1:4175/api/project-select", { data: { id: targetProjectId } });
+    expect(selectRes.ok()).toBeTruthy();
 
     await page.goto("/");
-    const card = page.locator(`[data-testid^="project-item-"]`, { hasText: c.name }).first();
-    await expect(card).toBeVisible();
-    await card.click({ force: true });
+    await expect(page.getByRole("heading", { name: "Code" })).toBeVisible();
+    if (c.type === "mono") {
+      await page.reload();
+      await expect(page.getByRole("heading", { name: "Code" })).toBeVisible();
+    }
+    await expect(page.locator(`[data-testid^="project-item-"]`).first()).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("tab-detail").click({ force: true });
 
     await expect(page.getByTestId("detail-sidebar-shell")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("detail-sidebar-card")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("detail-main-shell")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("detail-pane-domains-header")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("detail-pane-domains")).toBeVisible({ timeout: 20_000 });
     await expect
       .poll(
         async () => {
-          const [sidebarCardBox, projectPaneBox] = await Promise.all([
+          const [sidebarCardBox, projectPaneBox, domainsHeaderBox, domainsPaneBox] = await Promise.all([
             page.getByTestId("detail-sidebar-card").boundingBox(),
-            page.getByTestId("detail-main-shell").boundingBox()
+            page.getByTestId("detail-main-shell").boundingBox(),
+            page.getByTestId("detail-pane-domains-header").boundingBox(),
+            page.getByTestId("detail-pane-domains").boundingBox()
           ]);
-          if (!sidebarCardBox || !projectPaneBox) return false;
+          if (!sidebarCardBox || !projectPaneBox || !domainsHeaderBox || !domainsPaneBox) return false;
           const topDiff = Math.abs(sidebarCardBox.y - projectPaneBox.y);
-          return topDiff <= 8;
+          const domainsLeftDiff = Math.abs(domainsHeaderBox.x - domainsPaneBox.x);
+          const domainsRightDiff = Math.abs(
+            domainsHeaderBox.x + domainsHeaderBox.width - (domainsPaneBox.x + domainsPaneBox.width)
+          );
+          return topDiff <= 2 && domainsLeftDiff <= 2 && domainsRightDiff <= 2;
         },
         { timeout: 20_000 }
       )

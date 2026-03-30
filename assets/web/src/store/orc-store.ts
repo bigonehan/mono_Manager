@@ -28,7 +28,7 @@ export type Detail = {
   rules: string[];
   constraints: string[];
   features: string[];
-  domains: Array<{ name: string; description: string; features: string[] }>;
+  domains: Array<{ name: string; description: string; features: string[]; is_active?: boolean }>;
   planned: string[];
   plannedDisplay: string[];
   generated: string[];
