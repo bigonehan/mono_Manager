@@ -199,7 +199,7 @@ pub(crate) fn draft_add(feature_name: &str, request: Option<String>) -> Result<S
     if request_text.trim().is_empty() {
         return Err("draft-add requires non-empty request".to_string());
     }
-    
+
     // logic simplified or removed as per new orc flow which handles this in add_orc_drafts
     Ok("draft_add refactored into orc flow".to_string())
 }

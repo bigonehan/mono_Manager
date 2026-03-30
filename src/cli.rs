@@ -32,9 +32,10 @@ pub fn print_usage(program: &str) {
     println!("  {program} [profile] <command> [args...]");
     let mut commands = [
         "help | cli_help | -h | --help",
-        "clit <args...>  (forward to rc CLI)",
-        "init_orc_project [-n <name>] [-s <spec>] [-d <description>] [-a]",
+        "clit <args...>  (forward to rc CLI; example: orc clit test -p <path> -m <mode>)",
+        "init_orc_project|init_code_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-m <message>] [-a]",
         "build_orc_domains",
+        "auto_add_function <message>",
         "init_orc_job",
         "add_orc_drafts",
         "create_job_md",
@@ -55,8 +56,22 @@ pub fn print_usage(program: &str) {
     }
 }
 
+fn normalize_clit_args(args: &[String]) -> Vec<String> {
+    if args.is_empty() {
+        return Vec::new();
+    }
+    if matches!(args.first().map(String::as_str), Some("clit")) {
+        return args.to_vec();
+    }
+    let mut normalized = Vec::with_capacity(args.len() + 1);
+    normalized.push("clit".to_string());
+    normalized.extend(args.iter().cloned());
+    normalized
+}
+
 fn canonical_command_for_match(command: &str) -> &str {
     match command {
+        "init_code_project" => "init_orc_project",
         "impl_code_draft" | "cli_impl_code_draft" => "impl_orc_code",
         "cli_create_input_md" => "create_input_md",
         other => other,
@@ -94,6 +109,12 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
     match command {
         "init_orc_project" => profile.project_service().init_project(tail),
         "build_orc_domains" => profile.project_service().build_domains(),
+        "auto_add_function" => {
+            if tail.is_empty() {
+                return Err("auto_add_function requires <message>".to_string());
+            }
+            crate::code::auto_add_function(&tail.join(" ")).await
+        }
         "init_orc_job" => profile.project_service().init_job(),
         "add_orc_drafts" => profile.draft_service().add_drafts(),
         "cli_rust_orchestra" => crate::code::flow_rust_orchestra(Path::new("."), tail),
@@ -115,9 +136,7 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             }
             crate::code::create_input_md()
         }
-        "check_orc_code" => {
-            profile.feedback_service().check()
-        }
+        "check_orc_code" => profile.feedback_service().check(),
         "open-ui" => {
             if tail.is_empty() {
                 super::tui::TuiRuntime::new().run_ui_entry()
@@ -189,11 +208,12 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         "clit" => {
             if tail.is_empty() {
                 return Err(
-                    "clit requires rc arguments (example: clit test -p <path> -m <mode>)"
+                    "clit requires rc arguments (example: orc clit test -p <path> -m <mode>)"
                         .to_string(),
                 );
             }
-            crate::run_rc_forward(tail)
+            let normalized = normalize_clit_args(tail);
+            crate::run_rc_forward(&normalized)
         }
         _ => Err(format!("unknown command: {}", command)),
     }
@@ -201,11 +221,22 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_command_for_match, is_help_command};
+    use super::{canonical_command_for_match, is_help_command, normalize_clit_args};
 
     #[test]
     fn canonical_command_maps_impl_code_draft_alias() {
-        assert_eq!(canonical_command_for_match("impl_code_draft"), "impl_orc_code");
+        assert_eq!(
+            canonical_command_for_match("impl_code_draft"),
+            "impl_orc_code"
+        );
+    }
+
+    #[test]
+    fn canonical_command_maps_init_code_project_alias() {
+        assert_eq!(
+            canonical_command_for_match("init_code_project"),
+            "init_orc_project"
+        );
     }
 
     #[test]
@@ -222,8 +253,19 @@ mod tests {
     }
 
     #[test]
+    fn canonical_command_keeps_auto_add_function() {
+        assert_eq!(
+            canonical_command_for_match("auto_add_function"),
+            "auto_add_function"
+        );
+    }
+
+    #[test]
     fn canonical_command_keeps_create_job_md() {
-        assert_eq!(canonical_command_for_match("create_job_md"), "create_job_md");
+        assert_eq!(
+            canonical_command_for_match("create_job_md"),
+            "create_job_md"
+        );
     }
 
     #[test]
@@ -238,5 +280,25 @@ mod tests {
     fn is_help_command_accepts_cli_help_alias() {
         let args = vec!["orc".to_string(), "cli_help".to_string()];
         assert!(is_help_command(&args));
+    }
+
+    #[test]
+    fn normalize_clit_args_inserts_rc_subcommand_when_omitted() {
+        let args = vec!["test".to_string(), "-p".to_string(), ".".to_string()];
+        assert_eq!(
+            normalize_clit_args(&args),
+            vec![
+                "clit".to_string(),
+                "test".to_string(),
+                "-p".to_string(),
+                ".".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_clit_args_keeps_existing_clit_prefix() {
+        let args = vec!["clit".to_string(), "test".to_string()];
+        assert_eq!(normalize_clit_args(&args), args);
     }
 }

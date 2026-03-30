@@ -10,6 +10,7 @@ export type DetailLayoutProps = {
   selectedDomain: string;
   setSelectedDomain: (domain: string) => void;
   refreshDomainFeatures: (domain?: string) => Promise<boolean>;
+  openDomainEditor: () => void;
   domainLoading?: boolean;
   domainError?: string;
   editName: string;
@@ -34,6 +35,7 @@ export type DetailLayoutProps = {
   memoSaving: boolean;
   saveProjectInfo: () => Promise<void>;
   saveListPane: (pane: "rules" | "constraints" | "features") => Promise<void>;
+  domainSaving?: boolean;
   projectInfoSaving: boolean;
   listSaving: boolean;
 };

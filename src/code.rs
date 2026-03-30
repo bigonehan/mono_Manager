@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const CODE_SUBCOMMAND_TIMEOUT_SEC: u64 = 600;
-const IMPL_DRAFT_LLM_TIMEOUT_SEC: u64 = 240;
+const IMPL_DRAFT_LLM_SOFT_TIMEOUT_SEC: u64 = 180;
+const IMPL_DRAFT_LLM_STALL_TIMEOUT_SEC: u64 = 180;
+const IMPL_DRAFT_LLM_HARD_TIMEOUT_SEC: u64 = 900;
 const LONG_WAIT_REPORT_SEC: u64 = 60;
 const ADD_ORC_DRAFTS_SOFT_TIMEOUT_SEC: u64 = 150;
 const CREATE_JOB_MD_TIMEOUT_SEC: u64 = 120;
@@ -86,6 +88,18 @@ pub(crate) struct WorkflowEvidenceSnapshot {
     pub draft_items_len: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct ImplDraftProgressSnapshot {
+    pub draft_name: String,
+    pub status: String,
+    pub elapsed_sec: u64,
+    pub detail: String,
+    pub updated_at: u64,
+    pub soft_timeout_sec: u64,
+    pub stall_timeout_sec: u64,
+    pub hard_timeout_sec: u64,
+}
+
 // --- Path Utilities ---
 
 pub(crate) fn job_md_path() -> PathBuf {
@@ -104,10 +118,65 @@ fn drafts_yaml_path_from(root: &Path) -> PathBuf {
     root.join(".project").join("drafts.yaml")
 }
 
+fn impl_progress_runtime_dir(root: &Path) -> PathBuf {
+    root.join(".project").join("runtime").join("impl_progress")
+}
+
+fn impl_progress_index_path(root: &Path) -> PathBuf {
+    root.join(".project").join("runtime").join("impl_progress.json")
+}
+
 fn ensure_project_dir_from(root: &Path) -> Result<PathBuf, String> {
     let dir = root.join(".project");
     fs::create_dir_all(&dir).map_err(|e| format!("failed to create .project: {}", e))?;
     Ok(dir)
+}
+
+fn now_unix_sec() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn impl_progress_file_name(draft_name: &str) -> String {
+    let normalized = normalize_feature_key(draft_name);
+    if normalized.is_empty() {
+        "unknown.json".to_string()
+    } else {
+        format!("{}.json", normalized)
+    }
+}
+
+fn save_impl_progress_snapshot(root: &Path, snapshot: &ImplDraftProgressSnapshot) -> Result<(), String> {
+    let runtime_dir = impl_progress_runtime_dir(root);
+    fs::create_dir_all(&runtime_dir)
+        .map_err(|e| format!("failed to create impl progress runtime dir: {}", e))?;
+    let snapshot_path = runtime_dir.join(impl_progress_file_name(&snapshot.draft_name));
+    let body = serde_json::to_string_pretty(snapshot)
+        .map_err(|e| format!("failed to encode impl progress snapshot: {}", e))?;
+    fs::write(&snapshot_path, body)
+        .map_err(|e| format!("failed to write impl progress snapshot: {}", e))?;
+
+    let mut snapshots = load_impl_progress_snapshots(root)?;
+    snapshots.retain(|item| item.draft_name != snapshot.draft_name);
+    snapshots.push(snapshot.clone());
+    snapshots.sort_by(|a, b| a.draft_name.cmp(&b.draft_name));
+    let index_body = serde_json::to_string_pretty(&snapshots)
+        .map_err(|e| format!("failed to encode impl progress index: {}", e))?;
+    fs::write(impl_progress_index_path(root), index_body)
+        .map_err(|e| format!("failed to write impl progress index: {}", e))?;
+    Ok(())
+}
+
+fn load_impl_progress_snapshots(root: &Path) -> Result<Vec<ImplDraftProgressSnapshot>, String> {
+    let path = impl_progress_index_path(root);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read impl progress index: {}", e))?;
+    serde_json::from_str(&raw).map_err(|e| format!("failed to parse impl progress index: {}", e))
 }
 
 pub(crate) fn ensure_project_dir() -> Result<PathBuf, String> {
@@ -125,8 +194,7 @@ fn load_job_doc_from(root: &Path) -> Result<JobDoc, String> {
     if !path.exists() {
         return Ok(JobDoc::default());
     }
-    let raw = fs::read_to_string(&path)
-        .map_err(|e| format!("failed to read job.md: {}", e))?;
+    let raw = fs::read_to_string(&path).map_err(|e| format!("failed to read job.md: {}", e))?;
     parse_job_md(&raw)
 }
 
@@ -149,8 +217,8 @@ fn load_drafts_doc_from(root: &Path) -> Result<CodeDraftsDoc, String> {
     if !path.exists() {
         return Ok(CodeDraftsDoc::default());
     }
-    let raw = fs::read_to_string(&path)
-        .map_err(|e| format!("failed to read drafts.yaml: {}", e))?;
+    let raw =
+        fs::read_to_string(&path).map_err(|e| format!("failed to read drafts.yaml: {}", e))?;
     serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse drafts.yaml: {}", e))
 }
 
@@ -161,17 +229,24 @@ pub(crate) fn save_drafts_doc(doc: &CodeDraftsDoc) -> Result<(), String> {
 fn save_drafts_doc_from(root: &Path, doc: &CodeDraftsDoc) -> Result<(), String> {
     let path = drafts_yaml_path_from(root);
     ensure_project_dir_from(root)?;
-    let raw = serde_yaml::to_string(doc).map_err(|e| format!("failed to encode drafts.yaml: {}", e))?;
+    let raw =
+        serde_yaml::to_string(doc).map_err(|e| format!("failed to encode drafts.yaml: {}", e))?;
     fs::write(&path, raw).map_err(|e| format!("failed to write drafts.yaml: {}", e))
 }
 
 pub(crate) fn read_template(name: &str) -> Result<String, String> {
-    let path = crate::source_root().join("assets").join("templates").join(name);
+    let path = crate::source_root()
+        .join("assets")
+        .join("templates")
+        .join(name);
     fs::read_to_string(&path).map_err(|e| format!("failed to read template {}: {}", name, e))
 }
 
 pub(crate) fn read_prompt(name: &str) -> Result<String, String> {
-    let path = crate::source_root().join("assets").join("prompts").join(name);
+    let path = crate::source_root()
+        .join("assets")
+        .join("prompts")
+        .join(name);
     fs::read_to_string(&path).map_err(|e| format!("failed to read prompt {}: {}", name, e))
 }
 
@@ -180,30 +255,19 @@ pub(crate) fn read_prompt(name: &str) -> Result<String, String> {
 /// Step 1: Initialize project.md
 pub(crate) fn init_orc_project(args: &[String]) -> Result<String, String> {
     let opts = parse_common_opts(args);
-    ensure_project_dir()?;
-    let template = read_template("project.md")?;
-    let target = Path::new(".project").join("project.md");
-    
-    let mut body = template;
-    if let Some(name) = opts.name.as_deref() {
-        body = body.replace("{{name}}", &name);
-    }
-    if let Some(desc) = opts.description.as_deref() {
-        body = body.replace("{{description}}", &desc);
-    }
-    if let Some(spec) = opts.spec.as_deref() {
-        body = body.replace("{{spec}}", &spec);
-    }
-    
+    let project_root = resolve_project_root(&opts)?;
+    ensure_project_dir_from(&project_root)?;
+    let target = project_root.join(".project").join("project.md");
+    let body = build_initial_project_md(&opts, &project_root)?;
     fs::write(&target, body).map_err(|e| format!("failed to write project.md: {}", e))?;
-    
+
     if opts.auto {
-        let bootstrap_output = run_project_bootstrap(&opts)?;
-        let bootstrap_report_path = Path::new(".project").join("bootstrap.md");
+        let bootstrap_output = run_project_bootstrap(&project_root)?;
+        let bootstrap_report_path = project_root.join(".project").join("bootstrap.md");
         fs::write(&bootstrap_report_path, bootstrap_output)
             .map_err(|e| format!("failed to write .project/bootstrap.md: {}", e))?;
     }
-    
+
     Ok("init_orc_project completed".to_string())
 }
 
@@ -212,16 +276,16 @@ pub(crate) fn build_orc_domains() -> Result<String, String> {
     let project_md_path = Path::new(".project").join("project.md");
     let project_md = fs::read_to_string(&project_md_path)
         .map_err(|e| format!("failed to read project.md: {}", e))?;
-    
+
     let prompt_template = read_prompt("build_domains.md")?;
     let prompt = format!("{}\n\nproject.md:\n{}", prompt_template, project_md);
-    
+
     let raw = crate::run_codex_exec_capture(&prompt)?;
     let domain_block = crate::extract_markdown_block(&raw);
-    
+
     let next = replace_markdown_section(&project_md, "# domains", &domain_block);
     fs::write(&project_md_path, next).map_err(|e| format!("failed to update project.md: {}", e))?;
-    
+
     Ok("build_orc_domains completed".to_string())
 }
 
@@ -231,11 +295,11 @@ pub(crate) fn init_orc_job() -> Result<String, String> {
     if path.exists() {
         return Ok("job.md already exists".to_string());
     }
-    
+
     let template = read_template("job.md")?;
     let project_md = fs::read_to_string(Path::new(".project").join("project.md"))
         .map_err(|e| format!("failed to read project.md: {}", e))?;
-    
+
     let features = extract_plain_list_under_header(&project_md, "# features");
     let mut doc = JobDoc::default();
     for f in features {
@@ -244,7 +308,7 @@ pub(crate) fn init_orc_job() -> Result<String, String> {
             ..Default::default()
         });
     }
-    
+
     save_job_doc(&doc)?;
     Ok("init_orc_job completed".to_string())
 }
@@ -254,14 +318,15 @@ pub(crate) fn create_job_md() -> Result<String, String> {
     if !project_md_path.exists() {
         return Err("missing .project/project.md".to_string());
     }
-    let (plan_path, source_label) = resolve_job_md_source_path()?;
+    let (seed_path, source_label) = resolve_job_md_source_path()?;
 
     let prompt_template = read_job_md_prompt_template()?;
     let project_md = fs::read_to_string(&project_md_path)
         .map_err(|e| format!("failed to read {}: {}", project_md_path.display(), e))?;
-    let plan_yaml = fs::read_to_string(&plan_path)
-        .map_err(|e| format!("failed to read {}: {}", plan_path.display(), e))?;
-    let prompt = build_create_job_md_prompt(&prompt_template, &project_md, source_label, &plan_yaml);
+    let seed_body = fs::read_to_string(&seed_path)
+        .map_err(|e| format!("failed to read {}: {}", seed_path.display(), e))?;
+    let prompt =
+        build_create_job_md_prompt(&prompt_template, &project_md, source_label, &seed_body);
 
     let raw = crate::run_codex_exec_capture_with_timeout(&prompt, CREATE_JOB_MD_TIMEOUT_SEC)?;
     let normalized = normalize_job_md_content(&raw)?;
@@ -273,6 +338,29 @@ pub(crate) fn create_job_md() -> Result<String, String> {
 pub(crate) fn create_input_md() -> Result<String, String> {
     add_orc_drafts_from(Path::new("."))?;
     Ok("create_input_md completed".to_string())
+}
+
+pub(crate) async fn auto_add_function(message: &str) -> Result<String, String> {
+    let normalized = message.trim();
+    if normalized.is_empty() {
+        return Err("auto_add_function requires non-empty message".to_string());
+    }
+    let project_md_path = Path::new(".project").join("project.md");
+    if !project_md_path.exists() {
+        return Err("missing .project/project.md".to_string());
+    }
+    if !job_md_path().exists() {
+        init_orc_job()?;
+    }
+    merge_message_into_job_requirements(normalized)?;
+    let job_result = create_job_md()?;
+    let draft_result = add_orc_drafts()?;
+    let impl_result = impl_orc_code().await?;
+    let check_result = check_orc_code()?;
+    Ok(format!(
+        "auto_add_function completed | {} | {} | {} | {}",
+        job_result, draft_result, impl_result, check_result
+    ))
 }
 
 fn read_job_md_prompt_template() -> Result<String, String> {
@@ -308,38 +396,96 @@ fn resolve_job_md_source_path() -> Result<(PathBuf, &'static str), String> {
     Err("missing job.md (expected seed input, run init_orc_job/create_input_md 이전 단계에서 job.md를 생성하세요)".to_string())
 }
 
-fn run_project_bootstrap(opts: &CommonOpts) -> Result<String, String> {
+fn merge_message_into_job_requirements(message: &str) -> Result<(), String> {
+    let mut job = load_job_doc()?;
+    let feature_names = auto_feature_names_from_message(message);
+    for feature_name in feature_names {
+        merge_requirement_rule(&mut job, &feature_name, message);
+    }
+    save_job_doc(&job)
+}
+
+fn auto_feature_names_from_message(message: &str) -> Vec<String> {
+    let inferred = infer_initial_features(Some(message));
+    let mut features: Vec<String> = inferred
+        .into_iter()
+        .filter(|feature| feature != "bootstrap_runtime")
+        .collect();
+    if features.is_empty() {
+        let fallback = normalize_feature_key(message);
+        if !fallback.is_empty() {
+            features.push(fallback);
+        }
+    }
+    if features.is_empty() {
+        features.push("auto_requested_feature".to_string());
+    }
+    features
+}
+
+fn merge_requirement_rule(job: &mut JobDoc, feature_name: &str, message: &str) {
+    if let Some(existing) = job
+        .requirement
+        .iter_mut()
+        .find(|req| normalize_feature_key(&req.name) == feature_name)
+    {
+        if !existing.rules.iter().any(|rule| rule.trim() == message) {
+            existing.rules.push(message.to_string());
+        }
+        if existing.name.trim().is_empty() {
+            existing.name = feature_name.to_string();
+        }
+        return;
+    }
+
+    job.requirement.push(JobRequirement {
+        name: feature_name.to_string(),
+        steps: Vec::new(),
+        rules: vec![message.to_string()],
+    });
+}
+
+fn run_project_bootstrap(project_root: &Path) -> Result<String, String> {
     let prompt_template = match read_project_bootstrap_prompt() {
         Ok(prompt) => prompt,
         Err(_) => {
+            let seed = read_bootstrap_seed(project_root)?;
             return Ok(format!(
                 "BOOTSTRAP_DONE: auto bootstrap placeholder generated for project `{}`",
-                project_name_or_default(opts)
+                seed.name
             ));
         }
     };
-    let project_root = std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .display()
-        .to_string();
+    let seed = read_bootstrap_seed(project_root)?;
     let prompt = prompt_template
-        .replace("{{project_name}}", &project_name_or_default(opts))
-        .replace("{{project_root}}", &project_root)
-        .replace("{{spec}}", &opts.spec.clone().unwrap_or_default())
+        .replace("{{project_name}}", &seed.name)
+        .replace("{{project_root}}", &seed.root)
+        .replace("{{spec}}", &seed.spec)
         .replace("{{preset}}", "code");
-    let output = crate::run_codex_exec_capture_with_timeout(&prompt, CODE_SUBCOMMAND_TIMEOUT_SEC).unwrap_or_else(|_| {
-        format!(
-            "BOOTSTRAP_DONE: auto bootstrap placeholder generated for project `{}`",
-            project_name_or_default(opts)
-        )
-    });
+    let output = crate::run_codex_exec_capture_with_timeout(&prompt, CODE_SUBCOMMAND_TIMEOUT_SEC)
+        .unwrap_or_else(|_| {
+            format!(
+                "BOOTSTRAP_DONE: auto bootstrap placeholder generated for project `{}`",
+                seed.name
+            )
+        });
     Ok(output.trim().to_string())
 }
 
 fn read_project_bootstrap_prompt() -> Result<String, String> {
     let candidates = [
-        crate::source_root().join("assets").join("presets").join("code").join("prompts").join("bootstrap.txt"),
-        crate::source_root().join("assets").join("presets").join("mono").join("prompts").join("bootstrap.txt"),
+        crate::source_root()
+            .join("assets")
+            .join("presets")
+            .join("code")
+            .join("prompts")
+            .join("bootstrap.txt"),
+        crate::source_root()
+            .join("assets")
+            .join("presets")
+            .join("mono")
+            .join("prompts")
+            .join("bootstrap.txt"),
     ];
     for path in candidates {
         if path.exists() {
@@ -350,29 +496,52 @@ fn read_project_bootstrap_prompt() -> Result<String, String> {
     Err("missing bootstrap prompt".to_string())
 }
 
-fn project_name_or_default(opts: &CommonOpts) -> String {
-    if let Some(name) = &opts.name {
-        name.clone()
-    } else {
-        std::env::current_dir()
-            .ok()
-            .and_then(|dir| dir.file_name().map(|v| v.to_string_lossy().to_string()))
-            .unwrap_or_else(|| "project".to_string())
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct BootstrapSeed {
+    name: String,
+    spec: String,
+    root: String,
+}
+
+fn read_bootstrap_seed(project_root: &Path) -> Result<BootstrapSeed, String> {
+    let project_md_path = project_root.join(".project").join("project.md");
+    let raw = fs::read_to_string(&project_md_path)
+        .map_err(|e| format!("failed to read {}: {}", project_md_path.display(), e))?;
+    let mut seed = BootstrapSeed {
+        name: project_root
+            .file_name()
+            .map(|v| v.to_string_lossy().to_string())
+            .unwrap_or_else(|| "project".to_string()),
+        spec: String::new(),
+        root: project_root.display().to_string(),
+    };
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        match key.trim().to_ascii_lowercase().as_str() {
+            "name" if !value.trim().is_empty() => seed.name = value.trim().to_string(),
+            "spec" => seed.spec = value.trim().to_string(),
+            "path" if !value.trim().is_empty() => seed.root = value.trim().to_string(),
+            _ => {}
+        }
     }
+    Ok(seed)
 }
 
 fn build_create_job_md_prompt(
     template: &str,
     project_md: &str,
     source_label: &str,
-    plan_yaml: &str,
+    seed_body: &str,
 ) -> String {
     let mut normalized = format!(
         "{}\n\n# project.md\n{}\n\n# {}\n{}",
         template.trim(),
         project_md.trim(),
         source_label,
-        plan_yaml.trim()
+        seed_body.trim()
     );
     if !normalized.ends_with('\n') {
         normalized.push('\n');
@@ -390,7 +559,56 @@ fn normalize_job_md_content(raw: &str) -> Result<String, String> {
     if normalized.is_empty() {
         return Err("create_job_md received empty output".to_string());
     }
+    if normalized.contains("# requirement") {
+        return Ok(normalized);
+    }
+    if let Some(doc) = parse_outline_requirements_to_job_doc(&normalized) {
+        return Ok(render_job_md(&doc));
+    }
     Ok(normalized)
+}
+
+fn parse_outline_requirements_to_job_doc(raw: &str) -> Option<JobDoc> {
+    let mut doc = JobDoc::default();
+    let mut current = JobRequirement::default();
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with("# ") || trimmed.starts_with("## ") {
+            if !current.name.trim().is_empty() {
+                doc.requirement.push(current);
+                current = JobRequirement::default();
+            }
+            let title = trimmed
+                .trim_start_matches('#')
+                .trim_start_matches('#')
+                .trim();
+            if !title.is_empty() {
+                current.name = title.to_string();
+            }
+            continue;
+        }
+        if trimmed.starts_with("- ") {
+            current.rules.push(trimmed[2..].trim().to_string());
+            continue;
+        }
+        if trimmed.starts_with("> ") {
+            current.steps.push(trimmed[2..].trim().to_string());
+        }
+    }
+
+    if !current.name.trim().is_empty() {
+        doc.requirement.push(current);
+    }
+
+    if doc.requirement.is_empty() {
+        None
+    } else {
+        Some(doc)
+    }
 }
 
 /// Step 4: Add Drafts from Job
@@ -401,7 +619,7 @@ pub(crate) fn add_orc_drafts() -> Result<String, String> {
 fn add_orc_drafts_from(root: &Path) -> Result<String, String> {
     let mut job = load_job_doc_from(root)?;
     let mut drafts = load_drafts_doc_from(root)?;
-    
+
     let mut added = 0;
     let mut skipped_due_budget = 0;
     let started_at = Instant::now();
@@ -420,14 +638,14 @@ fn add_orc_drafts_from(root: &Path) -> Result<String, String> {
         if drafts.draft.iter().any(|d| d.name == key) {
             continue;
         }
-        
+
         let mut item = build_draft_item_from_requirement(req);
         item.name = key.clone();
         item.state = "planned".to_string();
         drafts.draft.push(item);
         added += 1;
     }
-    
+
     save_job_doc_from(root, &job)?;
     save_drafts_doc_from(root, &drafts)?;
     Ok(format!(
@@ -458,7 +676,7 @@ fn build_draft_item_from_requirement(req: &JobRequirement) -> DraftItemDoc {
         item_type: "action".to_string(),
         domain: vec!["core".to_string()],
         depends_on: vec![],
-        scope: vec![format!("feature:{}", key)],
+        scope: vec![],
         rule: normalized_rules,
         step: if normalized_steps.is_empty() {
             vec!["trigger -> process -> result".to_string()]
@@ -466,12 +684,10 @@ fn build_draft_item_from_requirement(req: &JobRequirement) -> DraftItemDoc {
             normalized_steps
         },
         tasks: vec![format!("implement {}", key)],
-        constraints: vec![
-            format!(
-                "{} -> {} : requirement 기반 draft item 생성",
-                key, key
-            ),
-        ],
+        constraints: vec![format!(
+            "{} -> {} : requirement 기반 draft item 생성",
+            key, key
+        )],
         check: vec![format!("verify {}", key)],
     }
 }
@@ -480,11 +696,13 @@ fn build_draft_item_from_requirement(req: &JobRequirement) -> DraftItemDoc {
 pub(crate) async fn impl_orc_code() -> Result<String, String> {
     let mut drafts = load_drafts_doc()?;
     let mut job = load_job_doc()?;
-    let targets: Vec<DraftItemDoc> = drafts.draft.iter()
+    let targets: Vec<DraftItemDoc> = drafts
+        .draft
+        .iter()
         .filter(|d| d.state == "planned" || d.state == "work" || d.state == "worked")
         .cloned()
         .collect();
-    
+
     if targets.is_empty() {
         return Ok("no drafts to implement".to_string());
     }
@@ -492,12 +710,16 @@ pub(crate) async fn impl_orc_code() -> Result<String, String> {
     (drafts, job) = transition_impl_start(&drafts, &job, &targets)?;
     save_drafts_doc(&drafts)?;
     save_job_doc(&job)?;
-    
+
     let result = impl_code_draft_parallel(targets).await?;
     (drafts, job) = transition_impl_result(&drafts, &job, &result.succeeded, &result.failed)?;
     save_drafts_doc(&drafts)?;
     save_job_doc(&job)?;
-    Ok(format!("impl_orc_code completed: success={} fail={}", result.succeeded.len(), result.failed.len()))
+    Ok(format!(
+        "impl_orc_code completed: success={} fail={}",
+        result.succeeded.len(),
+        result.failed.len()
+    ))
 }
 
 /// Step 6: Check Code
@@ -539,10 +761,9 @@ fn should_cleanup_drafts_yaml(job: &JobDoc, drafts: &CodeDraftsDoc) -> bool {
     if drafts.draft.is_empty() {
         return false;
     }
-    drafts
-        .draft
-        .iter()
-        .all(|item| normalize_draft_state(item.state.as_str()).map_or(false, |state| state == "complete"))
+    drafts.draft.iter().all(|item| {
+        normalize_draft_state(item.state.as_str()).map_or(false, |state| state == "complete")
+    })
 }
 
 pub(crate) fn get_workspace_state(root: &Path) -> &'static str {
@@ -572,10 +793,7 @@ pub(crate) fn flow_rust_orchestra(root: &Path, args: &[String]) -> Result<String
 
     let state = get_workspace_state(root);
     if state != "ready" {
-        return Err(format!(
-            "workspace state is {} (required: ready)",
-            state
-        ));
+        return Err(format!("workspace state is {} (required: ready)", state));
     }
 
     add_orc_drafts_from(root)?;
@@ -619,11 +837,17 @@ fn parse_job_md(raw: &str) -> Result<JobDoc, String> {
             section = "req";
             continue;
         } else if trimmed.starts_with("# task") {
-            if !req.name.is_empty() { doc.requirement.push(req.clone()); req = JobRequirement::default(); }
+            if !req.name.is_empty() {
+                doc.requirement.push(req.clone());
+                req = JobRequirement::default();
+            }
             section = "task";
             continue;
         } else if trimmed.starts_with("# problems") {
-            if !req.name.is_empty() { doc.requirement.push(req.clone()); req = JobRequirement::default(); }
+            if !req.name.is_empty() {
+                doc.requirement.push(req.clone());
+                req = JobRequirement::default();
+            }
             section = "prob";
             continue;
         }
@@ -636,21 +860,36 @@ fn parse_job_md(raw: &str) -> Result<JobDoc, String> {
             }
             "req" => {
                 if trimmed.starts_with("## ") {
-                    if !req.name.is_empty() { doc.requirement.push(req.clone()); }
-                    req = JobRequirement { name: trimmed[3..].trim().to_string(), ..Default::default() };
+                    if !req.name.is_empty() {
+                        doc.requirement.push(req.clone());
+                    }
+                    req = JobRequirement {
+                        name: trimmed[3..].trim().to_string(),
+                        ..Default::default()
+                    };
                 } else if trimmed.starts_with("- ") {
                     req.rules.push(trimmed[2..].trim().to_string());
-                } else if trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) && trimmed.contains('.') {
-                    req.steps.push(trimmed.split_once('.').unwrap().1.trim().to_string());
+                } else if trimmed.starts_with("> ") {
+                    req.steps.push(trimmed[2..].trim().to_string());
+                } else if trimmed.chars().next().map_or(false, |c| c.is_ascii_digit())
+                    && trimmed.contains('.')
+                {
+                    req.steps
+                        .push(trimmed.split_once('.').unwrap().1.trim().to_string());
                 }
             }
             "task" => {
-                if trimmed.starts_with("## planned") { task_list = "planned"; }
-                else if trimmed.starts_with("## work") { task_list = "work"; }
-                else if trimmed.starts_with("## check") { task_list = "check"; }
-                else if trimmed.starts_with("## completed") { task_list = "completed"; }
-                else if trimmed.starts_with("## fail") { task_list = "fail"; }
-                else if trimmed.starts_with("- ") {
+                if trimmed.starts_with("## planned") {
+                    task_list = "planned";
+                } else if trimmed.starts_with("## work") {
+                    task_list = "work";
+                } else if trimmed.starts_with("## check") {
+                    task_list = "check";
+                } else if trimmed.starts_with("## completed") {
+                    task_list = "completed";
+                } else if trimmed.starts_with("## fail") {
+                    task_list = "fail";
+                } else if trimmed.starts_with("- ") {
                     let val = trimmed[2..].trim().to_string();
                     match task_list {
                         "planned" => doc.task.planned.push(val),
@@ -663,12 +902,16 @@ fn parse_job_md(raw: &str) -> Result<JobDoc, String> {
                 }
             }
             "prob" => {
-                if trimmed.starts_with("- ") { doc.problems.push(trimmed.to_string()); }
+                if trimmed.starts_with("- ") {
+                    doc.problems.push(trimmed.to_string());
+                }
             }
             _ => {}
         }
     }
-    if !req.name.is_empty() { doc.requirement.push(req); }
+    if !req.name.is_empty() {
+        doc.requirement.push(req);
+    }
     Ok(doc)
 }
 
@@ -680,22 +923,38 @@ fn render_job_md(doc: &JobDoc) -> String {
     out.push_str("\n# requirement\n");
     for r in &doc.requirement {
         out.push_str(&format!("## {}\n", r.name));
-        for (i, s) in r.steps.iter().enumerate() { out.push_str(&format!("{}. {}\n", i+1, s)); }
-        for ru in &r.rules { out.push_str(&format!("- {}\n", ru)); }
+        for (i, s) in r.steps.iter().enumerate() {
+            out.push_str(&format!("{}. {}\n", i + 1, s));
+        }
+        for ru in &r.rules {
+            out.push_str(&format!("- {}\n", ru));
+        }
     }
     out.push_str("\n# task\n");
     out.push_str("## planned\n");
-    for i in &doc.task.planned { out.push_str(&format!("- {}\n", i)); }
+    for i in &doc.task.planned {
+        out.push_str(&format!("- {}\n", i));
+    }
     out.push_str("## work\n");
-    for i in &doc.task.work { out.push_str(&format!("- {}\n", i)); }
+    for i in &doc.task.work {
+        out.push_str(&format!("- {}\n", i));
+    }
     out.push_str("## check\n");
-    for i in &doc.task.check { out.push_str(&format!("- {}\n", i)); }
+    for i in &doc.task.check {
+        out.push_str(&format!("- {}\n", i));
+    }
     out.push_str("## completed\n");
-    for i in &doc.task.completed { out.push_str(&format!("- {}\n", i)); }
+    for i in &doc.task.completed {
+        out.push_str(&format!("- {}\n", i));
+    }
     out.push_str("## fail\n");
-    for i in &doc.task.fail { out.push_str(&format!("- {}\n", i)); }
+    for i in &doc.task.fail {
+        out.push_str(&format!("- {}\n", i));
+    }
     out.push_str("\n# problems\n");
-    for p in &doc.problems { out.push_str(&format!("{}\n", p)); }
+    for p in &doc.problems {
+        out.push_str(&format!("{}\n", p));
+    }
     out
 }
 
@@ -742,7 +1001,11 @@ pub(crate) fn set_draft_item_state(
     Ok(())
 }
 
-pub(crate) fn move_job_task_item(doc: &mut JobDoc, name: &str, to_list: &str) -> Result<(), String> {
+pub(crate) fn move_job_task_item(
+    doc: &mut JobDoc,
+    name: &str,
+    to_list: &str,
+) -> Result<(), String> {
     job_task_state_change(doc, name, to_list)
 }
 
@@ -799,8 +1062,12 @@ fn replace_markdown_section(raw: &str, header: &str, body: &str) -> String {
             out.push(body.to_string());
             continue;
         }
-        if in_section && line.trim().starts_with('#') { in_section = false; }
-        if !in_section { out.push(line.to_string()); }
+        if in_section && line.trim().starts_with('#') {
+            in_section = false;
+        }
+        if !in_section {
+            out.push(line.to_string());
+        }
     }
     if !found {
         out.push(header.to_string());
@@ -814,8 +1081,13 @@ fn extract_plain_list_under_header(markdown: &str, header: &str) -> Vec<String> 
     let mut in_section = false;
     for line in markdown.lines() {
         let trimmed = line.trim();
-        if trimmed.eq_ignore_ascii_case(header) { in_section = true; continue; }
-        if in_section && trimmed.starts_with('#') { break; }
+        if trimmed.eq_ignore_ascii_case(header) {
+            in_section = true;
+            continue;
+        }
+        if in_section && trimmed.starts_with('#') {
+            break;
+        }
         if in_section && trimmed.starts_with("- ") {
             out.push(trimmed[2..].trim().to_string());
         }
@@ -828,7 +1100,7 @@ fn normalize_feature_key(name: &str) -> String {
     let chars: Vec<char> = name.trim().chars().collect();
 
     for (index, ch) in chars.iter().enumerate() {
-        let is_alnum = ch.is_ascii_alphanumeric();
+        let is_alnum = ch.is_alphanumeric();
 
         if ch.is_ascii_uppercase() && index > 0 {
             let prev = chars[index - 1];
@@ -844,7 +1116,7 @@ fn normalize_feature_key(name: &str) -> String {
         }
 
         if is_alnum {
-            normalized.push(ch.to_ascii_lowercase());
+            normalized.extend(ch.to_lowercase());
         } else {
             normalized.push('_');
         }
@@ -862,6 +1134,8 @@ struct CommonOpts {
     name: Option<String>,
     description: Option<String>,
     spec: Option<String>,
+    path: Option<String>,
+    message: Option<String>,
     auto: bool,
 }
 
@@ -870,15 +1144,144 @@ fn parse_common_opts(args: &[String]) -> CommonOpts {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "-n" => { i += 1; opts.name = args.get(i).cloned(); }
-            "-d" => { i += 1; opts.description = args.get(i).cloned(); }
-            "-s" => { i += 1; opts.spec = args.get(i).cloned(); }
-            "-a" => { opts.auto = true; }
+            "-n" => {
+                i += 1;
+                opts.name = args.get(i).cloned();
+            }
+            "-d" => {
+                i += 1;
+                opts.description = args.get(i).cloned();
+            }
+            "-s" => {
+                i += 1;
+                opts.spec = args.get(i).cloned();
+            }
+            "-p" => {
+                i += 1;
+                opts.path = args.get(i).cloned();
+            }
+            "-m" => {
+                i += 1;
+                opts.message = args.get(i).cloned();
+            }
+            "-a" => {
+                opts.auto = true;
+            }
             _ => {}
         }
         i += 1;
     }
     opts
+}
+
+fn resolve_project_root(opts: &CommonOpts) -> Result<PathBuf, String> {
+    if let Some(path) = &opts.path {
+        let root = PathBuf::from(path);
+        fs::create_dir_all(&root)
+            .map_err(|e| format!("failed to create project root {}: {}", root.display(), e))?;
+        return Ok(root);
+    }
+    std::env::current_dir().map_err(|e| format!("failed to get current dir: {}", e))
+}
+
+fn build_initial_project_md(opts: &CommonOpts, project_root: &Path) -> Result<String, String> {
+    let name = opts
+        .name
+        .clone()
+        .or_else(|| {
+            project_root
+                .file_name()
+                .map(|v| v.to_string_lossy().to_string())
+        })
+        .unwrap_or_else(|| "project".to_string());
+    let description = opts
+        .description
+        .clone()
+        .or_else(|| opts.message.clone())
+        .unwrap_or_default();
+    let spec = opts
+        .spec
+        .clone()
+        .or_else(|| infer_spec_from_message(opts.message.as_deref().unwrap_or_default()));
+
+    Ok(render_project_md(
+        &name,
+        &description,
+        &spec.unwrap_or_default(),
+        &project_root.display().to_string(),
+        &infer_initial_features(opts.message.as_deref()),
+    ))
+}
+
+fn render_project_md(
+    name: &str,
+    description: &str,
+    spec: &str,
+    path: &str,
+    features: &[String],
+) -> String {
+    let feature_block = if features.is_empty() {
+        "- bootstrap_runtime".to_string()
+    } else {
+        features
+            .iter()
+            .map(|feature| format!("- {}", feature))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    format!(
+        "# info\nname: {name}\ndescription: {description}\nspec: {spec}\npath: {path}\nstate: init\n\n# features\n{feature_block}\n\n# rules\n- 프로젝트 내부의 공통 규칙\n\n# constraints\n- 프로젝트 내부의 공통 제약\n\n# domains\n## core\n### states\n- init\n### action\n- bootstrap\n### rules\n- spec 기준으로 초기 실행 환경을 준비한다.\n### constraints\n- 최소 골격만 생성한다.\n"
+    )
+}
+
+fn infer_spec_from_message(message: &str) -> Option<String> {
+    let lower = message.to_ascii_lowercase();
+    let known = [
+        "rust",
+        "cargo",
+        "react",
+        "vite",
+        "next",
+        "astro",
+        "typescript",
+        "javascript",
+        "node",
+        "express",
+        "tauri",
+        "svelte",
+        "vue",
+        "zustand",
+    ];
+    let tokens: Vec<&str> = known
+        .into_iter()
+        .filter(|token| lower.contains(token))
+        .collect();
+    if tokens.is_empty() {
+        None
+    } else {
+        Some(tokens.join(", "))
+    }
+}
+
+fn infer_initial_features(message: Option<&str>) -> Vec<String> {
+    let Some(message) = message else {
+        return vec!["bootstrap_runtime".to_string()];
+    };
+    let lower = message.to_ascii_lowercase();
+    let mut features = Vec::new();
+    if lower.contains("todo") {
+        features.push("todo_app".to_string());
+    }
+    if lower.contains("hello world") {
+        features.push("hello_world_screen".to_string());
+    }
+    if lower.contains("bootstrap") || features.is_empty() {
+        features.push("bootstrap_runtime".to_string());
+    }
+    if lower.contains("zustand") {
+        features.push("zustand_store_setup".to_string());
+    }
+    features
 }
 
 // --- Parallel Implementation Logic (Simplified/Modernized) ---
@@ -911,18 +1314,144 @@ async fn impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<ImplRunRes
 }
 
 fn impl_single_draft_item(item: &DraftItemDoc) -> Result<(), String> {
+    let cwd = std::env::current_dir().map_err(|e| format!("failed to resolve cwd: {}", e))?;
+    let started = Instant::now();
+    write_impl_draft_progress(
+        &cwd,
+        &item.name,
+        "running",
+        0,
+        "impl draft started",
+    )?;
     let prompt_base = read_prompt("build_parallel.md")?;
-    let task_yaml =
-        serde_yaml::to_string(item).map_err(|e| format!("failed to encode draft item yaml: {}", e))?;
+    let task_yaml = serde_yaml::to_string(item)
+        .map_err(|e| format!("failed to encode draft item yaml: {}", e))?;
     let prompt = format!(
         "{}\n\n# 입력 task 단일 객체\n```yaml\n{}\n```\n\n# 추가 지시\n- `drafts.yaml`, `job.md`는 절대 직접 수정하지 말고 코드 생성/수정 내용만 출력한다.\n- 상태 전이(work/complete/error, planned/work/check/fail 이동)는 Rust 오케스트레이터가 수행하므로 출력하지 않는다.",
         prompt_base, task_yaml
     );
-    let raw = crate::run_codex_exec_capture_with_timeout(&prompt, IMPL_DRAFT_LLM_TIMEOUT_SEC)?;
+    let trace_label = format!("impl_code_draft [{}]", item.name);
+    let raw = crate::chat::run_codex_exec_capture_in_dir_with_progress_watch(
+        &cwd,
+        &prompt,
+        IMPL_DRAFT_LLM_HARD_TIMEOUT_SEC,
+        crate::chat::LlmProgressWatch {
+            soft_timeout_sec: IMPL_DRAFT_LLM_SOFT_TIMEOUT_SEC,
+            stall_timeout_sec: IMPL_DRAFT_LLM_STALL_TIMEOUT_SEC,
+            hard_timeout_sec: IMPL_DRAFT_LLM_HARD_TIMEOUT_SEC,
+        },
+        &trace_label,
+        1,
+    )
+    .map_err(|error| {
+        let _ = write_impl_draft_progress(
+            &cwd,
+            &item.name,
+            "failed",
+            started.elapsed().as_secs(),
+            &error,
+        );
+        error
+    })?;
     if raw.trim().is_empty() {
+        let _ = write_impl_draft_progress(
+            &cwd,
+            &item.name,
+            "failed",
+            started.elapsed().as_secs(),
+            &format!("empty llm output for draft {}", item.name),
+        );
         return Err(format!("empty llm output for draft {}", item.name));
     }
+    if llm_impl_output_indicates_failure(&raw) {
+        let detail = format!(
+            "llm reported implementation failure for {}: {}",
+            item.name,
+            raw.lines().next().unwrap_or("unknown failure")
+        );
+        let _ = write_impl_draft_progress(
+            &cwd,
+            &item.name,
+            "failed",
+            started.elapsed().as_secs(),
+            &detail,
+        );
+        return Err(format!(
+            "llm reported implementation failure for {}: {}",
+            item.name,
+            raw.lines().next().unwrap_or("unknown failure")
+        ));
+    }
+    write_impl_draft_progress(
+        &cwd,
+        &item.name,
+        "completed",
+        started.elapsed().as_secs(),
+        "impl draft completed",
+    )?;
     Ok(())
+}
+
+fn impl_timeout_watch() -> (u64, u64, u64) {
+    (
+        IMPL_DRAFT_LLM_SOFT_TIMEOUT_SEC,
+        IMPL_DRAFT_LLM_STALL_TIMEOUT_SEC,
+        IMPL_DRAFT_LLM_HARD_TIMEOUT_SEC,
+    )
+}
+
+fn impl_trace_label_draft_name(timeout_label: &str) -> Option<String> {
+    timeout_label
+        .strip_prefix("impl_code_draft [")
+        .and_then(|rest| rest.strip_suffix(']'))
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+}
+
+pub(crate) fn write_impl_draft_progress(
+    root: &Path,
+    draft_name: &str,
+    status: &str,
+    elapsed_sec: u64,
+    detail: &str,
+) -> Result<(), String> {
+    let (soft_timeout_sec, stall_timeout_sec, hard_timeout_sec) = impl_timeout_watch();
+    let snapshot = ImplDraftProgressSnapshot {
+        draft_name: draft_name.to_string(),
+        status: status.to_string(),
+        elapsed_sec,
+        detail: detail.trim().to_string(),
+        updated_at: now_unix_sec(),
+        soft_timeout_sec,
+        stall_timeout_sec,
+        hard_timeout_sec,
+    };
+    save_impl_progress_snapshot(root, &snapshot)
+}
+
+pub(crate) fn update_impl_draft_progress_from_watch(
+    root: &Path,
+    timeout_label: &str,
+    status: &str,
+    elapsed_sec: u64,
+    detail: &str,
+) {
+    let Some(draft_name) = impl_trace_label_draft_name(timeout_label) else {
+        return;
+    };
+    let _ = write_impl_draft_progress(root, &draft_name, status, elapsed_sec, detail);
+}
+
+fn llm_impl_output_indicates_failure(raw: &str) -> bool {
+    let lower = raw.to_ascii_lowercase();
+    lower.contains("read-only")
+        || lower.contains("read only")
+        || lower.contains("실패 사유만 보고")
+        || lower.contains("구현을 진행할 수 있는 상태가 아닙니다")
+        || lower.contains("변경하지 않았습니다")
+        || lower.contains("cannot proceed")
+        || lower.contains("unable to proceed")
+        || lower.contains("failed to")
 }
 
 struct ImplRunResult {
@@ -934,11 +1463,15 @@ struct ImplRunResult {
 mod tests {
     use super::{
         add_orc_drafts, build_create_job_md_prompt, build_draft_item_from_requirement,
-        cleanup_drafts_yaml_after_success,
-        create_input_md,
-        flow_rust_orchestra, get_workspace_state, load_drafts_doc, normalize_job_md_content,
-        job_task_state_change, move_job_task_item, set_draft_item_state, transition_impl_result,
-        transition_impl_start, CodeDraftsDoc, DraftItemDoc, JobDoc, JobRequirement,
+        build_initial_project_md, cleanup_drafts_yaml_after_success, create_input_md,
+        flow_rust_orchestra, get_workspace_state, infer_spec_from_message, job_task_state_change,
+        llm_impl_output_indicates_failure, load_drafts_doc, load_impl_progress_snapshots,
+        merge_requirement_rule,
+        move_job_task_item, normalize_job_md_content, parse_common_opts,
+        parse_outline_requirements_to_job_doc, read_bootstrap_seed, set_draft_item_state,
+        transition_impl_result, transition_impl_start, update_impl_draft_progress_from_watch,
+        auto_feature_names_from_message, BootstrapSeed, CodeDraftsDoc, CommonOpts, DraftItemDoc,
+        JobDoc, JobRequirement,
     };
     use std::env;
     use std::fs;
@@ -1035,7 +1568,8 @@ mod tests {
             ..Default::default()
         }];
 
-        let (next_drafts, next_job) = transition_impl_start(&drafts, &job, &targets).expect("start transition");
+        let (next_drafts, next_job) =
+            transition_impl_start(&drafts, &job, &targets).expect("start transition");
 
         assert_eq!(drafts.draft[0].state, "planned");
         assert_eq!(job.task.work.len(), 0);
@@ -1090,11 +1624,14 @@ mod tests {
         let item = build_draft_item_from_requirement(&req);
 
         assert_eq!(item.name, "rust_cli_workspace");
-        assert_eq!(item.scope, vec!["feature:rust_cli_workspace".to_string()]);
+        assert!(item.scope.is_empty());
         assert_eq!(item.tasks, vec!["implement rust_cli_workspace".to_string()]);
         assert_eq!(
             item.constraints,
-            vec!["rust_cli_workspace -> rust_cli_workspace : requirement 기반 draft item 생성".to_string()]
+            vec![
+                "rust_cli_workspace -> rust_cli_workspace : requirement 기반 draft item 생성"
+                    .to_string()
+            ]
         );
         assert_eq!(item.check, vec!["verify rust_cli_workspace".to_string()]);
     }
@@ -1109,11 +1646,14 @@ mod tests {
         let item = build_draft_item_from_requirement(&req);
 
         assert_eq!(item.name, "cli_create_job_md");
-        assert_eq!(item.scope, vec!["feature:cli_create_job_md".to_string()]);
+        assert!(item.scope.is_empty());
         assert_eq!(item.tasks, vec!["implement cli_create_job_md".to_string()]);
         assert_eq!(
             item.constraints,
-            vec!["cli_create_job_md -> cli_create_job_md : requirement 기반 draft item 생성".to_string()]
+            vec![
+                "cli_create_job_md -> cli_create_job_md : requirement 기반 draft item 생성"
+                    .to_string()
+            ]
         );
         assert_eq!(item.check, vec!["verify cli_create_job_md".to_string()]);
     }
@@ -1128,10 +1668,13 @@ mod tests {
         let item = build_draft_item_from_requirement(&req);
 
         assert_eq!(item.name, "project_documentation");
-        assert_eq!(item.scope, vec!["feature:project_documentation".to_string()]);
+        assert!(item.scope.is_empty());
         assert_eq!(
             item.constraints,
-            vec!["project_documentation -> project_documentation : requirement 기반 draft item 생성".to_string()]
+            vec![
+                "project_documentation -> project_documentation : requirement 기반 draft item 생성"
+                    .to_string()
+            ]
         );
     }
 
@@ -1145,11 +1688,14 @@ mod tests {
         let item = build_draft_item_from_requirement(&req);
 
         assert_eq!(item.name, "rust_cli_workspace");
-        assert_eq!(item.scope, vec!["feature:rust_cli_workspace".to_string()]);
+        assert!(item.scope.is_empty());
         assert_eq!(item.tasks, vec!["implement rust_cli_workspace".to_string()]);
         assert_eq!(
             item.constraints,
-            vec!["rust_cli_workspace -> rust_cli_workspace : requirement 기반 draft item 생성".to_string()]
+            vec![
+                "rust_cli_workspace -> rust_cli_workspace : requirement 기반 draft item 생성"
+                    .to_string()
+            ]
         );
         assert_eq!(item.check, vec!["verify rust_cli_workspace".to_string()]);
     }
@@ -1182,6 +1728,26 @@ mod tests {
         let item = build_draft_item_from_requirement(&req);
 
         assert_eq!(item.rule, vec!["must pass unit tests".to_string()]);
+    }
+
+    #[test]
+    fn build_draft_item_from_requirement_keeps_korean_requirement_name() {
+        let req = JobRequirement {
+            name: "도메인 패널 정렬 수정".to_string(),
+            ..Default::default()
+        };
+
+        let item = build_draft_item_from_requirement(&req);
+
+        assert_eq!(item.name, "도메인_패널_정렬_수정");
+        assert_eq!(item.tasks, vec!["implement 도메인_패널_정렬_수정".to_string()]);
+        assert_eq!(
+            item.constraints,
+            vec![
+                "도메인_패널_정렬_수정 -> 도메인_패널_정렬_수정 : requirement 기반 draft item 생성"
+                    .to_string()
+            ]
+        );
     }
 
     #[test]
@@ -1237,6 +1803,200 @@ mod tests {
     }
 
     #[test]
+    fn add_orc_drafts_creates_draft_item_from_korean_requirement() {
+        with_locked_workspace("korean_requirement_draft_item", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(
+                "job.md",
+                "# requirement\n## 도메인 패널 정렬 수정\n- 헤더와 본문 패널의 좌우 기준선을 맞춘다\n> current.png 기준으로 정렬을 고친다\n\n# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n",
+            )
+            .expect("write job");
+            fs::write(".project/drafts.yaml", "draft: []\n").expect("write drafts");
+
+            add_orc_drafts().expect("run add_orc_drafts");
+            let drafts = load_drafts_doc().expect("load drafts");
+            let item = drafts
+                .draft
+                .iter()
+                .find(|draft| draft.name == "도메인_패널_정렬_수정")
+                .expect("korean draft item");
+
+            assert_eq!(item.rule, vec!["헤더와 본문 패널의 좌우 기준선을 맞춘다".to_string()]);
+            assert_eq!(item.step, vec!["current.png 기준으로 정렬을 고친다".to_string()]);
+            assert_eq!(item.tasks, vec!["implement 도메인_패널_정렬_수정".to_string()]);
+        });
+    }
+
+    #[test]
+    fn update_impl_draft_progress_from_watch_writes_runtime_snapshot_for_korean_name() {
+        with_locked_workspace("impl_progress_korean", || {
+            fs::create_dir_all(".project").expect("create .project");
+
+            update_impl_draft_progress_from_watch(
+                Path::new("."),
+                "impl_code_draft [도메인_패널_정렬_수정]",
+                "slow_progress",
+                360,
+                "implementation still progressing after soft timeout",
+            );
+
+            let snapshots = load_impl_progress_snapshots(Path::new(".")).expect("load snapshots");
+            assert_eq!(snapshots.len(), 1);
+            assert_eq!(snapshots[0].draft_name, "도메인_패널_정렬_수정");
+            assert_eq!(snapshots[0].status, "slow_progress");
+            assert_eq!(snapshots[0].elapsed_sec, 360);
+        });
+    }
+
+    #[test]
+    fn parse_common_opts_reads_path_and_message() {
+        let opts = parse_common_opts(&[
+            "-p".to_string(),
+            "/tmp/demo".to_string(),
+            "-m".to_string(),
+            "react vite hello".to_string(),
+            "-a".to_string(),
+        ]);
+
+        assert_eq!(opts.path.as_deref(), Some("/tmp/demo"));
+        assert_eq!(opts.message.as_deref(), Some("react vite hello"));
+        assert!(opts.auto);
+    }
+
+    #[test]
+    fn build_initial_project_md_keeps_todo_feature_from_message() {
+        let opts = CommonOpts {
+            path: Some("/tmp/react_todo".to_string()),
+            message: Some("Build a React todo app with add toggle delete".to_string()),
+            ..Default::default()
+        };
+
+        let body = build_initial_project_md(&opts, Path::new("/tmp/react_todo"))
+            .expect("build project md");
+
+        assert!(body.contains("- todo_app"));
+    }
+
+    #[test]
+    fn llm_impl_output_indicates_failure_for_read_only_report() {
+        assert!(llm_impl_output_indicates_failure(
+            "실패 사유만 보고합니다.\n작업 환경이 read-only라서 파일 생성이 불가능합니다."
+        ));
+        assert!(!llm_impl_output_indicates_failure(
+            "implemented todo_app and wrote package.json"
+        ));
+    }
+
+    #[test]
+    fn auto_feature_names_from_message_drops_bootstrap_when_todo_exists() {
+        assert_eq!(
+            auto_feature_names_from_message("Build a react todo app"),
+            vec!["todo_app".to_string()]
+        );
+    }
+
+    #[test]
+    fn merge_requirement_rule_appends_message_without_duplicates() {
+        let mut job = JobDoc {
+            requirement: vec![JobRequirement {
+                name: "todo_app".to_string(),
+                steps: Vec::new(),
+                rules: vec!["Build a React todo app".to_string()],
+            }],
+            ..Default::default()
+        };
+
+        merge_requirement_rule(&mut job, "todo_app", "Build a React todo app");
+        merge_requirement_rule(&mut job, "todo_app", "Add delete support");
+
+        assert_eq!(job.requirement.len(), 1);
+        assert_eq!(
+            job.requirement[0].rules,
+            vec![
+                "Build a React todo app".to_string(),
+                "Add delete support".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn infer_spec_from_message_extracts_known_frameworks() {
+        assert_eq!(
+            infer_spec_from_message("Build a React + Vite app with Zustand"),
+            Some("react, vite, zustand".to_string())
+        );
+    }
+
+    #[test]
+    fn normalize_job_md_content_wraps_outline_into_job_doc() {
+        let normalized = normalize_job_md_content(
+            "# todo_app\n- add task\n- delete task\n> create task\n> remove task",
+        )
+        .expect("normalize outline");
+
+        assert!(normalized.contains("# requirement"));
+        assert!(normalized.contains("## todo_app"));
+        assert!(normalized.contains("1. create task"));
+        assert!(normalized.contains("- add task"));
+    }
+
+    #[test]
+    fn parse_outline_requirements_to_job_doc_reads_rules_and_steps() {
+        let doc = parse_outline_requirements_to_job_doc(
+            "# todo_app\n- add task\n> create task\n## filter_panel\n- filter tasks\n> click filter",
+        )
+        .expect("outline doc");
+
+        assert_eq!(doc.requirement.len(), 2);
+        assert_eq!(doc.requirement[0].name, "todo_app");
+        assert_eq!(doc.requirement[0].rules, vec!["add task".to_string()]);
+        assert_eq!(doc.requirement[0].steps, vec!["create task".to_string()]);
+        assert_eq!(doc.requirement[1].name, "filter_panel");
+    }
+
+    #[test]
+    fn build_initial_project_md_uses_message_and_project_root() {
+        let opts = CommonOpts {
+            path: Some("/tmp/orc_skill_project".to_string()),
+            message: Some("Build a React + Vite app with Zustand".to_string()),
+            ..Default::default()
+        };
+
+        let body = build_initial_project_md(&opts, Path::new("/tmp/orc_skill_project"))
+            .expect("build project md");
+
+        assert!(body.contains("# info"));
+        assert!(body.contains("description: Build a React + Vite app with Zustand"));
+        assert!(body.contains("spec: react, vite, zustand"));
+        assert!(body.contains("path: /tmp/orc_skill_project"));
+        assert!(body.contains("- bootstrap_runtime"));
+        assert!(body.contains("- zustand_store_setup"));
+    }
+
+    #[test]
+    fn read_bootstrap_seed_prefers_saved_project_md_values() {
+        with_locked_workspace("bootstrap_seed_reads_project_md", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(
+                ".project/project.md",
+                "# info\nname: flow_google\ndescription: demo\nspec: react, vite\npath: /tmp/flow_google\n",
+            )
+            .expect("write project md");
+
+            let seed = read_bootstrap_seed(Path::new(".")).expect("read bootstrap seed");
+
+            assert_eq!(
+                seed,
+                BootstrapSeed {
+                    name: "flow_google".to_string(),
+                    spec: "react, vite".to_string(),
+                    root: "/tmp/flow_google".to_string(),
+                }
+            );
+        });
+    }
+
+    #[test]
     fn create_input_md_generates_cli_create_input_md_draft_from_requirement() {
         with_locked_workspace("create_input_md_generates_draft", || {
             fs::create_dir_all(".project").expect("create .project");
@@ -1254,7 +2014,10 @@ mod tests {
             assert_eq!(drafts.draft[0].name, "cli_create_input_md");
             assert_eq!(
                 drafts.draft[0].constraints,
-                vec!["cli_create_input_md -> cli_create_input_md : requirement 기반 draft item 생성".to_string()]
+                vec![
+                    "cli_create_input_md -> cli_create_input_md : requirement 기반 draft item 생성"
+                        .to_string()
+                ]
             );
         });
     }
@@ -1266,7 +2029,8 @@ mod tests {
         fs::create_dir_all(root.join(".project")).expect("create .project");
         fs::write(root.join(".project").join("project.md"), "# info\n").expect("write project.md");
         fs::write(root.join("job.md"), "# task\n").expect("write job.md");
-        fs::write(root.join(".project").join("drafts.yaml"), "draft: []\n").expect("write drafts.yaml");
+        fs::write(root.join(".project").join("drafts.yaml"), "draft: []\n")
+            .expect("write drafts.yaml");
 
         assert_eq!(get_workspace_state(root), "ready");
 
@@ -1312,7 +2076,8 @@ mod tests {
             "# requirement\n## cli_help\n\n# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n",
         )
         .expect("write job.md");
-        fs::write(root.join(".project").join("drafts.yaml"), "draft: []\n").expect("write drafts.yaml");
+        fs::write(root.join(".project").join("drafts.yaml"), "draft: []\n")
+            .expect("write drafts.yaml");
 
         let err = flow_rust_orchestra(root, &[]).expect_err("missing requirement must fail");
         assert_eq!(
@@ -1334,7 +2099,8 @@ mod tests {
             "# requirement\n## cli_rust_orchestra\n\n# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n",
         )
         .expect("write job.md");
-        fs::write(root.join(".project").join("drafts.yaml"), "draft: []\n").expect("write drafts.yaml");
+        fs::write(root.join(".project").join("drafts.yaml"), "draft: []\n")
+            .expect("write drafts.yaml");
 
         let output = flow_rust_orchestra(root, &[]).expect("workspace ready");
         assert_eq!(
@@ -1344,7 +2110,9 @@ mod tests {
         let drafts_raw = fs::read_to_string(root.join(".project").join("drafts.yaml"))
             .expect("read drafts.yaml");
         assert!(drafts_raw.contains("name: cli_rust_orchestra"));
-        assert!(drafts_raw.contains("cli_rust_orchestra -> cli_rust_orchestra : requirement 기반 draft item 생성"));
+        assert!(drafts_raw.contains(
+            "cli_rust_orchestra -> cli_rust_orchestra : requirement 기반 draft item 생성"
+        ));
 
         let _ = fs::remove_dir_all(root);
     }
@@ -1358,10 +2126,14 @@ mod tests {
                 "# task\n## planned\n## work\n## check\n## completed\n- feature_a\n## fail\n\n# problems\n",
             )
             .expect("write job.md");
-            fs::write(".project/drafts.yaml", "draft:\n  - name: feature_a\n    state: complete\n")
-                .expect("write drafts");
+            fs::write(
+                ".project/drafts.yaml",
+                "draft:\n  - name: feature_a\n    state: complete\n",
+            )
+            .expect("write drafts");
 
-            let removed = cleanup_drafts_yaml_after_success(Path::new(".")).expect("cleanup success");
+            let removed =
+                cleanup_drafts_yaml_after_success(Path::new(".")).expect("cleanup success");
             assert!(removed);
             assert!(!Path::new(".project/drafts.yaml").exists());
         });
@@ -1376,10 +2148,14 @@ mod tests {
                 "# task\n## planned\n## work\n## check\n## completed\n- feature_a\n## fail\n- feature_b\n\n# problems\n- feature_b: failed\n",
             )
             .expect("write job.md");
-            fs::write(".project/drafts.yaml", "draft:\n  - name: feature_a\n    state: complete\n")
-                .expect("write drafts");
+            fs::write(
+                ".project/drafts.yaml",
+                "draft:\n  - name: feature_a\n    state: complete\n",
+            )
+            .expect("write drafts");
 
-            let removed = cleanup_drafts_yaml_after_success(Path::new(".")).expect("cleanup decision");
+            let removed =
+                cleanup_drafts_yaml_after_success(Path::new(".")).expect("cleanup decision");
             assert!(!removed);
             assert!(Path::new(".project/drafts.yaml").exists());
         });
@@ -1402,6 +2178,9 @@ mod tests {
     fn normalize_job_md_content_extracts_markdown_block() {
         let raw = "```markdown\n# feature\n- rule\n> step\n```";
         let normalized = normalize_job_md_content(raw).expect("normalize");
-        assert_eq!(normalized, "# feature\n- rule\n> step");
+        assert!(normalized.contains("# requirement"));
+        assert!(normalized.contains("## feature"));
+        assert!(normalized.contains("1. step"));
+        assert!(normalized.contains("- rule"));
     }
 }

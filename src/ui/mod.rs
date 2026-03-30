@@ -1622,11 +1622,11 @@ fn open_add_plan_ai_chat_modal(app: &mut UiApp, projects: &[ProjectRecord], proj
     let mut modal =
         new_ai_chat_modal_template(project, project_index, AiChatMode::AddPlan, model_bin);
     modal.input_active = true;
-    let intro = "add_code_plan 모드입니다. 원하는 기능 방향을 말하면 질문으로 범위를 좁힌 뒤 적용 가능한 features/planned를 제안합니다.\n적용하려면 `적용`이라고 입력하세요.";
+    let intro = "기능 추가 모드입니다. 원하는 기능 방향을 말하면 질문으로 범위를 좁힌 뒤 적용 가능한 feature를 제안합니다.\n적용하려면 `적용`이라고 입력하세요.";
     modal.history.push(format!("AI:\n{}", intro));
     append_project_chat_log(&modal.project_path, "AI_RESPONSE", intro);
     app.ai_chat_modal = Some(modal);
-    app.status_line = "ai add_code_plan modal opened".to_string();
+    app.status_line = "ai feature modal opened".to_string();
 }
 
 fn open_bootstrap_confirm(app: &mut UiApp, projects: &[ProjectRecord], project_index: usize) {
@@ -1800,7 +1800,10 @@ fn write_react_vite_fallback_scaffold(
         .to_ascii_lowercase()
         .replace([' ', '_'], "-");
     let mut dependencies = serde_json::Map::new();
-    dependencies.insert("react".to_string(), serde_json::Value::String("^18.3.1".to_string()));
+    dependencies.insert(
+        "react".to_string(),
+        serde_json::Value::String("^18.3.1".to_string()),
+    );
     dependencies.insert(
         "react-dom".to_string(),
         serde_json::Value::String("^18.3.1".to_string()),
@@ -1905,7 +1908,14 @@ fn verify_bootstrap_artifacts(project_root: &Path, spec: &str) -> Result<String,
         return Err("artifact verification failed: package.json missing".to_string());
     }
     let entry_candidates = ["src/main.js", "src/main.jsx", "src/main.ts", "src/main.tsx"];
-    let app_candidates = ["src/App.js", "src/App.jsx", "src/App.tsx", "app/page.js", "app/page.jsx", "app/page.tsx"];
+    let app_candidates = [
+        "src/App.js",
+        "src/App.jsx",
+        "src/App.tsx",
+        "app/page.js",
+        "app/page.jsx",
+        "app/page.tsx",
+    ];
     let entry = entry_candidates
         .iter()
         .find(|candidate| project_root.join(candidate).exists())
@@ -2001,8 +2011,7 @@ pub(crate) fn apply_bootstrap_by_spec(
                         .and_then(|fallback_summary| {
                             verify_bootstrap_artifacts(project_root, &spec)
                                 .map(|verified| format!("{} | {}", fallback_summary, verified))
-                        })
-                    {
+                        }) {
                         Ok(fallback_summary) => {
                             let _ = crate::append_check_process_status(
                                 "bootstrap_code_project",
@@ -2433,7 +2442,7 @@ fn build_ai_add_plan_prompt(modal: &AiChatModal, user_message: &str) -> String {
     };
     let apply_requested = is_add_plan_apply_request(user_message);
     format!(
-        "너는 add_code_plan 전용 기획 도우미다.\n\
+        "너는 기능 추가 전용 기획 도우미다.\n\
 목표: project.md의 `## features`에 추가할 후보를 정리한다.\n\
 항상 한국어로 짧게 답해라.\n\n\
 현재 project.md:\n{}\n\n\
@@ -2631,24 +2640,24 @@ fn append_planned_from_add_plan_items(
 fn run_add_plan_via_cli(project_path: &Path, hint: &str) -> Result<String, String> {
     let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
     let mut cmd = Command::new(exe);
-    cmd.current_dir(project_path).arg("add_code_plan");
+    cmd.current_dir(project_path).arg("create_job_md");
     if !hint.trim().is_empty() {
         cmd.arg("-m").arg(hint.trim());
     }
     let out = cmd
         .output()
-        .map_err(|e| format!("failed to run add_code_plan: {}", e))?;
+        .map_err(|e| format!("failed to run create_job_md: {}", e))?;
     if out.status.success() {
         let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
         if stdout.is_empty() {
-            Ok("add_code_plan executed".to_string())
+            Ok("create_job_md executed".to_string())
         } else {
             Ok(stdout)
         }
     } else {
         let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
         Err(format!(
-            "add_code_plan failed (code={:?}) {}",
+            "create_job_md failed (code={:?}) {}",
             out.status.code(),
             stderr
         ))
@@ -2691,7 +2700,7 @@ fn apply_add_plan_update_from_yaml(
     let add_plan_msg = run_add_plan_via_cli(project_path, &add_plan_hint)?;
     let planned_added = append_planned_from_add_plan_items(project_path, &added_features)?;
     Ok(Some(format!(
-        "add_code_plan applied: project.md features +{} / tasks_list planned +{} | {}",
+        "feature update applied: project.md features +{} / tasks_list planned +{} | {}",
         added_features.len(),
         planned_added,
         add_plan_msg
@@ -2965,8 +2974,7 @@ fn load_tasks_list_doc(base: &Path) -> Option<DraftsListDoc> {
         .map(|v| v == ".project")
         .unwrap_or(false)
     {
-        if let Some(project_root) = base.parent() {
-        }
+        if let Some(project_root) = base.parent() {}
     }
     for name in ["drafts_list.yaml"] {
         let path = base.join(name);
@@ -4205,6 +4213,7 @@ mod tests {
         let raw = fs::read_to_string(path).expect("read bootstrap prompt");
         assert!(raw.contains("{{project_name}}"));
         assert!(raw.contains("{{spec}}"));
+        assert!(raw.contains("*.png"));
         assert!(!raw.contains("{{project_md}}"));
     }
 
@@ -4240,8 +4249,7 @@ mod tests {
         )
         .expect("write package.json");
         fs::create_dir_all(dir.join("src")).expect("create src");
-        fs::write(dir.join("src").join("main.js"), "console.log('boot');\n")
-            .expect("write main");
+        fs::write(dir.join("src").join("main.js"), "console.log('boot');\n").expect("write main");
 
         let err = verify_bootstrap_artifacts(&dir, "react").expect_err("missing app should fail");
         assert!(err.contains("app file missing"));
@@ -5654,7 +5662,7 @@ pub fn run_ui(
                                             }
                                             Ok(None) => {
                                                 app.status_line =
-                                                    "add_code_plan 적용 요청이었지만 유효한 update 블록이 없습니다".to_string();
+                                                    "기능 추가 적용 요청이었지만 유효한 update 블록이 없습니다".to_string();
                                             }
                                             Err(e) => {
                                                 app.status_line = e;
@@ -5662,7 +5670,7 @@ pub fn run_ui(
                                         }
                                     } else {
                                         app.status_line =
-                                            "add_code_plan 추천안 응답 수신".to_string();
+                                            "feature suggestion response received".to_string();
                                     }
                                     modal.add_plan_apply_requested = false;
                                 }
@@ -5963,7 +5971,7 @@ pub fn run_ui(
                             } else {
                                 cancel_ai_stream(&mut app);
                                 app.ai_chat_modal = None;
-                                app.status_line = "ai add_code_plan closed".to_string();
+                                app.status_line = "ai feature modal closed".to_string();
                             }
                             continue;
                         }

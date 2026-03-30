@@ -29,8 +29,11 @@
 - `current.png` 기준 수평축 규칙:
 - 왼쪽은 `search folders... + mic 버튼` 행이 먼저 나오고, 그 바로 아래 `project sidebar card`가 시작된다.
 - 오른쪽 메인 영역의 첫 카드 시작 y축은 왼쪽 `project sidebar card`의 시작 y축과 같아야 한다(검색 입력 행과는 맞추지 않는다).
-- 오른쪽 메인 카드 묶음의 하단 끝은 왼쪽 `project sidebar card` 하단 끝과 같은 축으로 유지한다.
-- detail desktop 정렬 기준은 `detail-sidebar-shell` vs `detail-main-shell`의 top/height 오차가 각각 2px 이하여야 한다.
+- detail desktop 정렬 기준은 `detail-sidebar-shell` vs `detail-main-shell`의 시작 y축 오차가 2px 이하여야 한다.
+- pane 내부 정렬을 수정한 턴에서는 outer shell만 검사하면 실패로 처리한다.
+- `domains`, `drafts`, `check` 같은 개별 pane의 헤더/본문 라인을 바꿨다면 해당 pane에 전용 `data-testid`를 추가하고, e2e에서 헤더와 본문 panel의 좌우 기준선 오차를 각각 2px 이하로 검증해야 한다.
+- `detail-main-shell만 통과`하거나 `스크린샷 육안 확인만 수행`한 상태로는 완료 보고를 금지한다.
+- fail-closed: 수평선/기준선 관련 수정 후에는 `bash scripts/check_front_ui_rules.sh`와 해당 pane 전용 alignment assertion이 둘 다 통과해야만 종료할 수 있다.
 
 ## UI Flow Verification Rule
 - When the user requests a UI change, verify and implement the connected internal behavior flow in the same task.
@@ -155,13 +158,16 @@
 
 ## Full-Scope Execution Gate Rule
 - 사용자가 `전부`, `모두`, `전체`, `다`, `다 지워`, `다 바꿔`를 포함해 지시하면 `Full-Scope Mode`를 강제한다.
-- `Full-Scope Mode`에서는 단일 파일 추정 수정을 금지하고, 먼저 저장소 `tracked file` 전체를 검사한다.
-- 기본 검사 표면은 `git ls-files` 결과 전체다.
+- `Full-Scope Mode`에서는 단일 파일 추정 수정을 금지하고, 먼저 현재 사용자 원문이 요구한 범위와 검증 강도를 최상위 조건으로 고정한다.
+- 기존 규칙이 사용자 원문의 범위/검증/예외 조건을 더 좁게 만들면 그 규칙은 해당 턴에서 무효다.
+- 삭제/제거 작업의 기본 검사 표면은 저장소 전체 `rg`다.
 - 1차 검사: 사용자 원문 기준 `primary pattern`을 전수 검색한다.
 - 2차 검사: 경로 변형/출력문구/escape 표현을 포함한 `alias pattern`을 전수 검색한다.
+- `git ls-files`, `git grep`는 보조 확인용으로만 허용하고, 삭제 작업의 완료 판단에는 사용할 수 없다.
+- 사용자가 보존하라고 명시한 경로만 `rg` 예외로 제외할 수 있고, 그 외 임의 범위 축소는 금지한다.
 - 수정 완료 판단은 `primary 0건` + `alias 0건` 동시 충족일 때만 허용한다.
 - 두 조건 중 하나라도 실패하면 완료 보고를 금지하고 같은 루프(검색 -> 수정 -> 재검색)를 즉시 반복한다.
-- 최종 보고에는 검사 범위(`tracked files`), 검사 패턴(`primary/alias`), 0건 확인 결과를 반드시 포함한다.
+- 최종 보고에는 사용자 원문 기준 삭제 대상, 실행한 `rg` 명령, 예외 경로, 검사 패턴(`primary/alias`), 0건 확인 결과를 반드시 포함한다.
 
 ## Screenshot Path Memory Rule
 - When the user says `current.png`, resolve it to this fixed directory by default:
@@ -169,20 +175,40 @@
 - If only folder context is needed, use:
 - Treat this mapping as persistent unless the user explicitly changes it.
 
-## Plan First Rule (Permanent)
-- Before any source code edit, create or update `plan.md` first.
-- Minimum `plan.md` structure is mandatory: `문제`, `해결책`, `검증`.
-- If `plan.md` is missing, stop editing source and write `plan.md` first.
-
 ## Retry Loop Rule (Permanent)
 - Required execution loop:
-  1) 문제 제시 + 해결책 + 검증 기준 설정후 `plan.md` 생성 
+  1) 문제 제시 + 해결책 + 검증 기준 설정
   2) 해결책 시도
   3) 검증 실행
-  4) 실패 시 `job.md`의 `# clit feedback`를 생성/갱신 후 이를 바탕으로 `plan.md`문제를 재설계 
-  5) 재 정비된 plan.md 문서를 바탕으로 처음부터 전체 재시작
-- On failure, write/update `job.md` (# clit feedback) and append retry reason to `plan.md` before restarting.
+  4) 실패 시 `job.md`의 `# clit feedback`를 생성/갱신 후 이를 바탕으로 문제를 재설계
+  5) 재정비된 피드백을 바탕으로 처음부터 전체 재시작
+- On failure, write/update `job.md` (# clit feedback) before restarting.
 - Do not stop at intermediate logs only; continue until pass or max retry reached.
+
+## ORC Tmux Worker Loop Hard Gate
+- 사용자가 구현 실행을 요구하고 ORC/tmux 흐름이 열려 있으면, `/plan` 종료 후 구현은 현재 pane에서 직접 수행하지 않고 반드시 worker pane으로 위임한다.
+- worker pane 생성은 `tmux split-window -h -P -F '#{pane_id}'`만 사용하고, 구현 명령 전달은 `orc send-tmux <worker_pane_id> "<명령>" enter`로 고정한다.
+- worker는 구현 종료 시 `worker:<pane_id>:done:<report_path>` 또는 `worker:<pane_id>:fail:<reason>` 형식으로 manager pane에 회수해야 한다.
+- manager pane은 worker의 `done` 메시지를 받아도 구현 완료로 간주하면 안 되고, 즉시 `job.md`를 다시 읽은 뒤 검증 단계로 들어가야 한다.
+- 이 하드게이트를 건너뛰고 현재 pane에서 직접 구현/완료 보고를 하면 규칙 위반이다.
+
+## Manager Recheck Hard Gate
+- worker가 완료를 보고한 직후 manager는 기존 `job.md`를 그대로 신뢰하지 않고 반드시 다시 읽는다.
+- manager 재검토 순서는 고정한다: `worker done 수신 -> job.md 재확인 -> e2e 실행 -> 실제 스크린샷 저장/확인 -> 완료/실패 판정`.
+- 위 순서 중 하나라도 빠지면 완료 보고를 금지한다.
+- UI가 포함된 작업은 스크린샷 산출물을 `./.project/captures/`에 저장하고, 그 이미지를 기준으로 실제 구현 상태를 확인해야 한다.
+
+## Failed Manager Review Hard Gate
+- worker가 완료를 보고했더라도 manager의 `job.md` 재검토, e2e, 스크린샷 확인 중 하나라도 실패하면 그 결과는 실패로 처리한다.
+- 이 경우 manager는 기존 `job.md`를 현재 실패 상태 기준으로 갱신한 뒤에만 새 worker pane을 열 수 있다.
+- 실패 시 새 `job.md`는 최소 다음 정보를 포함해야 한다:
+  - worker가 완료했다고 보고한 작업 요약
+  - manager 재검증에서 실패한 단계
+  - e2e 결과와 남은 문제
+  - 스크린샷 기준으로 아직 해결되지 않은 항목
+  - 다음 worker가 즉시 수행해야 할 수정 작업
+  - 재검증 기준
+- 위 정보 없이 재시도 pane을 다시 여는 것을 금지한다.
 
 ## Rule-First Enforcement (Highest Priority)
 - On any new user behavioral instruction, update `/home/tree/ai/codex/AGENTS.override.md` first before running commands or editing source.
@@ -191,31 +217,31 @@
 
 ## Temp Auto Loop Rule (Permanent)
 - When user requests `orc cli` validation in `/home/tree/temp`, run iterative loop with this order:
-  1) write/update `plan.md`
+  1) current issue와 해결 조건 정리
   2) remove and recreate `/home/tree/temp`
   3) run `orc auto` for requested app
   4) if failed, write `/home/tree/temp/job.md`의 `# clit feedback`에 문제/미해결점
-  5) reflect feedback into next plan and restart from step 1
+  5) reflect feedback into next retry notes and restart from step 1
 - Keep looping until verification passes or hard technical blocker is confirmed.
 
 ## Feedback->Plan Merge Rule (Highest Priority)
 - After any failure, write/update `job.md` first with `문제` and `미해결점`.
-- Then update `plan.md` by merging prior plan + new feedback deltas.
-- The updated `plan.md` must include:
+- Then update retry notes by merging prior execution context + new feedback deltas.
+- The updated retry notes must include:
   - new/changed problem statements
   - concrete solution steps
   - forced execution item (must-apply action)
-- Do not run the next attempt unless merged `plan.md` has been written.
+- Do not run the next attempt unless merged retry notes have been written.
 
 ## Forced Resolution Rule
 - Retry is not a blind rerun.
-- Every retry must apply at least one concrete change from updated `plan.md` before execution.
+- Every retry must apply at least one concrete change from updated retry notes before execution.
 - If no new change is applied, stop and mark as process violation.
 
 ## Failure-Solution Mandatory Rule (Highest Priority)
-- If any failure cause is detected, `plan.md` must be updated with a concrete fix for that exact cause before next run.
-- `plan.md` update is invalid if it only repeats the problem without actionable solution steps.
-- Retry execution is blocked until the failure->solution mapping is explicitly written in `plan.md`.
+- If any failure cause is detected, retry notes must be updated with a concrete fix for that exact cause before next run.
+- Retry note update is invalid if it only repeats the problem without actionable solution steps.
+- Retry execution is blocked until the failure->solution mapping is explicitly written.
 
 ## Regret Skill Trigger Rule (Highest Priority)
 - If the assistant output includes the token `잘못` in any channel, run the `regret` skill immediately in the same turn.
@@ -232,13 +258,13 @@
 - `draft_item` 관련 프롬프트는 "주석 읽기 -> 값 채우기 -> 주석 제거" 순서를 명시해야 한다.
 - 2026-03-05: `if)` 가상 시나리오 출력은 줄 단위 `a -> b` 포맷만 사용한다. 각 단계는 반드시 다음 줄에 분리해서 작성한다.
 - 2026-03-05: 사용자가 `~~~을 만들어줘` 형태로 요청하면 매니저 pane이 워커 pane을 단계별로 열고(`tmux split-window`), `orc send-tmux`로 `auto -> plan -> drafts -> impl -> check_code_draft -a`를 순차 위임/완료 회수/재시도 판단하는 흐름을 우선 적용한다.
-- 2026-03-05: 트리거 문구는 `~~~을 만들어줘`, `~~~을 추가해줘`, `~을 읽고 처리해줘` 3가지를 동일 계열로 인식한다. 단, `읽고 처리해줘`는 기존 `job.md`를 읽는 명령 경로(`add_code_plan -f`, `add_code_draft -f`)를 사용하고 `create_job_md`를 호출하지 않는다.
+- 2026-03-05: 트리거 문구는 `~~~을 만들어줘`, `~~~을 추가해줘`, `~을 읽고 처리해줘` 3가지를 동일 계열로 인식한다. 단, `읽고 처리해줘`는 기존 `job.md`를 읽는 명령 경로(`create_job_md`, `add_code_draft -f`)를 사용한다.
 - 2026-03-08: draft 타입 스키마 변경 시 web UI `edit_{type}_drafts` 모달(`edit_code_drafts`, `edit_mono_drafts`, `edit_video_drafts`, `edit_write_drafts`)을 동일 변경에서 함께 갱신한다.
 - 2026-03-06: profile 레이어 리팩토링 작업 시 별도 브랜치에서 진행한다.
-- 2026-03-06: profile 종속 범위는 prompt/template 로딩(project.md, plan.yaml, drafts.yaml, parallel run) 및 해당 호출 프롬프트로 한정한다.
+- 2026-03-06: profile 종속 범위는 prompt/template 로딩(project.md, drafts.yaml, parallel run) 및 해당 호출 프롬프트로 한정한다.
 - 2026-03-06: 공통 인터페이스는 project/plan/draft/feedback 흐름을 우선 제공하고, 기본 구현체는 code profile로 유지한다.
 - 2026-03-07: 모든 작업 완료 시 `nf -m "<task-name> complete"` 실행을 강제한다. 별도 요청이 없어도 필수로 실행하며 `notify.fish` 직접 호출은 금지한다.
-- 2026-03-07: 사용자가 `/temp` 검증 루프를 요청하면 `/home/tree/temp`를 삭제/재생성 후 `orc auto`를 실행하고, 실패 시 `/home/tree/temp/todo.md`와 `/home/tree/temp/job.md`의 `# clit feedback`을 작성한 뒤 plan 갱신 후 재시도한다.
+- 2026-03-07: 사용자가 `/temp` 검증 루프를 요청하면 `/home/tree/temp`를 삭제/재생성 후 `orc auto`를 실행하고, 실패 시 `/home/tree/temp/job.md`의 `# clit feedback`을 작성한 뒤 다음 재시도 조건을 갱신한다.
 - 2026-03-07: 사용자가 web UI 확장(`open-ui -w`, assets 기반 frontend, playwright 검증 루프)을 요청한 경우, TUI 기능 목록을 먼저 추출해 `job.md`에 반영한 뒤 구현/검증을 반복한다.
 - 2026-03-07: web UI는 `project`/`detail` 탭 분리 구조를 유지하고, detail 편집은 pane 선택 시 우상단 gear 아이콘으로 진입하는 읽기전용 기본 화면으로 제공한다.
 - 2026-03-07: web UI 상태는 로컬 useState보다 `zustand` 스토어를 우선 사용해 탭/선택/편집/로그를 중앙 관리한다.

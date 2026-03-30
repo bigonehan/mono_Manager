@@ -42,15 +42,6 @@ type DraftsDoc = {
   failed?: string[];
 };
 
-type PlanDoc = {
-  drafts?: {
-    planned?: string[];
-    worked?: string[];
-    complete?: string[];
-    failed?: string[];
-  };
-};
-
 export type ProjectState = "wait" | "work" | "complete" | "auto";
 export type ProfileType = "code" | "mono";
 
@@ -74,6 +65,8 @@ export type MonorepoPackage = {
   kind: "app" | "feature" | "template";
 };
 
+export type DomainRow = { name: string; description: string; features: string[]; is_active?: boolean };
+
 export type ProjectDetail = {
   id: string;
   name: string;
@@ -86,7 +79,7 @@ export type ProjectDetail = {
   rules: string[];
   constraints: string[];
   features: string[];
-  domains: Array<{ name: string; description: string; features: string[] }>;
+  domains: DomainRow[];
   planned: string[];
   plannedDisplay: string[];
   generated: string[];
@@ -126,8 +119,6 @@ export type ProjectDetail = {
     modifiedAt: string;
   }>;
 };
-
-type DomainRow = { name: string; description: string; features: string[] };
 
 export function repoRoot(): string {
   return process.env.ORC_ROOT ?? path.resolve(process.cwd(), "..", "..");
@@ -189,8 +180,15 @@ function buildTaskCommandEnv(taskKey: string, extra: Record<string, string> = {}
 }
 
 function monorepoRoot(): string {
-  if (process.env.ORC_MONOREPO_ROOT) return process.env.ORC_MONOREPO_ROOT;
+  const envRoot = (process.env.ORC_MONOREPO_ROOT ?? "").trim();
   const home = process.env.HOME ?? "/home/tree";
+  const candidates = [envRoot, path.join(home, "oneMono"), path.join(home, "home")].filter(Boolean);
+  for (const candidate of candidates) {
+    const domainsDir = path.join(candidate, "packages", "domains");
+    if (fs.existsSync(domainsDir) && fs.statSync(domainsDir).isDirectory()) {
+      return candidate;
+    }
+  }
   return path.join(home, "home");
 }
 
@@ -408,10 +406,6 @@ function memoPath(projectPath: string): string {
   return path.join(projectMetaDir(projectPath), "memo.md");
 }
 
-function planYamlPath(projectPath: string): string {
-  return path.join(projectMetaDir(projectPath), "plan.yaml");
-}
-
 function screenshotDirPath(projectPath: string): string {
   return path.join(projectMetaDir(projectPath), "screenshot");
 }
@@ -546,7 +540,7 @@ function isMonorepoManagedPath(projectPath: string, root: string): boolean {
   return monitored.some((base) => isInside(base, projectPath));
 }
 
-function monorepoDomainDetails(root: string): Array<{ name: string; description: string; features: string[] }> {
+function monorepoDomainDetails(root: string): DomainRow[] {
   return collectMonorepoDomains(root).map((name) => {
     const domainPath = path.join(root, "packages", "domains", name);
     const files = collectSourceFiles(domainPath);
@@ -568,6 +562,63 @@ function monorepoDomainDetails(root: string): Array<{ name: string; description:
     }
     return { name, description: "", features: [...features.values()] };
   });
+}
+
+function mergeDomainRows(base: DomainRow[], overlay: DomainRow[]): DomainRow[] {
+  const overlayByName = new Map(
+    overlay
+      .map((domain) => [domain.name.trim(), domain] as const)
+      .filter(([name]) => name.length > 0)
+  );
+  const merged = base.map((domain) => {
+    const override = overlayByName.get(domain.name.trim());
+    const features = [...new Set([...(override?.features ?? []), ...domain.features])];
+    return {
+      ...domain,
+      description: override?.description?.trim() || domain.description,
+      features
+    };
+  });
+  for (const domain of overlay) {
+    const name = domain.name.trim();
+    if (!name || merged.some((item) => item.name.trim() === name)) continue;
+    merged.push({
+      name,
+      description: domain.description,
+      features: [...new Set(domain.features)]
+    });
+  }
+  return merged;
+}
+
+function extractSelfDomainName(projectPath: string, root: string): string | null {
+  const domainRoot = path.join(root, "packages", "domains");
+  const relative = path.relative(domainRoot, projectPath);
+  if (
+    relative.startsWith("..") ||
+    path.isAbsolute(relative) ||
+    relative.length === 0
+  ) {
+    return null;
+  }
+  const [domainName] = relative.split(path.sep);
+  return domainName?.trim() ? domainName : null;
+}
+
+function resolveMonoProjectDomains(projectPath: string, root: string, parsedDomains: DomainRow[]): DomainRow[] {
+  const activeNames = new Set(
+    parsedDomains
+      .map((domain) => domain.name.trim())
+      .filter((name) => name.length > 0)
+  );
+  const selfDomainName = extractSelfDomainName(projectPath, root);
+  if (selfDomainName) {
+    activeNames.add(selfDomainName);
+  }
+  return mergeDomainRows(monorepoDomainDetails(root), parsedDomains).map((domain) => ({
+    ...domain,
+    is_active: activeNames.has(domain.name)
+  }));
 }
 
 export function syncMonorepoProjects(): {
@@ -1428,37 +1479,6 @@ function reconcileDraftCompletionFromProjectFeatures(projectPath: string): void 
       fs.writeFileSync(draftsPath, YAML.stringify(normalized), "utf8");
     }
   }
-
-  const planPath = planYamlPath(projectPath);
-  if (fs.existsSync(planPath)) {
-    const rawPlan = fs.readFileSync(planPath, "utf8");
-    const planDoc = ((YAML.parse(rawPlan) ?? {}) as PlanDoc) ?? {};
-    const drafts = planDoc.drafts ?? {};
-    const planned = dedupNormalized(Array.isArray(drafts.planned) ? drafts.planned : []);
-    const worked = dedupNormalized(Array.isArray(drafts.worked) ? drafts.worked : []);
-    const complete = dedupNormalized(Array.isArray(drafts.complete) ? drafts.complete : []);
-    let changed = false;
-    const nextWorked: string[] = [];
-    const nextComplete = new Set<string>(complete);
-    for (const name of worked) {
-      if (featureSet.has(normalizeFeatureName(name))) {
-        nextComplete.add(normalizeFeatureName(name));
-        changed = true;
-      } else {
-        nextWorked.push(normalizeFeatureName(name));
-      }
-    }
-    if (changed) {
-      const nextPlanned = planned.filter((name) => !nextComplete.has(name) && !nextWorked.includes(name));
-      planDoc.drafts = {
-        ...drafts,
-        planned: nextPlanned,
-        worked: nextWorked,
-        complete: [...nextComplete]
-      };
-      fs.writeFileSync(planPath, YAML.stringify(planDoc), "utf8");
-    }
-  }
 }
 
 function isBootstrapCompleted(projectPath: string): boolean {
@@ -1684,16 +1704,6 @@ function parseDraftItems(projectPath: string): {
   addNamesTo(worked, parsed?.worked);
   addNamesTo(complete, parsed?.complete);
   addNamesTo(failed, parsed?.failed);
-  const planPath = planYamlPath(projectPath);
-  if (fs.existsSync(planPath)) {
-    const planRaw = fs.readFileSync(planPath, "utf8");
-    const planParsed = YAML.parse(planRaw) ?? {};
-    const planDrafts = (planParsed?.drafts ?? {}) as Record<string, unknown>;
-    addNamesTo(planned, planDrafts.planned);
-    addNamesTo(worked, planDrafts.worked);
-    addNamesTo(complete, planDrafts.complete);
-    addNamesTo(failed, planDrafts.failed);
-  }
   const cards = (items as Array<Record<string, unknown>>)
     .map((row) => {
       const name = String(row.name ?? "").trim();
@@ -2036,7 +2046,9 @@ export function loadProjectDetail(id: string): ProjectDetail {
   const screenshots = listScreenshotItems(project.id, project.path);
 
   const root = monorepoRoot();
-  const domains = isMonorepoManagedPath(project.path, root) ? monorepoDomainDetails(root) : parsed.domains;
+  const domains = project.project_type === "mono"
+    ? resolveMonoProjectDomains(project.path, root, parsed.domains)
+    : parsed.domains;
   return {
     id: project.id,
     name: parsed.name || project.name,
@@ -2143,14 +2155,30 @@ export function saveLists(id: string, input: {
   return loadProjectDetail(id);
 }
 
-function loadPlanDoc(projectPath: string): PlanDoc {
-  const file = planYamlPath(projectPath);
-  if (!fs.existsSync(file)) return {};
-  return ((YAML.parse(fs.readFileSync(file, "utf8")) ?? {}) as PlanDoc) ?? {};
-}
-
-function savePlanDoc(projectPath: string, doc: PlanDoc): void {
-  fs.writeFileSync(planYamlPath(projectPath), YAML.stringify(doc), "utf8");
+export function saveDomains(id: string, input: {
+  domains: DomainRow[];
+}): ProjectDetail {
+  const current = loadProjectDetail(id);
+  const normalizedDomains = input.domains
+    .map((domain) => ({
+      name: String(domain.name ?? "").trim(),
+      description: String(domain.description ?? "").trim(),
+      features: Array.isArray(domain.features)
+        ? domain.features.map((feature) => String(feature ?? "").trim()).filter((feature) => feature.length > 0)
+        : []
+    }))
+    .filter((domain) => domain.name.length > 0);
+  writeProjectMd(current.path, {
+    name: current.name,
+    description: current.description,
+    spec: current.spec,
+    goal: current.goal,
+    rules: current.rules,
+    constraints: current.constraints,
+    features: current.features,
+    domains: normalizedDomains
+  });
+  return loadProjectDetail(id);
 }
 
 function saveDraftsDoc(projectPath: string, doc: DraftsDoc): void {
@@ -2164,13 +2192,10 @@ function retryIncompleteDrafts(id: string): string {
     return "retry_incomplete skipped: drafts.yaml not found";
   }
   const drafts = normalizeDraftStateDoc(loadDraftsDoc(detail.path));
-  const plan = loadPlanDoc(detail.path);
-  const planDrafts = plan.drafts ?? {};
 
   const retrySet = new Set<string>([
     ...dedupNormalized(drafts.planned ?? []),
-    ...dedupNormalized(drafts.failed ?? []),
-    ...dedupNormalized((planDrafts.failed ?? []) as string[])
+    ...dedupNormalized(drafts.failed ?? [])
   ]);
   if (retrySet.size === 0) {
     return "retry_incomplete skipped: no red item";
@@ -2181,15 +2206,6 @@ function retryIncompleteDrafts(id: string): string {
   drafts.failed = dedupNormalized(drafts.failed ?? []).filter((name) => !retrySet.has(name));
   drafts.worked = dedupNormalized(drafts.worked ?? []).filter((name) => !retrySet.has(name));
   saveDraftsDoc(detail.path, drafts);
-
-  plan.drafts = {
-    ...planDrafts,
-    planned: dedupNormalized([...(planDrafts.planned ?? []), ...retryList]),
-    worked: dedupNormalized((planDrafts.worked ?? []) as string[]).filter((name) => !retrySet.has(name)),
-    failed: dedupNormalized((planDrafts.failed ?? []) as string[]).filter((name) => !retrySet.has(name)),
-    complete: dedupNormalized((planDrafts.complete ?? []) as string[])
-  };
-  savePlanDoc(detail.path, plan);
 
   const taskKey = createTaskSessionKey("retry-incomplete");
   const command = resolveOrcCommandArgs(["impl_code_draft"]);
@@ -2230,18 +2246,6 @@ function finalizeCompletedDrafts(id: string): string {
     features: mergedFeatures,
     domains: parsed.domains
   });
-
-  const plan = loadPlanDoc(detail.path);
-  const planDrafts = plan.drafts ?? {};
-  const completeSet = new Set(completed);
-  plan.drafts = {
-    ...planDrafts,
-    complete: dedupNormalized([...(planDrafts.complete ?? []), ...completed]),
-    planned: dedupNormalized((planDrafts.planned ?? []) as string[]).filter((name) => !completeSet.has(name)),
-    worked: dedupNormalized((planDrafts.worked ?? []) as string[]).filter((name) => !completeSet.has(name)),
-    failed: dedupNormalized((planDrafts.failed ?? []) as string[]).filter((name) => !completeSet.has(name))
-  };
-  savePlanDoc(detail.path, plan);
 
   fs.rmSync(draftsPath, { force: true });
   return `finalize_complete completed: ${completed.join(", ")}`;
@@ -2767,7 +2771,7 @@ export function runManualRcCheck(id: string): { detail: ProjectDetail; output: s
   const subject = detail.checkSubject.trim() || detail.name;
   const mission = `manual rc check | ${subject}`;
   appendRuntimeLog(id, `[check] rc start: ${mission}`);
-  const command = resolveRcCommandArgs(["test", "-p", ".", "-m", mission]);
+  const command = resolveRcCommandArgs(["clit", "test", "-p", ".", "-m", mission]);
   const result = spawnSync(command.bin, command.args, {
     cwd: detail.path,
     encoding: "utf8"

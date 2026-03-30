@@ -1,5 +1,1 @@
-- [ ] impl_code_draft 병렬 worker timeout/실패 -> .project/plan.yaml/.project/drafts.yaml 상태 전이 일치 : worker별 상태 기록이 중간 덮어쓰기 없이 보존된다
-- [ ] impl fast-path test 실행 -> 완료 판정이 실행 상태 기반으로 수렴 : test stdout substring 휴리스틱 없이 complete 전이를 결정한다
-- [ ] web smoke 실행 -> 실제 dev server URL/selector 탐지 : 고정 포트와 로그인 전용 selector 없이 앱 유형별 검증 경로를 따른다
-- [ ] cargo test 실행 -> Rust 단위 테스트 통과 : 현재 구조 점검 이후 기본 회귀가 유지된다
-- [ ] voice input 중복 어절 재현 -> input/textarea 값이 중복 없이 반영 : 누적 speech result 배열에서도 단일 문장으로 보인다
+- [x] echo unsupported project type -> unsupported project type : clit normalization check 출력 일치

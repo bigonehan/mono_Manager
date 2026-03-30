@@ -9,6 +9,15 @@ import { DetailTabsPane } from "@/layouts/detail/DetailTabsPane";
 const sectionLabelClass =
   "mt-8 mb-3 px-2 text-base font-bold uppercase tracking-wide text-foreground/80";
 const paneShellClass = "rounded-2xl border border-border/70 bg-white";
+const domainHeaderClass = "mt-8 mb-3 flex items-center justify-between gap-4";
+const domainTitleClass = "text-[2.1rem] font-black uppercase tracking-[0.08em] text-slate-700";
+const domainActionBoxClass = "inline-flex items-center gap-1 border border-border/70 bg-white px-3 py-2 shadow-sm";
+const domainPanelClass =
+  "overflow-hidden rounded-[2rem] border border-stone-200/80 bg-white/95 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.06)]";
+const domainRailClass = "flex min-h-[128px] flex-wrap content-start gap-4 rounded-[1.6rem] border border-stone-200/80 bg-stone-50/60 p-4";
+const domainChipClass =
+  "inline-flex items-center rounded-[1.1rem] border px-5 py-3 text-[1.05rem] font-medium transition";
+const domainFeatureCardClass = "rounded-2xl border border-border/70 bg-stone-50/70 px-3 py-2 text-xs";
 
 export function CodeDetailLayout({
   detail,
@@ -18,6 +27,7 @@ export function CodeDetailLayout({
   selectedDomain,
   setSelectedDomain,
   refreshDomainFeatures,
+  openDomainEditor,
   domainLoading = false,
   domainError = "",
   openEditor,
@@ -43,6 +53,7 @@ export function CodeDetailLayout({
   setEditConstraints,
   setEditFeatures,
   saveListPane,
+  domainSaving = false,
   listSaving
 }: DetailLayoutProps) {
   return (
@@ -147,8 +158,10 @@ export function CodeDetailLayout({
         selectedDomain={selectedDomain}
         setSelectedDomain={setSelectedDomain}
         refreshDomainFeatures={refreshDomainFeatures}
+        openDomainEditor={openDomainEditor}
         domainLoading={domainLoading}
         domainError={domainError}
+        domainSaving={domainSaving}
       />
     </>
   );
@@ -159,15 +172,19 @@ function DomainsPane({
   selectedDomain,
   setSelectedDomain,
   refreshDomainFeatures,
+  openDomainEditor,
   domainLoading,
-  domainError
+  domainError,
+  domainSaving
 }: {
   detail: DetailLayoutProps["detail"];
   selectedDomain: string;
   setSelectedDomain: (domain: string) => void;
   refreshDomainFeatures: (domain?: string) => Promise<boolean>;
+  openDomainEditor: () => void;
   domainLoading: boolean;
   domainError: string;
+  domainSaving: boolean;
 }) {
   const domains = detail?.domains ?? [];
   const selected = domains.find((domain) => domain.name === selectedDomain) ?? domains[0] ?? null;
@@ -178,73 +195,80 @@ function DomainsPane({
 
   return (
     <div>
-      <div className={sectionLabelClass}>domains</div>
-      <section data-testid="detail-pane-domains" className={`p-2 text-sm ${paneShellClass}`}>
-      <div className="grid gap-0 md:grid-cols-[220px_1fr] md:divide-x md:divide-border">
-        <div className="p-2">
-          <div className="mb-2 flex items-center justify-end">
+      <div data-testid="detail-pane-domains-header" className={domainHeaderClass}>
+        <div className={domainTitleClass}>domains</div>
+        <div className={domainActionBoxClass}>
+          <button
+            type="button"
+            className="rounded-md p-2 text-slate-600 transition hover:bg-stone-100"
+            onClick={() => openDomainEditor()}
+            aria-label="domains-edit"
+            data-testid="domains-edit"
+            disabled={!selected || domainSaving}
+          >
+            <Pencil className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            className="rounded-md p-2 text-slate-600 transition hover:bg-stone-100"
+            onClick={() => void refreshDomainFeatures(selected?.name)}
+            aria-label="domains-refresh"
+            data-testid="domains-refresh"
+            disabled={domainLoading}
+          >
+            <RefreshCw className={`h-5 w-5 ${domainLoading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+      </div>
+      <section data-testid="detail-pane-domains" className={`text-sm ${domainPanelClass}`}>
+      <div className="grid gap-4 md:grid-cols-[minmax(260px,320px)_1fr] md:items-start">
+        <div className={domainRailClass}>
+          {domains.length === 0 && <span className="text-xs text-muted-foreground">(none)</span>}
+          {domains.map((domain) => (
             <button
               type="button"
-              className="rounded p-1 text-muted-foreground hover:bg-muted"
-              onClick={() => void refreshDomainFeatures(selected?.name)}
-              aria-label="domains-refresh"
-              data-testid="domains-refresh"
-              disabled={domainLoading}
+              key={domain.name}
+              className={`${domainChipClass} ${
+                selected?.name === domain.name
+                  ? "border-emerald-500 bg-emerald-50 text-slate-900 shadow-sm"
+                  : "border-stone-300 bg-white text-slate-600 hover:border-stone-400 hover:text-slate-800"
+              }`}
+              onClick={() => onDomainClick(domain.name)}
             >
-              <RefreshCw className={`h-4 w-4 ${domainLoading ? "animate-spin" : ""}`} />
+              {domain.name}
             </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {domains.length === 0 && <span className="text-xs text-muted-foreground">(none)</span>}
-            {domains.map((domain) => (
-              <span
-                key={domain.name}
-                className={`inline-flex cursor-pointer rounded-md border px-2 py-1 text-xs ${
-                  selected?.name === domain.name
-                    ? "border-primary text-foreground font-semibold"
-                    : "border-border text-muted-foreground"
-                }`}
-                onClick={() => onDomainClick(domain.name)}
-              >
-                {domain.name}
-              </span>
-            ))}
-          </div>
+          ))}
         </div>
-        <div className="p-2">
+        <div className="min-h-[128px] border-l border-stone-200/80 pl-5">
           {!selected && <div className="text-sm text-muted-foreground">선택된 domain이 없습니다.</div>}
           {selected && (
-            <div className="space-y-3">
-              <div>
-                <div className="text-sm text-foreground">{selected.description || "(empty)"}</div>
-              </div>
-              <div>
-                <div className="space-y-2">
-                  {domainLoading && (
-                    <span className="text-sm text-muted-foreground">기능 분석 중...</span>
-                  )}
-                  {!domainLoading && domainError && (
-                    <div className="rounded-md border border-red-300 bg-red-50 px-2 py-1 text-xs text-red-700">
-                      {domainError}
-                    </div>
-                  )}
-                  {!domainLoading && !domainError && selected.features.length === 0 && (
-                    <span className="text-sm text-muted-foreground">소스에서 추출된 기능이 없습니다.</span>
-                  )}
-                  {!domainLoading &&
-                    !domainError &&
-                    selected.features.map((feature) => {
-                      const [name, ...rest] = feature.split(":");
-                      const title = name.trim();
-                      const description = rest.join(":").trim() || "소스에서 추출된 기능";
-                      return (
-                        <div key={`${selected.name}-${title}-${description}`} className="rounded-md border border-border/70 px-2 py-1 text-xs">
-                          <span className="font-semibold text-foreground">{title || feature.trim()}</span>
-                          <span className="text-muted-foreground">: {description}</span>
-                        </div>
-                      );
-                    })}
-                </div>
+            <div className="space-y-4">
+              <div className="text-sm text-foreground">{selected.description || "(empty)"}</div>
+              <div className="space-y-2">
+                {domainLoading && (
+                  <span className="text-sm text-muted-foreground">기능 분석 중...</span>
+                )}
+                {!domainLoading && domainError && (
+                  <div className="rounded-md border border-red-300 bg-red-50 px-2 py-1 text-xs text-red-700">
+                    {domainError}
+                  </div>
+                )}
+                {!domainLoading && !domainError && selected.features.length === 0 && (
+                  <span className="text-sm text-muted-foreground">소스에서 추출된 기능이 없습니다.</span>
+                )}
+                {!domainLoading &&
+                  !domainError &&
+                  selected.features.map((feature) => {
+                    const [name, ...rest] = feature.split(":");
+                    const title = name.trim();
+                    const description = rest.join(":").trim() || "소스에서 추출된 기능";
+                    return (
+                      <div key={`${selected.name}-${title}-${description}`} className={domainFeatureCardClass}>
+                        <span className="font-semibold text-foreground">{title || feature.trim()}</span>
+                        <span className="text-muted-foreground">: {description}</span>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           )}

@@ -36,12 +36,7 @@ const TASK_SESSION_KEY_ENV: &str = "ORC_TASK_SESSION_KEY";
 fn is_orc_workspace_runtime_entry(name: &str) -> bool {
     matches!(
         name,
-        ".project"
-            | ".agents"
-            | "todo.md"
-            | "job.md"
-            | "report.md"
-            | "drafts_list.yaml"
+        ".project" | ".agents" | "job.md" | "report.md" | "drafts_list.yaml"
     ) || name.starts_with('.')
 }
 
@@ -108,8 +103,8 @@ fn save_registry(registry: &ProjectRegistry) -> Result<(), String> {
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
     }
-    let raw = serde_yaml::to_string(registry)
-        .map_err(|e| format!("failed to encode registry: {}", e))?;
+    let raw =
+        serde_yaml::to_string(registry).map_err(|e| format!("failed to encode registry: {}", e))?;
     fs::write(&path, raw).map_err(|e| format!("failed to write {}: {}", path.display(), e))
 }
 
@@ -366,7 +361,10 @@ fn is_command_available(program: &str) -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-pub(crate) fn run_codex_exec_capture_with_timeout(prompt: &str, timeout_sec: u64) -> Result<String, String> {
+pub(crate) fn run_codex_exec_capture_with_timeout(
+    prompt: &str,
+    timeout_sec: u64,
+) -> Result<String, String> {
     crate::chat::run_codex_exec_capture_with_timeout(prompt, timeout_sec)
 }
 
@@ -389,10 +387,10 @@ pub(crate) fn extract_markdown_block(raw: &str) -> String {
     if let Some(start) = raw.find("```") {
         let tail = &raw[start + 3..];
         if let Some(next_newline) = tail.find('\n') {
-             let body = &tail[next_newline+1..];
-             if let Some(end) = body.find("```") {
-                 return body[..end].trim().to_string();
-             }
+            let body = &tail[next_newline + 1..];
+            if let Some(end) = body.find("```") {
+                return body[..end].trim().to_string();
+            }
         }
     }
     raw.trim().to_string()
@@ -405,14 +403,17 @@ pub(crate) fn default_model_bin() -> String {
 }
 
 pub(crate) fn model_supports_dangerous_flag(model: &str) -> bool {
-    model.contains("gemini")
+    let lower = model.to_ascii_lowercase();
+    lower.contains("gemini") || lower.contains("codex")
 }
 
 pub(crate) fn read_one_line(prompt: &str) -> Result<String, String> {
     print!("{}", prompt);
     io::stdout().flush().map_err(|e| e.to_string())?;
     let mut input = String::new();
-    io::stdin().read_line(&mut input).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| e.to_string())?;
     Ok(input.trim().to_string())
 }
 
@@ -433,7 +434,10 @@ pub(crate) fn validate_draft_doc(doc: &DraftDoc) -> Vec<String> {
     issues
 }
 
-pub(crate) fn save_drafts_list_primary(project_root: &Path, doc: &DraftsListDoc) -> Result<(), String> {
+pub(crate) fn save_drafts_list_primary(
+    project_root: &Path,
+    doc: &DraftsListDoc,
+) -> Result<(), String> {
     let path = project_root.join(".project").join(PRIMARY_DRAFTS_LIST_FILE);
     let raw = serde_yaml::to_string(doc).map_err(|e| format!("failed to encode yaml: {}", e))?;
     fs::write(path, raw).map_err(|e| format!("failed to write drafts_list: {}", e))
@@ -517,7 +521,7 @@ async fn main() {
         cli::print_usage(program);
         return;
     }
-    
+
     match cli::execute_cli(&args).await {
         Ok(output) => println!("{}", output),
         Err(err) => {

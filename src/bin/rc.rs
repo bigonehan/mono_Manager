@@ -552,11 +552,13 @@ fn build_plan(
         .join("rc")
         .join("prompts")
         .join("build_plan.txt");
-    let prompt_template = fs::read_to_string(&prompt_path)
-        .with_context(|| format!("failed to read {}", prompt_path.display()))?;
+    let prompt_template = match fs::read_to_string(&prompt_path) {
+        Ok(body) => body,
+        Err(_) => return Ok(fallback_plan_body(target_path, mode, runner, headed, config)),
+    };
     let inventory = describe_target_path(target_path)?;
     let prompt = format!(
-        "{}\n\npath: {}\nrunner: {:?}\nheaded: {:?}\nmode: {}\n\ninventory:\n{}\n\n출력은 plan.md 본문 markdown만 반환한다.",
+        "{}\n\npath: {}\nrunner: {:?}\nheaded: {:?}\nmode: {}\n\ninventory:\n{}\n\n출력은 작업 요약 markdown만 반환한다.",
         prompt_template,
         target_path.display(),
         runner,
@@ -653,7 +655,10 @@ where
     let started = Instant::now();
     let mut next_report_sec = STEP_HEARTBEAT_SEC;
     let status = loop {
-        match child.try_wait().with_context(|| "failed while waiting command")? {
+        match child
+            .try_wait()
+            .with_context(|| "failed while waiting command")?
+        {
             Some(status) => break status,
             None => {
                 let elapsed_sec = started.elapsed().as_secs();
@@ -740,7 +745,6 @@ fn build_web_procedure(
 ) -> DraftProcedure {
     let agent = &config.agent_browser_command;
     let requested_url = requested_web_url(target_path, mode, config);
-    let url = browser_reachable_url_for_target(target_path, &requested_url);
     let login_mode = mode.to_ascii_lowercase().contains("login");
     let wait_selector = extract_action_value(mode, "selector")
         .or_else(|| extract_action_value(mode, "wait"))
@@ -768,7 +772,7 @@ fn build_web_procedure(
             responses: Vec::new(),
         },
         Step {
-            command_template: browser::open_command(agent, &url, headed),
+            command_template: browser::open_command(agent, &requested_url, headed),
             responses: Vec::new(),
         },
         Step {
@@ -1062,7 +1066,8 @@ fn run_check(
             if !outcome.errors.is_empty() {
                 bail!(
                     "step failed: {}",
-                    outcome.errors
+                    outcome
+                        .errors
                         .iter()
                         .map(String::as_str)
                         .collect::<Vec<_>>()
@@ -1215,8 +1220,12 @@ fn contains_error_signal(output: &str) -> bool {
     lowered.contains("✗")
         || lowered.contains("enoent")
         || lowered.contains("failed")
-        || lowered.lines().any(|line| line.trim_start().starts_with("error:"))
-        || lowered.lines().any(|line| line.trim_start().starts_with("error "))
+        || lowered
+            .lines()
+            .any(|line| line.trim_start().starts_with("error:"))
+        || lowered
+            .lines()
+            .any(|line| line.trim_start().starts_with("error "))
 }
 
 fn write_session_cache(cache: &SessionCache) -> Result<()> {
@@ -1356,11 +1365,26 @@ fn append_to_job_md(job_path: &Path, addition: &str) -> Result<()> {
 fn cleanup_legacy_rc_artifacts(workdir: &Path) -> Result<()> {
     let screenshot_dir = workdir.join(SCREENSHOT_DIR);
     for (legacy, target) in [
-        (workdir.join("drafts.yaml"), workdir.join(".project").join("drafts.yaml")),
-        (workdir.join("terminal-capture.txt"), screenshot_dir.join("terminal-capture.txt")),
-        (workdir.join("rect-capture.png"), screenshot_dir.join("rect-capture.png")),
-        (workdir.join("screen-capture.png"), screenshot_dir.join("screen-capture.png")),
-        (workdir.join("rc-web.png"), screenshot_dir.join("rc-web.png")),
+        (
+            workdir.join("drafts.yaml"),
+            workdir.join(".project").join("drafts.yaml"),
+        ),
+        (
+            workdir.join("terminal-capture.txt"),
+            screenshot_dir.join("terminal-capture.txt"),
+        ),
+        (
+            workdir.join("rect-capture.png"),
+            screenshot_dir.join("rect-capture.png"),
+        ),
+        (
+            workdir.join("screen-capture.png"),
+            screenshot_dir.join("screen-capture.png"),
+        ),
+        (
+            workdir.join("rc-web.png"),
+            screenshot_dir.join("rc-web.png"),
+        ),
     ] {
         if legacy.exists() {
             if let Some(parent) = target.parent() {
@@ -1453,7 +1477,10 @@ fn run_codex_checklist_prompt(prompt: &str) -> Result<String> {
     })
     .with_context(|| "failed to execute codex checklist prompt")?;
     if !output.status.success() {
-        bail!("codex checklist generation failed: {}", output.stderr.trim());
+        bail!(
+            "codex checklist generation failed: {}",
+            output.stderr.trim()
+        );
     }
     let stdout = output.stdout.trim().to_string();
     if stdout.is_empty() {
@@ -1540,8 +1567,7 @@ fn maybe_spawn_codex_worker(workdir: &Path) -> Result<()> {
     if pane_id.is_empty() {
         return Ok(());
     }
-    let message = "job.md를 읽고 해결할 수 있는 문제와 개선점을 쳐서 개선하라"
-        .replace('"', "\\\"");
+    let message = "job.md를 읽고 해결할 수 있는 문제와 개선점을 쳐서 개선하라".replace('"', "\\\"");
     let danger_flag = if std::env::var("CODEX_DANGEROUSLY_BYPASS_APPROVALS_AND_SANDBOX").is_ok() {
         ""
     } else {
@@ -1746,10 +1772,7 @@ mod tests {
         )
         .expect("drafts");
         assert_eq!(drafts.procedures[0].name, "web_smoke_check");
-        assert_eq!(
-            drafts.procedures[0].expected,
-            "page loads through the UI"
-        );
+        assert_eq!(drafts.procedures[0].expected, "page loads through the UI");
         assert!(drafts.procedures[0]
             .steps
             .iter()
@@ -1783,8 +1806,11 @@ mod tests {
     #[test]
     fn keeps_loopback_url_for_localhost_only_vite_server() {
         let dir = tempdir().expect("tempdir");
-        fs::write(dir.path().join("package.json"), r#"{"scripts":{"dev":"vite"}}"#)
-            .expect("write package.json");
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts":{"dev":"vite"}}"#,
+        )
+        .expect("write package.json");
         assert_eq!(
             browser_reachable_url_for_target_with_host(
                 dir.path(),
@@ -1843,7 +1869,9 @@ mod tests {
     #[test]
     fn detects_real_error_signals_without_matching_install_note() {
         assert!(contains_error_signal("✗ ENOENT: no such file or directory"));
-        assert!(contains_error_signal("command failed while saving screenshot"));
+        assert!(contains_error_signal(
+            "command failed while saving screenshot"
+        ));
         assert!(!contains_error_signal(
             "Note: If you see \"shared library\" errors when running, use install --with-deps"
         ));

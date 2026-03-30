@@ -76,28 +76,49 @@ impl CodeProfile {
 
 impl TemplateProvider for CodeTemplateProvider {
     fn project_template_path(&self) -> PathBuf {
-        crate::source_root().join("assets").join("templates").join("project.md")
+        crate::source_root()
+            .join("assets")
+            .join("templates")
+            .join("project.md")
     }
     fn job_template_path(&self) -> PathBuf {
-        crate::source_root().join("assets").join("templates").join("job.md")
+        crate::source_root()
+            .join("assets")
+            .join("templates")
+            .join("job.md")
     }
     fn drafts_template_path(&self) -> PathBuf {
-        crate::source_root().join("assets").join("templates").join("drafts.yaml")
+        crate::source_root()
+            .join("assets")
+            .join("templates")
+            .join("drafts.yaml")
     }
 }
 
 impl PromptProvider for CodePromptProvider {
     fn build_domains_prompt_path(&self) -> PathBuf {
-        crate::source_root().join("assets").join("prompts").join("build_domains.md")
+        crate::source_root()
+            .join("assets")
+            .join("prompts")
+            .join("build_domains.md")
     }
     fn init_project_prompt_path(&self) -> PathBuf {
-        crate::source_root().join("assets").join("prompts").join("init_project.md")
+        crate::source_root()
+            .join("assets")
+            .join("prompts")
+            .join("init_project.md")
     }
     fn check_code_prompt_path(&self) -> PathBuf {
-        crate::source_root().join("assets").join("prompts").join("check_code.md")
+        crate::source_root()
+            .join("assets")
+            .join("prompts")
+            .join("check_code.md")
     }
     fn build_parallel_prompt_path(&self) -> PathBuf {
-        crate::source_root().join("assets").join("prompts").join("build_parallel.md")
+        crate::source_root()
+            .join("assets")
+            .join("prompts")
+            .join("build_parallel.md")
     }
 }
 
@@ -121,7 +142,9 @@ impl DraftService for CodeDraftService {
     fn add_drafts(&self) -> Result<String, String> {
         crate::code::add_orc_drafts()
     }
-    fn run_parallel<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
+    fn run_parallel<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
         Box::pin(async move { crate::code::impl_orc_code().await })
     }
 }
@@ -133,12 +156,24 @@ impl FeedbackService for CodeFeedbackService {
 }
 
 impl Profile for CodeProfile {
-    fn name(&self) -> &str { "code" }
-    fn templates(&self) -> &dyn TemplateProvider { &self.templates }
-    fn prompts(&self) -> &dyn PromptProvider { &self.prompts }
-    fn project_service(&self) -> &dyn ProjectService { &self.project }
-    fn draft_service(&self) -> &dyn DraftService { &self.draft }
-    fn feedback_service(&self) -> &dyn FeedbackService { &self.feedback }
+    fn name(&self) -> &str {
+        "code"
+    }
+    fn templates(&self) -> &dyn TemplateProvider {
+        &self.templates
+    }
+    fn prompts(&self) -> &dyn PromptProvider {
+        &self.prompts
+    }
+    fn project_service(&self) -> &dyn ProjectService {
+        &self.project
+    }
+    fn draft_service(&self) -> &dyn DraftService {
+        &self.draft
+    }
+    fn feedback_service(&self) -> &dyn FeedbackService {
+        &self.feedback
+    }
 }
 
 pub(crate) fn is_known_profile_name(name: &str) -> bool {

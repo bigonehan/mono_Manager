@@ -36,3 +36,6 @@ add_orc_drafts completed: added 0 items, deferred 0 items (budget)
 [orc-status] codex exec [# 컨텍스트] attempt 1/2 | elapsed=120s | waiting for llm response
 [orc-status] codex exec [# 컨텍스트] attempt 1/2 | elapsed=60s | waiting for llm response
 [orc-status] codex exec [# 컨텍스트] attempt 1/2 | elapsed=60s | waiting for llm response
+2026-03-30 13:30:00 | step=current_png_precheck | result=required
+2026-03-30 13:30:00 | step=current_png_precheck | rule=target_project_fix -> detail_api_domains_count -> project_md_domains_section -> packages_domains_entries -> screenshot_compare
+2026-03-30 13:30:00 | step=current_png_precheck | fail_closed=if detail_api_domains_count==0 then screenshot success claims are forbidden
