@@ -3107,3 +3107,32 @@
 - `.../ai/skills/orc_manager/SKILL.md`를 새로 생성해 `/plan -> ORC worker pane -> job.md/drafts.yaml/impl -> ORC check worker -> 개선 판단 -> 추가 개선 탐색` manager 루프를 전용 skill로 정의함.
 - skill 본문에 worker 완료 메시지 회수 형식, `orc send-tmux` 전송 규칙, `job.md` 재확인 순서, `현재 job.md 이외에 개선할 사항을 개선해` 추가 탐색 규칙, 하드게이트를 함께 기록함.
 - 검증: `sed -n '1,240p' /home/tree/ai/skills/orc_manager/SKILL.md`로 본문 확인, `rg -n "^name: orc_manager|/plan|orc send-tmux|worker:<pane_id>:done|orc clit|현재 job.md 이외에 개선할 사항을 개선해|하드게이트" /home/tree/ai/skills/orc_manager/SKILL.md` 확인.
+## 2026-04-01 - 작업한일
+- `.../src/tmux/mod.rs`에 worker pane 최근 로그 회수(`capture_pane_tail`), 준비 패턴 대기(`wait_for_ready`), dev 서버 응답 점검(`http_healthcheck`) 함수를 추가하고 HTTP healthcheck 회귀 테스트를 넣음.
+- `.../src/cli.rs`, `.../README.md`에 `orc capture-pane`, `orc wait-ready`, `orc http-healthcheck` 명령을 노출해 manager pane이 구현/QA pane 상태를 직접 확인할 수 있게 함.
+- `.../ai/skills/orc_manager/SKILL.md`에 새 ORC 헬퍼 명령 사용 규칙을 반영해 dev 서버 준비/로그 회수 절차를 문서화함.
+
+## 2026-04-01 - 작업한일
+- `.../ai/skills/orc_manager/SKILL.md`를 확장해 manager pane이 구현 worker 완료 후 dev 서버 URL을 회수하고, 별도 QA pane을 열어 `playwright-cli`로 접속/시연/문제 보고까지 수행하는 루프를 추가함.
+- 종료 조건과 하드게이트에 `dev 서버 유지`, `QA 시연 성공`, `manager pane 직접 시연 금지`를 반영해 구현 완료만으로 종료되지 않도록 강화함.
+- 검증은 tmux/worker 관련 ORC 코드 검색과 스킬 문서 재검토로 현재 `orc send-tmux` 기반 연결 가능 여부를 확인함.
+
+## 2026-04-01 - 작업한일
+- `.../src/code.rs`, `.../src/main.rs`, `.../assets/templates/job.md`에 `work -> verify -> complete` 상태와 top-level `# check` 체크리스트를 반영하고, `check_orc_code`가 `job.md`의 `verify`/`problems`를 기준으로 체크리스트를 구성한 뒤 문제 없을 때만 `verify`를 `complete`로 이동하도록 구현함.
+- `.../assets/prompts/check_code.md`, `.../ai/skills/check-code/SKILL.md`를 갱신해 `# problems 우선 처리 -> # check 재구성 -> verify 검증 -> complete 이동` 루프를 단일 규칙으로 고정하고, `.../assets/web/src/server/orc.ts`와 `.../assets/web/tests/web.spec.ts`의 기본 `job.md` 구조도 새 라벨에 맞춤.
+- 검증은 `cargo test` 전체 통과와 `npm --prefix assets/web run test:unit` 통과로 확인함.
+
+## 2026-04-01 - 작업한일
+- `.../src/cli.rs`, `.../src/bin/rc.rs`, `.../README.md`에서 `clit test`를 deprecated/removed 경로로 바꾸고, 사용자 진입점은 `check_orc_code`와 ORC helper 명령만 가리키도록 정리함.
+- `.../assets/web/src/server/orc.ts`, `.../assets/web/src/pages/api/tui-map.ts`, `.../src/web_api/mod.rs`, `.../assets/web/tests/web.spec.ts`를 갱신해 web/api의 check 피드백과 retry가 `# clit feedback` 대신 `# problems`, `# check`를 기준으로 동작하게 맞춤.
+- `.../AGENTS.md`의 retry/check 관련 규칙도 새 검증 구조에 맞게 갱신했고, 검증은 `cargo test` 및 `npm --prefix assets/web run test:unit` 통과로 확인함.
+
+## 2026-04-01 - 작업한일
+- `.../ai/skills/orc_manager/SKILL.md`를 pane 기반 worker 문서에서 tmux session 기반 manager 문서로 전면 교체해 구현/QA/check/개선 탐색을 각각 새 session으로 생성·관리하도록 수정함.
+- 모든 worker session이 시작 전에 반드시 `job.md`를 읽고 `# problems`, `# check`, `## verify`를 기준으로만 동작해야 한다는 규칙과, manager session도 최종 판단을 `job.md` 기준으로만 내리도록 명시함.
+- 검증은 `sed -n '1,260p' /home/tree/ai/skills/orc_manager/SKILL.md`와 `rg -n "job\\.md|session|new-session|worker:<session_name>" /home/tree/ai/skills/orc_manager/SKILL.md`로 session 규칙과 `job.md` 참조 문구 반영을 확인함.
+
+## 2026-04-01 - 작업한일
+- `.../src/main.rs`와 `.../AGENTS.md`에서 `report.md` 문자열을 전부 제거하고 관련 참조를 다른 표현으로 치환함.
+- 저장소/skill 범위(`.../src`, `.../assets`, `/home/tree/ai/skills`, `/home/tree/.codex/skills`)에서 `rg -n -F "report.md"` 재검색 결과가 0건인지 확인함.
+- 검증은 `cargo test` 전체 통과로 확인함.

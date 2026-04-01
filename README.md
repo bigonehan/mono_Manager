@@ -13,7 +13,7 @@
 - `orc create_code_draft`
 - `orc add_code_draft_item [-f] [-m <message>]`
 - `orc impl_code_draft`
-- `orc check_code_draft [-a]`
+- `orc check_orc_code`
 - `orc check_task`
 - `orc check_draft`
 - `orc cli_rust_orchestra`
@@ -23,6 +23,9 @@
 - `orc chat-wait -n <name> -a <true|false> [-c <count>]`
 - `orc open-ui [-w|--web|-b|--build]`
 - `orc serve-web-api [--addr <host:port>]`
+- `orc capture-pane <pane_id> [lines]`
+- `orc wait-ready <pane_id> <pattern> [timeout_ms] [lines]`
+- `orc http-healthcheck <url> [timeout_ms]`
 - `orc auto <message>`
 - `orc auto -f` (auto-generate `job.md` from project metadata, then continue to implementation)
 
@@ -44,6 +47,14 @@
 - Options:
   - `enter` (default): send message and press Enter
   - `raw`: send message only
+
+## tmux Worker Helpers
+- Capture recent pane output:
+  - `orc capture-pane <pane_id> [lines]`
+- Wait until pane output contains a readiness pattern:
+  - `orc wait-ready <pane_id> <pattern> [timeout_ms] [lines]`
+- Check whether a dev server URL is responding:
+  - `orc http-healthcheck <url> [timeout_ms]`
 
 ## Notes
 - `orc chat -n <name>` 실행 시 `.temp/<name>.yaml`이 없거나 비어 있으면 기본 chat room YAML이 자동 생성됩니다.

@@ -198,6 +198,21 @@ struct CapturedCommandOutput {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum WebAction {
+    Url(String),
+    Selector(String),
+    Wait(String),
+    ClickLabel(String),
+    ClickSelector(String),
+    Fill { selector: String, value: String },
+    Type(String),
+    Assert(String),
+    Sleep(u32),
+    Reload,
+    Snapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct WindowContext {
     title: String,
     handle: String,
@@ -355,7 +370,8 @@ fn main() {
 fn run() -> Result<()> {
     let config = load_config()?;
     let parsed = parse_cli_from(std::env::args_os())?;
-    execute_test(parsed, &config)
+    let _ = (config, parsed);
+    bail!("rc clit test was removed; use `orc check_orc_code` and ORC helper commands instead")
 }
 
 fn parse_cli_from<I, T>(args: I) -> Result<ParsedCliInput>
@@ -771,7 +787,14 @@ fn build_web_procedure(
     let agent = &config.agent_browser_command;
     let requested_url = requested_web_url(target_path, mode, config);
     let login_mode = mode.to_ascii_lowercase().contains("login");
-    let wait_selector = extract_action_value(mode, "selector")
+    let actions = parse_web_actions(mode);
+    let wait_selector = actions
+        .iter()
+        .find_map(|action| match action {
+            WebAction::Selector(selector) | WebAction::Wait(selector) => Some(selector.clone()),
+            _ => None,
+        })
+        .or_else(|| extract_action_value(mode, "selector"))
         .or_else(|| extract_action_value(mode, "wait"))
         .unwrap_or_else(|| {
             if login_mode {
@@ -812,17 +835,58 @@ fn build_web_procedure(
     if login_mode {
         steps.extend(login_steps(agent));
     }
-    if let Some(label) = extract_action_value(mode, "click") {
-        steps.push(Step {
-            command_template: browser::click_command(agent, &label),
-            responses: build_responses(mode),
-        });
-    }
-    if let Some(text) = extract_action_value(mode, "input") {
-        steps.push(Step {
-            command_template: browser::keyboard_type_command(agent, &text),
-            responses: build_responses(mode),
-        });
+    for action in actions {
+        match action {
+            WebAction::Url(_) | WebAction::Selector(_) => {}
+            WebAction::Wait(selector) | WebAction::Assert(selector) => {
+                steps.push(Step {
+                    command_template: browser::wait_for_selector_command(agent, &selector),
+                    responses: Vec::new(),
+                });
+            }
+            WebAction::ClickLabel(label) => {
+                steps.push(Step {
+                    command_template: browser::click_command(agent, &label),
+                    responses: build_responses(mode),
+                });
+            }
+            WebAction::ClickSelector(selector) => {
+                steps.push(Step {
+                    command_template: browser::click_selector_command(agent, &selector),
+                    responses: build_responses(mode),
+                });
+            }
+            WebAction::Fill { selector, value } => {
+                steps.push(Step {
+                    command_template: browser::fill_command(agent, &selector, &value),
+                    responses: Vec::new(),
+                });
+            }
+            WebAction::Type(text) => {
+                steps.push(Step {
+                    command_template: browser::keyboard_type_command(agent, &text),
+                    responses: build_responses(mode),
+                });
+            }
+            WebAction::Sleep(seconds) => {
+                steps.push(Step {
+                    command_template: browser::sleep_command(seconds),
+                    responses: Vec::new(),
+                });
+            }
+            WebAction::Reload => {
+                steps.push(Step {
+                    command_template: browser::open_command(agent, &requested_url, headed),
+                    responses: Vec::new(),
+                });
+            }
+            WebAction::Snapshot => {
+                steps.push(Step {
+                    command_template: browser::snapshot_command(agent),
+                    responses: Vec::new(),
+                });
+            }
+        }
     }
     let screenshot_path = target_path.join(SCREENSHOT_DIR).join("rc-web.png");
     steps.push(Step {
@@ -1037,6 +1101,163 @@ fn extract_action_value(mode: &str, key: &str) -> Option<String> {
     } else {
         Some(value.to_string())
     }
+}
+
+fn parse_web_actions(mode: &str) -> Vec<WebAction> {
+    let mut actions = Vec::new();
+    let mut index = 0usize;
+    while index < mode.len() {
+        skip_ascii_whitespace(mode, &mut index);
+        let Some((keyword, next_index)) = parse_keyword(mode, index) else {
+            index += 1;
+            continue;
+        };
+        index = next_index;
+        let action = match keyword.as_str() {
+            "url" => parse_action_arg(mode, &mut index).map(WebAction::Url),
+            "selector" => parse_action_arg(mode, &mut index).map(WebAction::Selector),
+            "wait" => parse_action_arg(mode, &mut index).map(WebAction::Wait),
+            "click" => parse_action_arg(mode, &mut index).map(WebAction::ClickLabel),
+            "click-selector" => {
+                parse_action_arg(mode, &mut index).map(WebAction::ClickSelector)
+            }
+            "fill" => {
+                let selector = parse_action_arg(mode, &mut index);
+                let value = parse_action_arg(mode, &mut index);
+                match (selector, value) {
+                    (Some(selector), Some(value)) => Some(WebAction::Fill { selector, value }),
+                    _ => None,
+                }
+            }
+            "input" | "type" => parse_action_arg(mode, &mut index).map(WebAction::Type),
+            "assert" => parse_action_arg(mode, &mut index).map(WebAction::Assert),
+            "sleep" => parse_action_arg(mode, &mut index)
+                .and_then(|value| value.parse::<u32>().ok())
+                .map(WebAction::Sleep),
+            "reload" => Some(WebAction::Reload),
+            "snapshot" => Some(WebAction::Snapshot),
+            _ => None,
+        };
+        if let Some(action) = action {
+            actions.push(action);
+        }
+    }
+    actions
+}
+
+fn skip_ascii_whitespace(input: &str, index: &mut usize) {
+    while let Some(ch) = input.get(*index..).and_then(|rest| rest.chars().next()) {
+        if !ch.is_ascii_whitespace() {
+            break;
+        }
+        *index += ch.len_utf8();
+    }
+}
+
+fn parse_keyword(input: &str, index: usize) -> Option<(String, usize)> {
+    let rest = input.get(index..)?;
+    let mut end = 0usize;
+    for ch in rest.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' {
+            end += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    if end == 0 {
+        return None;
+    }
+    let keyword = rest[..end].to_ascii_lowercase();
+    Some((keyword, index + end))
+}
+
+fn parse_action_arg(input: &str, index: &mut usize) -> Option<String> {
+    skip_ascii_whitespace(input, index);
+    let rest = input.get(*index..)?;
+    if let Some(quoted) = rest.strip_prefix('"') {
+        let end = quoted.find('"')?;
+        *index += end + 2;
+        return Some(quoted[..end].to_string());
+    }
+    let mut end = 0usize;
+    for ch in rest.chars() {
+        if ch.is_ascii_whitespace() {
+            break;
+        }
+        end += ch.len_utf8();
+    }
+    if end == 0 {
+        return None;
+    }
+    *index += end;
+    Some(rest[..end].to_string())
+}
+
+fn mission_requires_state_verification(mode: &str) -> bool {
+    let lowered = mode.to_ascii_lowercase();
+    [
+        "save",
+        "delete",
+        "remove",
+        "edit",
+        "update",
+        "assign",
+        "create",
+        "insert",
+        "submit",
+        "저장",
+        "삭제",
+        "수정",
+        "추가",
+        "생성",
+        "할당",
+    ]
+    .iter()
+    .any(|needle| lowered.contains(needle))
+}
+
+fn mission_has_persistence_check(actions: &[WebAction]) -> bool {
+    let mut mutation_seen = false;
+    let mut reload_seen = false;
+    for action in actions {
+        match action {
+            WebAction::ClickLabel(label) => {
+                let lowered = label.to_ascii_lowercase();
+                if ["save", "delete", "remove", "edit", "assign", "submit", "저장", "삭제", "수정", "할당"]
+                    .iter()
+                    .any(|needle| lowered.contains(needle))
+                {
+                    mutation_seen = true;
+                }
+            }
+            WebAction::ClickSelector(selector) => {
+                let lowered = selector.to_ascii_lowercase();
+                if ["save", "delete", "remove", "edit", "assign", "submit"]
+                    .iter()
+                    .any(|needle| lowered.contains(needle))
+                {
+                    mutation_seen = true;
+                }
+            }
+            WebAction::Fill { .. } | WebAction::Type(_) => {
+                if mutation_seen {
+                    continue;
+                }
+            }
+            WebAction::Reload => {
+                if mutation_seen {
+                    reload_seen = true;
+                }
+            }
+            WebAction::Wait(_) | WebAction::Assert(_) => {
+                if mutation_seen && reload_seen {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 fn build_responses(mode: &str) -> Vec<String> {
@@ -1319,9 +1540,23 @@ fn capture_terminal_session(workdir: &Path) -> Result<PathBuf> {
 
 fn write_feedback(workdir: &Path, log: &SessionLog) -> Result<()> {
     let effective_errors = filtered_errors(log);
+    let web_actions = if log.runner == RunnerKind::Web {
+        parse_web_actions(&log.mission)
+    } else {
+        Vec::new()
+    };
+    let requires_state_check =
+        log.runner == RunnerKind::Web && mission_requires_state_verification(&log.mission);
+    let persistence_checked = !requires_state_check || mission_has_persistence_check(&web_actions);
     let checklist = evaluate_checklist(workdir, log, &effective_errors)?;
     let mut unresolved_items = effective_errors.clone();
     unresolved_items.extend(checklist.unresolved.clone());
+    if requires_state_check && !persistence_checked {
+        unresolved_items.push(
+            "state mutation not verified: reload/reopen 뒤 selector/assert 단계가 없어 render-only 검증에 머물렀다."
+                .to_string(),
+        );
+    }
     let unresolved = if unresolved_items.is_empty() {
         "- 없음".to_string()
     } else {
@@ -1332,15 +1567,30 @@ fn write_feedback(workdir: &Path, log: &SessionLog) -> Result<()> {
             .join("\n")
     };
     let improvements = if unresolved_items.is_empty() {
-        "- 현재 draft 절차가 체크리스트 기준을 만족했고 화면 근거(snapshot/screenshot)가 기록됐다."
-            .to_string()
+        if requires_state_check {
+            "- 현재 draft 절차가 상태 변화 검증까지 포함했고 화면 근거(snapshot/screenshot)와 reload/assert 확인이 기록됐다."
+                .to_string()
+        } else {
+            "- 현재 draft 절차가 체크리스트 기준을 만족했고 화면 근거(snapshot/screenshot)가 기록됐다."
+                .to_string()
+        }
     } else {
-        "- clit 결과를 기준으로 plan/drafts 절차를 갱신해야 한다.".to_string()
+        "- clit 결과를 기준으로 plan/drafts 절차를 갱신해야 한다. render-only 검증과 상태 변화 검증을 구분하라."
+            .to_string()
     };
     let result = format!(
-        "\n# clit feedback\n\n## 결과\n- runner: {:?}\n- detected command: {}\n- steps: {}\n- captures: {}\n\n### 체크리스트\n{}\n\n### 미해결\n{}\n\n### 보완\n{}\n",
+        "\n# clit feedback\n\n## 결과\n- runner: {:?}\n- detected command: {}\n- verification: {}\n- steps: {}\n- captures: {}\n\n### 체크리스트\n{}\n\n### 미해결\n{}\n\n### 보완\n{}\n",
         log.runner,
         log.detected_command,
+        if requires_state_check {
+            if persistence_checked {
+                "state-change verified"
+            } else {
+                "render-only for a mutation mission"
+            }
+        } else {
+            "render-only"
+        },
         log.steps
             .iter()
             .map(|step| step.command_template.as_str())
@@ -1465,7 +1715,7 @@ fn build_checklist_prompt(log: &SessionLog, effective_errors: &[String]) -> Stri
         effective_errors.join("\n")
     };
     let web_rules = if log.runner == RunnerKind::Web {
-        "\nweb_rules:\n- 브라우저 e2e 스크린샷이 실제 렌더 확인 근거인지 점검한다.\n- 성공한 실행이면 스크린샷 정리 여부도 확인한다.\n"
+        "\nweb_rules:\n- 브라우저 e2e 스크린샷이 실제 렌더 확인 근거인지 점검한다.\n- 저장/삭제/생성/수정처럼 상태가 바뀌는 mission이면 reload 또는 reopen 이후 selector/assert 검증이 있는지 점검한다.\n- 성공한 실행이면 스크린샷 정리 여부도 확인한다.\n"
     } else {
         ""
     };
@@ -1522,6 +1772,14 @@ fn run_codex_checklist_prompt(prompt: &str) -> Result<String> {
 }
 
 fn fallback_checklist(log: &SessionLog, effective_errors: &[String]) -> String {
+    let actions = if log.runner == RunnerKind::Web {
+        parse_web_actions(&log.mission)
+    } else {
+        Vec::new()
+    };
+    let requires_state_check =
+        log.runner == RunnerKind::Web && mission_requires_state_verification(&log.mission);
+    let persistence_checked = !requires_state_check || mission_has_persistence_check(&actions);
     let status = if effective_errors.is_empty() {
         "x"
     } else {
@@ -1553,6 +1811,12 @@ fn fallback_checklist(log: &SessionLog, effective_errors: &[String]) -> String {
             "- [{}] successful screenshot cleanup -> png removed : 성공 후 스크린샷 정리\n",
             if screenshot_cleaned { "x" } else { " " }
         ));
+        if requires_state_check {
+            body.push_str(&format!(
+                "- [{}] mutation flow -> reload/assert after save/delete/create : 상태 변화 영속성 검증\n",
+                if persistence_checked { "x" } else { " " }
+            ));
+        }
     }
     body
 }
@@ -1884,6 +2148,73 @@ mod tests {
     }
 
     #[test]
+    fn parses_web_actions_in_order() {
+        let actions = parse_web_actions(
+            r##"url "http://localhost:5173/preset.html" selector "body" click "1번 슬롯" fill "#group-preset-title-input" "저장 테스트" fill "#group-preset-content-input" "내용" click-selector "#save-group-preset-btn" reload assert ".preset-item-card""##,
+        );
+        assert_eq!(
+            actions,
+            vec![
+                WebAction::Url("http://localhost:5173/preset.html".to_string()),
+                WebAction::Selector("body".to_string()),
+                WebAction::ClickLabel("1번 슬롯".to_string()),
+                WebAction::Fill {
+                    selector: "#group-preset-title-input".to_string(),
+                    value: "저장 테스트".to_string(),
+                },
+                WebAction::Fill {
+                    selector: "#group-preset-content-input".to_string(),
+                    value: "내용".to_string(),
+                },
+                WebAction::ClickSelector("#save-group-preset-btn".to_string()),
+                WebAction::Reload,
+                WebAction::Assert(".preset-item-card".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn builds_web_steps_for_fill_click_reload_assert_flow() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts":{"dev":"vite --host 0.0.0.0 --port 5173"}}"#,
+        )
+        .expect("write");
+        let config = load_config().expect("config");
+        let drafts = build_drafts(
+            dir.path(),
+            r##"url "http://localhost:5173/preset.html" selector "body" click "1번 슬롯" fill "#group-preset-title-input" "저장 테스트" click-selector "#save-group-preset-btn" reload assert ".preset-item-card""##,
+            &RunnerKind::Web,
+            HeadMode::Off,
+            &config,
+        )
+        .expect("drafts");
+        let commands = drafts.procedures[0]
+            .steps
+            .iter()
+            .map(|step| step.command_template.as_str())
+            .collect::<Vec<_>>();
+        assert!(commands
+            .iter()
+            .any(|command| command.contains(r#"find role button click --name "1번 슬롯""#)));
+        assert!(commands
+            .iter()
+            .any(|command| command.contains("fill \"#group-preset-title-input\" \"저장 테스트\"")));
+        assert!(commands
+            .iter()
+            .any(|command| command.contains("click \"#save-group-preset-btn\"")));
+        assert!(commands
+            .iter()
+            .filter(|command| command.contains("open http://localhost:5173/preset.html"))
+            .count()
+            >= 2);
+        assert!(commands
+            .iter()
+            .any(|command| command.contains(r#"wait ".preset-item-card""#)));
+    }
+
+    #[test]
     fn rewrites_loopback_url_for_browser_access() {
         assert_eq!(
             rewrite_loopback_url("http://127.0.0.1:3000/login", "172.21.188.149"),
@@ -1952,6 +2283,24 @@ mod tests {
         assert!(body.contains("## 결과"));
         assert!(body.contains("### 미해결"));
         assert!(body.contains("### 보완"));
+    }
+
+    #[test]
+    fn feedback_marks_mutation_without_reload_as_unresolved() {
+        let dir = tempdir().expect("tempdir");
+        let log = SessionLog {
+            mission: r##"url "http://localhost:5173/preset.html" selector "body" click-selector "#save-group-preset-btn""##.to_string(),
+            runner: RunnerKind::Web,
+            detected_command: "npm run dev".to_string(),
+            steps: vec![],
+            output_log: vec![],
+            errors: vec![],
+            captures: vec![],
+        };
+        write_feedback(dir.path(), &log).expect("feedback");
+        let body = fs::read_to_string(dir.path().join(JOB_FILE)).expect("read");
+        assert!(body.contains("verification: render-only for a mutation mission"));
+        assert!(body.contains("state mutation not verified"));
     }
 
     #[test]

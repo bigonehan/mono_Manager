@@ -64,16 +64,14 @@
 - When path validation fails, report the broken stage explicitly and fix wiring before finalizing.
 
 ## Failure Retry Rule
-- If a run fails or a problem is detected, append the failure cause and retry strategy to `job.md` (# clit feedback section) immediately.
-- After updating `job.md` feedback section, apply a concrete fix and rerun the same execution path.
+- If a run fails or a problem is detected, append the failure cause and retry strategy to `job.md` (`# problems`, `# check`) immediately.
+- After updating `job.md` verification sections, apply a concrete fix and rerun the same execution path.
 - Continue this loop until the target path no longer reports the same blocking failure.
 
 ## Clit Test Hard Gate
-- `clit test` 실행 전에는 반드시 `job.md`에 별도 `# test plan` 섹션을 먼저 기록한다.
-- web runner를 검사할 때는 브라우저 e2e 절차로 실제 스크린샷을 찍어 렌더/동작 성공 여부를 확인한다.
-- web runner 테스트가 성공하면 검증에 사용한 스크린샷 파일은 완료 전에 삭제한다.
-- `clit test`에서 LLM을 호출할 때는 반드시 다음 role 문구를 포함한다.
-- `경험많고 완벽주의적인 시니어 개발자가 코드 리뷰에서 거부할만한 것은 무엇일까요? 전부 수정하세요, 게으름 피우지 마세요`
+- `clit test`는 제거되었다. 점검은 `check_orc_code`와 `check-code` skill 기준으로만 진행한다.
+- web runner 검사는 `check_orc_code`가 선택한 브라우저 e2e 절차로 실제 스크린샷 또는 snapshot 근거를 남겨야 한다.
+- web 검증이 성공하면 검증에 사용한 임시 스크린샷 파일은 완료 전에 정리한다.
 
 ## YAML/MD Format Enforcement Rule
 - Any function that generates YAML/Markdown via LLM prompt must include explicit output format/schema constraints in the prompt.
@@ -193,9 +191,9 @@
   1) 문제 제시 + 해결책 + 검증 기준 설정
   2) 해결책 시도
   3) 검증 실행
-  4) 실패 시 `job.md`의 `# clit feedback`를 생성/갱신 후 이를 바탕으로 문제를 재설계
-  5) 재정비된 피드백을 바탕으로 처음부터 전체 재시작
-- On failure, write/update `job.md` (# clit feedback) before restarting.
+  4) 실패 시 `job.md`의 `# problems`, `# check`를 갱신 후 이를 바탕으로 문제를 재설계
+  5) 재정비된 검증 상태를 바탕으로 처음부터 전체 재시작
+- On failure, write/update `job.md` (`# problems`, `# check`) before restarting.
 - Do not stop at intermediate logs only; continue until pass or max retry reached.
 
 ## ORC Tmux Worker Loop Hard Gate
@@ -233,7 +231,7 @@
   1) current issue와 해결 조건 정리
   2) remove and recreate `/home/tree/temp`
   3) run `orc auto` for requested app
-  4) if failed, write `/home/tree/temp/job.md`의 `# clit feedback`에 문제/미해결점
+  4) if failed, write `/home/tree/temp/job.md`의 `# problems`, `# check`에 문제/미해결점
   5) reflect feedback into next retry notes and restart from step 1
 - Keep looping until verification passes or hard technical blocker is confirmed.
 
@@ -259,8 +257,8 @@
 ## Regret Skill Trigger Rule (Highest Priority)
 - If the assistant output includes the token `잘못` in any channel, run the `regret` skill immediately in the same turn.
 - Required action order:
-  1) Append one item to `/home/tree/ai/skills/regret/references/report.md` under `# 잘못한점`.
-  2) Append one item to `/home/tree/ai/skills/regret/references/report.md` under `# 개선할점`.
+  1) Append one item to `/home/tree/ai/skills/regret/references/regret-notes.md` under `# 잘못한점`.
+  2) Append one item to `/home/tree/ai/skills/regret/references/regret-notes.md` under `# 개선할점`.
   3) State that the regret skill execution record was written.
 - This rule is mandatory for `commentary`, `final`, and `summary` channels.
 
@@ -270,14 +268,14 @@
 - 최종 산출물(`.project/drafts.yaml` item)에는 템플릿 주석/예시/placeholder를 포함하지 않는다.
 - `draft_item` 관련 프롬프트는 "주석 읽기 -> 값 채우기 -> 주석 제거" 순서를 명시해야 한다.
 - 2026-03-05: `if)` 가상 시나리오 출력은 줄 단위 `a -> b` 포맷만 사용한다. 각 단계는 반드시 다음 줄에 분리해서 작성한다.
-- 2026-03-05: 사용자가 `~~~을 만들어줘` 형태로 요청하면 매니저 pane이 워커 pane을 단계별로 열고(`tmux split-window`), `orc send-tmux`로 `auto -> plan -> drafts -> impl -> check_code_draft -a`를 순차 위임/완료 회수/재시도 판단하는 흐름을 우선 적용한다.
+- 2026-03-05: 사용자가 `~~~을 만들어줘` 형태로 요청하면 매니저 pane이 워커 pane을 단계별로 열고(`tmux split-window`), `orc send-tmux`로 `auto -> plan -> drafts -> impl -> check_orc_code`를 순차 위임/완료 회수/재시도 판단하는 흐름을 우선 적용한다.
 - 2026-03-05: 트리거 문구는 `~~~을 만들어줘`, `~~~을 추가해줘`, `~을 읽고 처리해줘` 3가지를 동일 계열로 인식한다. 단, `읽고 처리해줘`는 기존 `job.md`를 읽는 명령 경로(`create_job_md`, `add_code_draft -f`)를 사용한다.
 - 2026-03-08: draft 타입 스키마 변경 시 web UI `edit_{type}_drafts` 모달(`edit_code_drafts`, `edit_mono_drafts`, `edit_video_drafts`, `edit_write_drafts`)을 동일 변경에서 함께 갱신한다.
 - 2026-03-06: profile 레이어 리팩토링 작업 시 별도 브랜치에서 진행한다.
 - 2026-03-06: profile 종속 범위는 prompt/template 로딩(project.md, drafts.yaml, parallel run) 및 해당 호출 프롬프트로 한정한다.
 - 2026-03-06: 공통 인터페이스는 project/plan/draft/feedback 흐름을 우선 제공하고, 기본 구현체는 code profile로 유지한다.
 - 2026-03-07: 모든 작업 완료 시 `nf -m "<task-name> complete"` 실행을 강제한다. 별도 요청이 없어도 필수로 실행하며 `notify.fish` 직접 호출은 금지한다.
-- 2026-03-07: 사용자가 `/temp` 검증 루프를 요청하면 `/home/tree/temp`를 삭제/재생성 후 `orc auto`를 실행하고, 실패 시 `/home/tree/temp/job.md`의 `# clit feedback`을 작성한 뒤 다음 재시도 조건을 갱신한다.
+- 2026-03-07: 사용자가 `/temp` 검증 루프를 요청하면 `/home/tree/temp`를 삭제/재생성 후 `orc auto`를 실행하고, 실패 시 `/home/tree/temp/job.md`의 `# problems`, `# check`를 갱신한 뒤 다음 재시도 조건을 갱신한다.
 - 2026-03-07: 사용자가 web UI 확장(`open-ui -w`, assets 기반 frontend, playwright 검증 루프)을 요청한 경우, TUI 기능 목록을 먼저 추출해 `job.md`에 반영한 뒤 구현/검증을 반복한다.
 - 2026-03-07: web UI는 `project`/`detail` 탭 분리 구조를 유지하고, detail 편집은 pane 선택 시 우상단 gear 아이콘으로 진입하는 읽기전용 기본 화면으로 제공한다.
 - 2026-03-07: web UI 상태는 로컬 useState보다 `zustand` 스토어를 우선 사용해 탭/선택/편집/로그를 중앙 관리한다.
@@ -288,7 +286,7 @@
 - 2026-03-07: `current.png` 요청은 검색 없이 `/mnt/c/Users/tende/Pictures/Screenshots/current.png`를 먼저 연다. 해당 경로 미존재 시 그 경로 부재만 즉시 보고하고 대체 경로를 요청한다.
 - 2026-03-07: 사용자가 개선사항에 `전부`, `모두`, `전체`를 명시하면 부분 개선 보고를 금지하고, 경고/실패가 남지 않을 때까지 연속으로 수정-검증을 반복한 뒤 최종 결과만 보고한다.
 - 2026-03-08: templates asset 모달은 좌측 `PROMPTS/TEMPLATES` 폴더 섹션(접기/펼치기) + 우측 파일 내용 패널 구조를 유지하고, 파일 저장 시 `{수정 파일 경로} 수정 반영 후 관련 항목 전체 갱신` LLM 요청을 자동 실행한다.
-- 2026-03-08: detail pane의 add/build 흐름은 `form_add_input` 모달 기반으로 유지한다. add 확인 시 `orc create_job_md` 후 `orc add_code_draft_item/add_code_draft`를 실행해 `drafts.yaml`를 갱신하며, build는 `orc impl_code_draft -> orc check_code_draft` 결과와 `current_job`을 project 카드에 반영한다.
+- 2026-03-08: detail pane의 add/build 흐름은 `form_add_input` 모달 기반으로 유지한다. add 확인 시 `orc create_job_md` 후 `orc add_code_draft_item/add_code_draft`를 실행해 `drafts.yaml`를 갱신하며, build는 `orc impl_code_draft -> orc check_orc_code` 결과와 `current_job`을 project 카드에 반영한다.
 - 2026-03-09: tmux pane 명령 전송은 기본 셸을 `fish -ic`로 고정하고 `bash -lc`/`bash -ic` 래퍼 생성을 금지한다(사용자가 bash를 명시한 경우만 예외).
 - 2026-03-10: repo 루트의 규칙 파일은 `AGENTS.md` 하나로 유지한다. `/home/tree/project/rust-orc` 아래에 `AGENTS.override` 또는 `AGENTS.override.md`를 새로 만들거나 심볼릭 링크로 생성하지 않는다.
 - 2026-03-10: repo 전용 규칙 추가는 `AGENTS.md`에 직접 병합하고, 전역 사용자 동작 규칙만 `/home/tree/ai/codex/AGENTS.override.md`에 기록한다.

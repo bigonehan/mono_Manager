@@ -1269,13 +1269,10 @@ function ensureFeedbackFile(projectPath: string): string {
   const file = jobMdPath(projectPath);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   if (!fs.existsSync(file)) {
-    const fallback = "# plan\n\n# requirement\n\n# task\n## planned\n## work\n## check\n## completed\n## failed\n\n# problems\n# clit feedback\n\n## 결과\n- pending\n\n### 미해결\n- 없음\n\n### 보완\n- 없음\n";
+    const fallback =
+      "# plan\n\n# requirement\n\n# task\n## planned\n## work\n## verify\n## complete\n## failed\n\n# problems\n\n# check\n";
     fs.writeFileSync(file, fallback, "utf8");
     return file;
-  }
-  const body = fs.readFileSync(file, "utf8");
-  if (!body.includes("# clit feedback")) {
-    fs.writeFileSync(file, `${body.trimEnd()}\n\n# clit feedback\n\n## 결과\n- pending\n\n### 미해결\n- 없음\n\n### 보완\n- 없음\n`, "utf8");
   }
   return file;
 }
@@ -1283,9 +1280,9 @@ function ensureFeedbackFile(projectPath: string): string {
 function defaultInstructionRetryContent(): string {
   return [
     "# instruction_retry",
-    "- job.md의 # clit feedback 내용을 먼저 읽고, 현재 지적된 문제를 기준으로 재시도 범위를 다시 정리한다.",
+    "- job.md의 # problems 와 # check 내용을 먼저 읽고, 현재 미해결 문제를 기준으로 재시도 범위를 다시 정리한다.",
     "- 현재 ORC 워크플로 산출물 기준으로 drafts.yaml을 다시 만들고 병렬 처리 과정을 다시 시작한다.",
-    "- 이미 완료된 수정 요약이 아니라, # clit feedback 문제를 해결하기 위한 새 계획과 구현 순서를 우선 작성한다.",
+    "- 이미 완료된 수정 요약이 아니라, # problems 문제를 해결하기 위한 새 계획과 구현 순서를 우선 작성한다.",
     "- 필요한 경우 job.md를 다시 갱신하되, 최종 목적은 job.md -> drafts.yaml -> 병렬 처리 재실행이다."
   ].join("\n");
 }
@@ -1335,24 +1332,37 @@ function appendMarkdownBullet(filePath: string, headers: string[], bullet: strin
 
 function readFeedbackMarkdown(projectPath: string): string {
   const raw = safeReadFile(jobMdPath(projectPath));
-  const marker = "# clit feedback";
-  const index = raw.toLowerCase().indexOf(marker);
-  if (index < 0) {
+  const sections = [
+    { header: "# problems", body: extractMarkdownSection(raw, "# problems") },
+    { header: "# check", body: extractMarkdownSection(raw, "# check") }
+  ].filter((section) => section.body.trim().length > 0);
+  if (sections.length === 0) {
     return "";
   }
-  const start = raw.toLowerCase().indexOf(marker);
+  return sections.map((section) => `${section.header}\n${section.body}`.trim()).join("\n\n");
+}
+
+function extractMarkdownSection(raw: string, header: string): string {
+  const lines = raw.split(/\r?\n/);
+  const normalizedHeader = header.trim().toLowerCase();
+  let start = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lines[i].trim().toLowerCase() === normalizedHeader) {
+      start = i + 1;
+      break;
+    }
+  }
   if (start < 0) {
     return "";
   }
-  const lines = raw.slice(start).split(/\r?\n/);
-  const selected: string[] = [];
-  for (let i = 1; i < lines.length; i += 1) {
-    if (i > 0 && lines[i].startsWith("# ")) {
+  const out: string[] = [];
+  for (let i = start; i < lines.length; i += 1) {
+    if (lines[i].trim().startsWith("# ")) {
       break;
     }
-    selected.push(lines[i]);
+    out.push(lines[i]);
   }
-  return `${lines[0]}\n${selected.join("\n")}`.trim();
+  return out.join("\n").trim();
 }
 
 function listScreenshotItems(
@@ -1539,7 +1549,7 @@ function extractJobManagedSection(raw: string): string {
     }
   }
   if (start < 0) {
-    return "# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n";
+    return "# task\n## planned\n## work\n## verify\n## complete\n## fail\n\n# problems\n\n# check\n";
   }
   return `${lines.slice(start).join("\n").trimEnd()}\n`;
 }
@@ -1661,7 +1671,7 @@ function readJobMd(projectPath: string): { raw: string; editableRaw: string } {
   if (!fs.existsSync(jobPath)) {
     const editableRaw = "# plan\n\n# requirement\n";
     return {
-      raw: `${editableRaw}\n# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n`,
+      raw: `${editableRaw}\n# task\n## planned\n## work\n## verify\n## complete\n## fail\n\n# problems\n\n# check\n`,
       editableRaw
     };
   }
@@ -2271,7 +2281,7 @@ export function runOrcAction(id: string, action: string, payload?: string): stri
     create_draft: ["create_code_draft"],
     add_draft: payload?.trim().length ? ["add_code_draft", "-m", payload] : ["add_code_draft", "-a"],
     impl_draft: ["impl_code_draft"],
-    check_code: ["check_code_draft", "-a"]
+    check_code: ["check_orc_code"]
   };
   if (action === "retry_incomplete") {
     return retryIncompleteDrafts(id);
@@ -2810,7 +2820,7 @@ export function appendCheckFeedback(
   }
   const file = ensureFeedbackFile(detail.path);
   const bullet = `- {${screenshotPath}}에서 ${message}`;
-  appendMarkdownBullet(file, ["# 보완", "# 개선점", "#개선필요", "## 개선점"], bullet);
+  appendMarkdownBullet(file, ["# problems"], bullet);
   appendRuntimeLog(id, `[check-feedback] ${bullet}`);
   return {
     detail: loadProjectDetail(id),
@@ -2822,7 +2832,7 @@ export function retryFromFeedback(id: string): { detail: ProjectDetail; output: 
   const detail = loadProjectDetail(id);
   const feedback = readFeedbackMarkdown(detail.path).trim();
   if (!feedback) {
-    throw new Error("job.md # clit feedback not found");
+    throw new Error("job.md # problems or # check not found");
   }
   const instructionFile = ensureInstructionRetryFile(detail.path);
   const instruction = fs.readFileSync(instructionFile, "utf8").trim();
@@ -2832,10 +2842,10 @@ export function retryFromFeedback(id: string): { detail: ProjectDetail; output: 
     `project: ${detail.name}`,
     `project_path: ${detail.path}`,
     "",
-    "# clit feedback:",
+    "# current verification state:",
     feedback,
     "",
-    "반드시 # clit feedback 을 기준으로 drafts.yaml을 다시 만들고 병렬 처리 과정을 처음부터 다시 시작한다."
+    "반드시 # problems 와 # check 를 기준으로 drafts.yaml을 다시 만들고 병렬 처리 과정을 처음부터 다시 시작한다."
   ].join("\n");
   appendRuntimeLog(id, `[check-retry] instruction loaded: ${instructionFile}`);
   appendRuntimeLog(id, `[check-retry] auto retry start: ${detail.name}`);
