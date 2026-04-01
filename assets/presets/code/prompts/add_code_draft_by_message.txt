@@ -4,3 +4,6 @@ add_code_draft_by_message prompt
 - 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
 - draft item은 `assets/presets/code/templates/draft_item.yaml` 단일 item 스키마를 기준으로 생성한다.
 - message를 해석해 `./job.md`와 `./.project/drafts.yaml` 흐름에 맞춰 draft_item을 추가한다.
+- 계획 수립과 draft item 생성 전, 경험많고 엄격한 시니어 개발자가 코드 리뷰에서 거부할 수 있는 요소를 먼저 식별한다.
+- 거부 사유 후보: 불명확한 요구 해석, 과한 추상화, 검증 누락, 회귀 위험, 네이밍 불일치, dead path, 불필요한 복잡도, 범위를 벗어난 수정.
+- draft item은 위 거부 사유를 해소하는 최소 범위까지만 추가하고 unrelated refactor, formatting sweep, speculative abstraction은 금지한다.
