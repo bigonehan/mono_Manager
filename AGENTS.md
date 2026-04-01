@@ -68,12 +68,25 @@
 - After updating `job.md` feedback section, apply a concrete fix and rerun the same execution path.
 - Continue this loop until the target path no longer reports the same blocking failure.
 
+## Clit Test Hard Gate
+- `clit test` 실행 전에는 반드시 `job.md`에 별도 `# test plan` 섹션을 먼저 기록한다.
+- web runner를 검사할 때는 브라우저 e2e 절차로 실제 스크린샷을 찍어 렌더/동작 성공 여부를 확인한다.
+- web runner 테스트가 성공하면 검증에 사용한 스크린샷 파일은 완료 전에 삭제한다.
+- `clit test`에서 LLM을 호출할 때는 반드시 다음 role 문구를 포함한다.
+- `경험많고 완벽주의적인 시니어 개발자가 코드 리뷰에서 거부할만한 것은 무엇일까요? 전부 수정하세요, 게으름 피우지 마세요`
+
 ## YAML/MD Format Enforcement Rule
 - Any function that generates YAML/Markdown via LLM prompt must include explicit output format/schema constraints in the prompt.
 - Generated YAML/Markdown must be parsed/validated before write; if validation fails, do not write files and return a format error.
 - For `project.md`, enforce required section headers and domain block structure from `plan-project-code` reference format.
 - For `draft/task` YAML, enforce schema-level validation (required fields + rule/contracts structure checks) before persisting.
 - This rule is mandatory for all future YAML/Markdown generation tasks unless the user explicitly disables it.
+
+## Planning Review Gate
+- `job.md`를 바탕으로 `drafts.yaml`과 `draft_item`을 만드는 계획 단계에서는 먼저 경험많고 엄격한 시니어 개발자가 코드 리뷰에서 거부할 수 있는 요소를 식별한다.
+- 기본 거부 사유 후보는 `불명확한 요구 해석`, `과한 추상화`, `검증 누락`, `회귀 위험`, `네이밍 불일치`, `dead path`, `불필요한 복잡도`, `범위를 벗어난 수정`이다.
+- 계획 산출물의 `rule`, `step`, `tasks`, `constraints`, `check`는 위 거부 사유를 해소하는 범위까지만 구체화한다.
+- `unrelated refactor`, `formatting sweep`, `speculative abstraction`은 계획 단계에서도 금지한다.
 
 ## Planning Framework Rule
 - Task minimum unit must include: feature, domain, flow.

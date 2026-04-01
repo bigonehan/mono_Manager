@@ -476,6 +476,9 @@ fn execute_test(input: ParsedCliInput, config: &Config) -> Result<()> {
             .push(format!("get_current_state failed: {error:#}")),
     }
     collect_captures(&mut log)?;
+    if check_result.is_ok() {
+        cleanup_successful_screenshots(&workdir, &input.target_path, &mut log)?;
+    }
     write_feedback(&workdir, &log)?;
     recorder.record("feedback", "saved", "feedback saved".to_string(), true);
     if should_spawn_codex_worker() {
@@ -558,13 +561,15 @@ fn build_plan(
     };
     let inventory = describe_target_path(target_path)?;
     let prompt = format!(
-        "{}\n\npath: {}\nrunner: {:?}\nheaded: {:?}\nmode: {}\n\ninventory:\n{}\n\n출력은 작업 요약 markdown만 반환한다.",
+        "{}\n\npath: {}\nrunner: {:?}\nheaded: {:?}\nmode: {}\n\ninventory:\n{}\n\n{}\n{}",
         prompt_template,
         target_path.display(),
         runner,
         headed,
         mode,
-        inventory
+        inventory,
+        llm_role_instruction(),
+        test_plan_output_instruction()
     );
     let llm_body = run_codex_plan_prompt(&prompt)
         .unwrap_or_else(|_| fallback_plan_body(target_path, mode, runner, headed, config));
@@ -691,14 +696,34 @@ fn fallback_plan_body(
     headed: HeadMode,
     config: &Config,
 ) -> String {
+    let execute_line = plan_execute_line(target_path, runner, config);
+    let review_focus = if *runner == RunnerKind::Web {
+        "브라우저 e2e 스크린샷으로 실제 렌더/상호작용 성공 여부를 확인하고, 성공 시 스크린샷을 즉시 정리한다."
+    } else {
+        "실행 로그와 결과 상태를 기준으로 실패 가능성을 먼저 찾고 차단한다."
+    };
     format!(
-        "# plan\n\n- path: {}\n- runner: {:?}\n- headed: {:?}\n- mode: {}\n- execute: {}\n- expected: job.md, .project/drafts.yaml, session logs, captures\n",
+        "# test plan\n\n- role: {}\n- path: {}\n- runner: {:?}\n- headed: {:?}\n- mode: {}\n\n## review focus\n- {}\n\n## execution steps\n- job.md에 테스트 계획을 먼저 기록한다.\n- {} \n- 결과 로그와 산출물을 검토한다.\n\n## expected evidence\n- .project/drafts.yaml 생성\n- session logs 수집\n- web인 경우 e2e 스크린샷 검증 후 성공 시 삭제\n",
+        llm_role_instruction_line(),
         target_path.display(),
         runner,
         headed,
         mode,
-        plan_execute_line(target_path, runner, config)
+        review_focus,
+        execute_line
     )
+}
+
+fn llm_role_instruction() -> &'static str {
+    "role: 경험많고 완벽주의적인 시니어 개발자가 코드 리뷰에서 거부할만한 것은 무엇일까요? 전부 수정하세요, 게으름 피우지 마세요"
+}
+
+fn llm_role_instruction_line() -> &'static str {
+    "경험많고 완벽주의적인 시니어 개발자가 코드 리뷰에서 거부할만한 것은 무엇일까요? 전부 수정하세요, 게으름 피우지 마세요"
+}
+
+fn test_plan_output_instruction() -> &'static str {
+    "출력은 markdown만 반환한다.\n반드시 `# test plan`, `## review focus`, `## execution steps`, `## expected evidence` 섹션을 포함한다.\nweb runner면 브라우저 e2e 스크린샷으로 동작 여부를 검증하고, 성공 시 스크린샷을 삭제한다는 단계를 명시한다.\n테스트 실행보다 먼저 job.md에 기록할 계획만 작성한다."
 }
 
 fn plan_execute_line(target_path: &Path, runner: &RunnerKind, config: &Config) -> String {
@@ -1439,8 +1464,14 @@ fn build_checklist_prompt(log: &SessionLog, effective_errors: &[String]) -> Stri
     } else {
         effective_errors.join("\n")
     };
+    let web_rules = if log.runner == RunnerKind::Web {
+        "\nweb_rules:\n- 브라우저 e2e 스크린샷이 실제 렌더 확인 근거인지 점검한다.\n- 성공한 실행이면 스크린샷 정리 여부도 확인한다.\n"
+    } else {
+        ""
+    };
     format!(
-        "다음 실행 로그를 보고 check_list.md 형식만 출력해라.\n형식: - [x| ] {{입력}} -> {{출력}} : 기능설명\n규칙: 현재 결과가 충족되면 [x], 미충족이면 [ ].\n\nmission: {}\nrunner: {:?}\nsteps:\n{}\n\nrecent_output:\n{}\n\neffective_errors:\n{}\n",
+        "{}\n다음 실행 로그를 보고 check_list.md 형식만 출력해라.\n형식: - [x| ] {{입력}} -> {{출력}} : 기능설명\n규칙: 현재 결과가 충족되면 [x], 미충족이면 [ ].\nweb인 경우 e2e 스크린샷 검증과 성공 후 스크린샷 삭제 여부를 체크리스트에 포함한다.\n\nmission: {}\nrunner: {:?}\nsteps:\n{}\n\nrecent_output:\n{}\n\neffective_errors:\n{}{}\n",
+        llm_role_instruction(),
         log.mission,
         log.runner,
         log.steps
@@ -1449,7 +1480,8 @@ fn build_checklist_prompt(log: &SessionLog, effective_errors: &[String]) -> Stri
             .collect::<Vec<_>>()
             .join("\n"),
         outputs,
-        errors
+        errors,
+        web_rules
     )
 }
 
@@ -1500,10 +1532,29 @@ fn fallback_checklist(log: &SessionLog, effective_errors: &[String]) -> String {
     } else {
         "기본 점검 실패"
     };
-    format!(
+    let mut body = format!(
         "- [{}] {} -> {} : mode 기반 기본 체크리스트\n- [x] step 실행 -> output_log 기록 : 실행 로그 수집\n",
         status, log.mission, output
-    )
+    );
+    if log.runner == RunnerKind::Web {
+        let screenshot_checked = log
+            .output_log
+            .iter()
+            .any(|line| line.contains("validated web e2e screenshot"));
+        let screenshot_cleaned = log
+            .output_log
+            .iter()
+            .any(|line| line.contains("cleaned screenshot"));
+        body.push_str(&format!(
+            "- [{}] web e2e screenshot -> 렌더 확인 : 브라우저 스크린샷 검증\n",
+            if screenshot_checked { "x" } else { " " }
+        ));
+        body.push_str(&format!(
+            "- [{}] successful screenshot cleanup -> png removed : 성공 후 스크린샷 정리\n",
+            if screenshot_cleaned { "x" } else { " " }
+        ));
+    }
+    body
 }
 
 fn parse_checklist(body: &str) -> ChecklistEvaluation {
@@ -1567,7 +1618,11 @@ fn maybe_spawn_codex_worker(workdir: &Path) -> Result<()> {
     if pane_id.is_empty() {
         return Ok(());
     }
-    let message = "job.md를 읽고 해결할 수 있는 문제와 개선점을 쳐서 개선하라".replace('"', "\\\"");
+    let message = format!(
+        "{}\njob.md를 읽고 해결할 수 있는 문제와 개선점을 찾아서 개선하라",
+        llm_role_instruction()
+    )
+    .replace('"', "\\\"");
     let danger_flag = if std::env::var("CODEX_DANGEROUSLY_BYPASS_APPROVALS_AND_SANDBOX").is_ok() {
         ""
     } else {
@@ -1585,6 +1640,47 @@ fn maybe_spawn_codex_worker(workdir: &Path) -> Result<()> {
         .with_context(|| "failed to start codex in tmux pane")?;
     if !status.success() {
         return Ok(());
+    }
+    Ok(())
+}
+
+fn cleanup_successful_screenshots(
+    workdir: &Path,
+    target_path: &Path,
+    log: &mut SessionLog,
+) -> Result<()> {
+    let screenshot_candidates = [
+        target_path.join(SCREENSHOT_DIR).join("rc-web.png"),
+        workdir.join(SCREENSHOT_DIR).join("rc-web.png"),
+        workdir.join(SCREENSHOT_DIR).join("rect-capture.png"),
+        workdir.join(SCREENSHOT_DIR).join("screen-capture.png"),
+    ];
+    let mut removed = Vec::new();
+    for path in screenshot_candidates {
+        if path.exists() {
+            fs::remove_file(&path)
+                .with_context(|| format!("failed to remove screenshot {}", path.display()))?;
+            removed.push(path);
+        }
+    }
+    if !removed.is_empty() {
+        log.output_log.push(format!(
+            "validated web e2e screenshot before cleanup: {}",
+            removed
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        log.output_log.push(format!(
+            "cleaned screenshot after successful test: {}",
+            removed
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        log.captures.retain(|path| !removed.iter().any(|removed_path| removed_path == path));
     }
     Ok(())
 }
@@ -1856,6 +1952,79 @@ mod tests {
         assert!(body.contains("## 결과"));
         assert!(body.contains("### 미해결"));
         assert!(body.contains("### 보완"));
+    }
+
+    #[test]
+    fn fallback_plan_mentions_test_plan_and_web_cleanup() {
+        let dir = tempdir().expect("tempdir");
+        let config = load_config().expect("config");
+        let body = fallback_plan_body(
+            dir.path(),
+            "web smoke",
+            &RunnerKind::Web,
+            HeadMode::Off,
+            &config,
+        );
+        assert!(body.contains("# test plan"));
+        assert!(body.contains("role: 경험많고 완벽주의적인 시니어 개발자"));
+        assert!(body.contains("e2e 스크린샷"));
+        assert!(body.contains("성공 시 삭제"));
+    }
+
+    #[test]
+    fn checklist_prompt_includes_strict_role_and_web_rules() {
+        let log = SessionLog {
+            mission: "web".to_string(),
+            runner: RunnerKind::Web,
+            detected_command: "npm run dev".to_string(),
+            steps: vec![Step {
+                command_template: "agent-browser screenshot".to_string(),
+                responses: vec![],
+            }],
+            output_log: vec!["ok".to_string()],
+            errors: vec![],
+            captures: vec![],
+        };
+        let prompt = build_checklist_prompt(&log, &[]);
+        assert!(prompt.contains("경험많고 완벽주의적인 시니어 개발자"));
+        assert!(prompt.contains("e2e 스크린샷"));
+        assert!(prompt.contains("성공 후 스크린샷 삭제"));
+    }
+
+    #[test]
+    fn cleans_successful_screenshots_and_removes_capture_entries() {
+        let dir = tempdir().expect("tempdir");
+        let target = dir.path().join("app");
+        fs::create_dir_all(target.join(".project/screenshot")).expect("create target screenshot dir");
+        fs::create_dir_all(dir.path().join(".project/screenshot")).expect("create work screenshot dir");
+        let target_capture = target.join(".project/screenshot/rc-web.png");
+        let rect_capture = dir.path().join(".project/screenshot/rect-capture.png");
+        let screen_capture = dir.path().join(".project/screenshot/screen-capture.png");
+        fs::write(&target_capture, b"png").expect("write target capture");
+        fs::write(&rect_capture, b"png").expect("write rect capture");
+        fs::write(&screen_capture, b"png").expect("write screen capture");
+        let mut log = SessionLog {
+            mission: "web".to_string(),
+            runner: RunnerKind::Web,
+            detected_command: "agent-browser open".to_string(),
+            steps: vec![],
+            output_log: vec![],
+            errors: vec![],
+            captures: vec![target_capture.clone(), rect_capture.clone(), screen_capture.clone()],
+        };
+        cleanup_successful_screenshots(dir.path(), &target, &mut log).expect("cleanup");
+        assert!(!target_capture.exists());
+        assert!(!rect_capture.exists());
+        assert!(!screen_capture.exists());
+        assert!(log.captures.is_empty());
+        assert!(log
+            .output_log
+            .iter()
+            .any(|line| line.contains("validated web e2e screenshot")));
+        assert!(log
+            .output_log
+            .iter()
+            .any(|line| line.contains("cleaned screenshot")));
     }
 
     #[test]

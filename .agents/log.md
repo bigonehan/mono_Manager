@@ -1,3 +1,13 @@
+## 2026-04-01 - 작업한일
+- `.../assets/presets/{code,mono}/prompts/build_job_md_auto.txt`, `infer_draft_item.txt`, `add_code_draft_by_{message,file}.txt`에 계획 단계용 senior review 거부 사유 식별 규칙을 추가함.
+- `.../AGENTS.md`에 `Planning Review Gate`를 추가해 `job.md -> drafts.yaml -> draft_item` 계획 단계에서 불명확한 요구, 과한 추상화, 검증 누락, 회귀 위험, 네이밍 불일치, dead path, 불필요한 복잡도, 범위 초과 수정 점검을 강제함.
+- 검증은 `cargo test`로 수행함.
+
+## 2026-04-01 - 작업한일
+- `.../src/bin/rc.rs`의 `clit test` 경로에 `# test plan` 선기록, web e2e 스크린샷 검증, 성공 시 스크린샷 자동 삭제를 반영함.
+- `.../src/bin/rc.rs`의 plan/checklist/tmux worker용 LLM 프롬프트에 `경험많고 완벽주의적인 시니어 개발자가 코드 리뷰에서 거부할만한 것은 무엇일까요? 전부 수정하세요, 게으름 피우지 마세요` role을 고정 주입함.
+- `.../AGENTS.md`에 `clit test` 하드 게이트 규칙을 추가하고, `cargo test`로 관련 회귀 테스트를 확인함.
+
 ## 2026-03-27 - 작업한일
 - `.../src/code.rs`의 `impl_code_draft` LLM 실행을 `180초 즉시 실패` 대신 `180초 이후 진행 상태 감시 -> 정체 시 중단 -> 정상 진행이면 계속` 흐름으로 바꿈.
 - `.../src/chat.rs`에 workspace 파일 변경/LLM 출력 변화를 기반으로 soft timeout 이후 진행 여부를 판별하는 감시 로직과 테스트를 추가함.
