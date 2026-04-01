@@ -532,20 +532,14 @@ test("web ui: check pane renders draft subject and appends screenshot feedback",
       "# task",
       "## planned",
       "## work",
-      "## check",
+      "## verify",
       "## complete",
       "## fail",
       "",
       "# problems",
-      "# clit feedback",
-      "## 결과",
-      "- rc done",
       "",
-      "### 미해결",
-      "- 없음",
-      "",
-      "### 보완",
-      "- 초기 보완"
+      "# check",
+      "- manual_review -> report : 초기 보완"
     ].join("\n"),
     "utf8"
   );

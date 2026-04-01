@@ -8,7 +8,7 @@ const features = [
   "Rules/Constraints/Features list editing",
   "Plan/Drafts panels (planned/generated)",
   "create_code_draft, add_code_draft, impl_code_draft",
-  "check_code_draft -a"
+  "check_orc_code"
 ];
 
 export const GET: APIRoute = async () => {

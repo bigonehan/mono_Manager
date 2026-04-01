@@ -32,7 +32,7 @@ pub fn print_usage(program: &str) {
     println!("  {program} [profile] <command> [args...]");
     let mut commands = [
         "help | cli_help | -h | --help",
-        "clit <args...>  (forward to rc CLI; example: orc clit test -p <path> -m <mode>)",
+        "clit <args...>  (deprecated; use check_orc_code and helper commands directly)",
         "init_orc_project|init_code_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-m <message>] [-a]",
         "build_orc_domains",
         "auto_add_function <message>",
@@ -46,6 +46,9 @@ pub fn print_usage(program: &str) {
         "open-ui [-w|--web|-b|--build]",
         "serve-web-api [--addr <host:port>]",
         "send-tmux <pane_id> <msg...> [enter|enter-exit|raw|display]",
+        "capture-pane <pane_id> [lines]",
+        "wait-ready <pane_id> <pattern> [timeout_ms] [lines]",
+        "http-healthcheck <url> [timeout_ms]",
         "chat -n <name> [--background] [-m <message>] [-i <receiver_id>] [--data <data>]",
         "chat-wait -n <name> -a <true|false> [-c <count>]",
     ];
@@ -187,6 +190,57 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             let msg = msg_slice.join(" ");
             super::tmux::tsend(pane_id, &msg, option)
         }
+        "capture-pane" => {
+            if tail.is_empty() || tail.len() > 2 {
+                return Err("capture-pane requires <pane_id> [lines]".to_string());
+            }
+            let pane_id = &tail[0];
+            let lines = if tail.len() == 2 {
+                tail[1]
+                    .parse::<usize>()
+                    .map_err(|_| "capture-pane: lines must be a positive integer".to_string())?
+            } else {
+                80
+            };
+            super::tmux::capture_pane_tail(pane_id, lines)
+        }
+        "wait-ready" => {
+            if tail.len() < 2 || tail.len() > 4 {
+                return Err(
+                    "wait-ready requires <pane_id> <pattern> [timeout_ms] [lines]".to_string(),
+                );
+            }
+            let pane_id = &tail[0];
+            let pattern = &tail[1];
+            let timeout_ms = if tail.len() >= 3 {
+                tail[2]
+                    .parse::<u64>()
+                    .map_err(|_| "wait-ready: timeout_ms must be an integer".to_string())?
+            } else {
+                30_000
+            };
+            let lines = if tail.len() >= 4 {
+                tail[3]
+                    .parse::<usize>()
+                    .map_err(|_| "wait-ready: lines must be a positive integer".to_string())?
+            } else {
+                120
+            };
+            super::tmux::wait_for_ready(pane_id, pattern, timeout_ms, lines)
+        }
+        "http-healthcheck" => {
+            if tail.is_empty() || tail.len() > 2 {
+                return Err("http-healthcheck requires <url> [timeout_ms]".to_string());
+            }
+            let timeout_ms = if tail.len() == 2 {
+                tail[1]
+                    .parse::<u64>()
+                    .map_err(|_| "http-healthcheck: timeout_ms must be an integer".to_string())?
+            } else {
+                10_000
+            };
+            super::tmux::http_healthcheck(&tail[0], timeout_ms)
+        }
         "chat" => {
             if tail.len() < 2 {
                 return Err(
@@ -207,13 +261,10 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         }
         "clit" => {
             if tail.is_empty() {
-                return Err(
-                    "clit requires rc arguments (example: orc clit test -p <path> -m <mode>)"
-                        .to_string(),
-                );
+                return Err("clit is deprecated; use check_orc_code and helper commands directly".to_string());
             }
-            let normalized = normalize_clit_args(tail);
-            crate::run_rc_forward(&normalized)
+            let _normalized = normalize_clit_args(tail);
+            Err("clit test was removed; use check_orc_code plus capture-pane/wait-ready/http-healthcheck helpers".to_string())
         }
         _ => Err(format!("unknown command: {}", command)),
     }

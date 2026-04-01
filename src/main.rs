@@ -36,7 +36,7 @@ const TASK_SESSION_KEY_ENV: &str = "ORC_TASK_SESSION_KEY";
 fn is_orc_workspace_runtime_entry(name: &str) -> bool {
     matches!(
         name,
-        ".project" | ".agents" | "job.md" | "report.md" | "drafts_list.yaml"
+        ".project" | ".agents" | "job.md" | "drafts_list.yaml"
     ) || name.starts_with('.')
 }
 
@@ -447,8 +447,16 @@ pub(crate) fn run_check_code_after_draft_changes(
     feature_names: &[String],
     trigger: &str,
 ) -> Result<String, String> {
-    // Basic implementation to satisfy caller
-    Ok("check code follow-up skipped (placeholder)".to_string())
+    if feature_names.is_empty() {
+        return Ok(format!("check code follow-up skipped: no features ({})", trigger));
+    }
+    let result = crate::code::check_orc_code()?;
+    Ok(format!(
+        "check code follow-up completed: trigger={} features={} | {}",
+        trigger,
+        feature_names.join(","),
+        result
+    ))
 }
 
 pub(crate) fn sync_project_tasks_list_from_project_md(project_root: &Path) -> Result<bool, String> {
