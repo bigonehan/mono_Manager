@@ -34,10 +34,7 @@ const CHECK_PROCESS_MD_PATH: &str = "job.md";
 const TASK_SESSION_KEY_ENV: &str = "ORC_TASK_SESSION_KEY";
 
 fn is_orc_workspace_runtime_entry(name: &str) -> bool {
-    matches!(
-        name,
-        ".project" | ".agents" | "job.md" | "drafts_list.yaml"
-    ) || name.starts_with('.')
+    matches!(name, ".project" | ".agents" | "job.md" | "drafts_list.yaml") || name.starts_with('.')
 }
 
 pub(crate) fn is_effectively_empty_dir(dir: &Path) -> Result<bool, String> {
@@ -448,7 +445,10 @@ pub(crate) fn run_check_code_after_draft_changes(
     trigger: &str,
 ) -> Result<String, String> {
     if feature_names.is_empty() {
-        return Ok(format!("check code follow-up skipped: no features ({})", trigger));
+        return Ok(format!(
+            "check code follow-up skipped: no features ({})",
+            trigger
+        ));
     }
     let result = crate::code::check_orc_code()?;
     Ok(format!(

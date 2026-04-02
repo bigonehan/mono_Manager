@@ -10,7 +10,8 @@ export const POST: APIRoute = async ({ request }) => {
       name: String(body.name || "").trim(),
       description: String(body.description || "").trim(),
       spec: String(body.spec || "").trim(),
-      goal: String(body.goal || "").trim()
+      goal: String(body.goal || "").trim(),
+      architecture: String(body.architecture || "").trim()
     });
     return new Response(JSON.stringify({ detail }), {
       headers: { "content-type": "application/json" }

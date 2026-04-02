@@ -40,10 +40,12 @@ export function CodeDetailLayout({
   editDescription,
   editSpec,
   editGoal,
+  editArchitecture,
   setEditName,
   setEditDescription,
   setEditSpec,
   setEditGoal,
+  setEditArchitecture,
   saveProjectInfo,
   projectInfoSaving,
   editRules,
@@ -95,6 +97,12 @@ export function CodeDetailLayout({
               <Input
                 value={editGoal}
                 onChange={(e) => setEditGoal(e.target.value)}
+                disabled={actionsDisabled || projectInfoSaving}
+              />
+              <Input
+                value={editArchitecture}
+                onChange={(e) => setEditArchitecture(e.target.value)}
+                placeholder="architecture skill id"
                 disabled={actionsDisabled || projectInfoSaving}
               />
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">

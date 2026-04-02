@@ -23,6 +23,10 @@
 - `orc chat-wait -n <name> -a <true|false> [-c <count>]`
 - `orc open-ui [-w|--web|-b|--build]`
 - `orc serve-web-api [--addr <host:port>]`
+- `orc worker-create`
+- `orc worker-send <worker_ref|pane_id> <msg...> [enter|enter-exit|raw|display]`
+- `orc worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]`
+- `orc worker-close <worker_ref|pane_id>`
 - `orc capture-pane <pane_id> [lines]`
 - `orc wait-ready <pane_id> <pattern> [timeout_ms] [lines]`
 - `orc http-healthcheck <url> [timeout_ms]`
@@ -41,12 +45,15 @@
 - Run Astro Web UI against Rust API:
   - `PUBLIC_ORC_API_BASE=http://127.0.0.1:7788 npm --prefix assets/web run dev`
 
-## tmux Send
-- Send text to a tmux pane:
-  - `orc send-tmux <pane_id> <msg...> [enter|raw]`
-- Options:
-  - `enter` (default): send message and press Enter
-  - `raw`: send message only
+## tmux Worker
+- Create a worker pane and get a reusable worker ref:
+  - `orc worker-create`
+- Send text to a worker pane:
+  - `orc worker-send <worker_ref|pane_id> <msg...> [enter|enter-exit|raw|display]`
+- Wait until worker output contains a pattern:
+  - `orc worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]`
+- Close a worker pane:
+  - `orc worker-close <worker_ref|pane_id>`
 
 ## tmux Worker Helpers
 - Capture recent pane output:
@@ -55,6 +62,7 @@
   - `orc wait-ready <pane_id> <pattern> [timeout_ms] [lines]`
 - Check whether a dev server URL is responding:
   - `orc http-healthcheck <url> [timeout_ms]`
+- `orc send-tmux`는 일반 tmux 브리지로 유지되지만 worker orchestration 표준으로는 사용하지 않는다.
 
 ## Notes
 - `orc chat -n <name>` 실행 시 `.temp/<name>.yaml`이 없거나 비어 있으면 기본 chat room YAML이 자동 생성됩니다.

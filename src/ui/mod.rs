@@ -1163,6 +1163,7 @@ fn extract_markdown_block(raw: &str) -> Option<String> {
 fn validate_project_md_format(project_md: &str) -> Result<(), String> {
     let required_headers = [
         "# info",
+        "# architecture",
         "# features",
         "# rules",
         "# constraints",
@@ -4037,6 +4038,7 @@ struct ProjectMdDoc {
     description: String,
     spec: String,
     goal: String,
+    architecture: String,
     rules: Vec<String>,
     constraints: Vec<String>,
 }
@@ -4045,22 +4047,34 @@ fn parse_project_md(project_md: &str) -> ProjectMdDoc {
     let mut doc = ProjectMdDoc::default();
     let mut in_rule = false;
     let mut in_constraints = false;
+    let mut in_architecture = false;
     for line in project_md.lines() {
         let trimmed = line.trim();
         if trimmed.eq_ignore_ascii_case("# rules") {
             in_rule = true;
             in_constraints = false;
+            in_architecture = false;
             continue;
         }
         if trimmed.eq_ignore_ascii_case("# constraints") {
             in_rule = false;
             in_constraints = true;
+            in_architecture = false;
+            continue;
+        }
+        if trimmed.eq_ignore_ascii_case("# architecture") {
+            in_rule = false;
+            in_constraints = false;
+            in_architecture = true;
             continue;
         }
         if trimmed.starts_with('#') && !trimmed.eq_ignore_ascii_case("# rules") {
             in_rule = false;
             if !trimmed.eq_ignore_ascii_case("# constraints") {
                 in_constraints = false;
+            }
+            if !trimmed.eq_ignore_ascii_case("# architecture") {
+                in_architecture = false;
             }
         }
         if in_rule && trimmed.starts_with("- ") {
@@ -4075,6 +4089,7 @@ fn parse_project_md(project_md: &str) -> ProjectMdDoc {
             let key = key.trim().to_ascii_lowercase();
             let value = value.trim().to_string();
             match key.as_str() {
+                "name" if in_architecture => doc.architecture = value,
                 "name" => doc.name = value,
                 "description" => doc.description = value,
                 "spec" => doc.spec = value,

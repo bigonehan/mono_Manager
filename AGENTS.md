@@ -198,7 +198,7 @@
 
 ## ORC Tmux Worker Loop Hard Gate
 - 사용자가 구현 실행을 요구하고 ORC/tmux 흐름이 열려 있으면, `/plan` 종료 후 구현은 현재 pane에서 직접 수행하지 않고 반드시 worker pane으로 위임한다.
-- worker pane 생성은 `tmux split-window -h -P -F '#{pane_id}'`만 사용하고, 구현 명령 전달은 `orc send-tmux <worker_pane_id> "<명령>" enter`로 고정한다.
+- worker pane 생성/전달/대기/종료는 `orc worker-create`, `orc worker-send`, `orc worker-wait`, `orc worker-close`만 사용한다.
 - worker는 구현 종료 시 `worker:<pane_id>:done:<report_path>` 또는 `worker:<pane_id>:fail:<reason>` 형식으로 manager pane에 회수해야 한다.
 - manager pane은 worker의 `done` 메시지를 받아도 구현 완료로 간주하면 안 되고, 즉시 `job.md`를 다시 읽은 뒤 검증 단계로 들어가야 한다.
 - 이 하드게이트를 건너뛰고 현재 pane에서 직접 구현/완료 보고를 하면 규칙 위반이다.
@@ -268,7 +268,7 @@
 - 최종 산출물(`.project/drafts.yaml` item)에는 템플릿 주석/예시/placeholder를 포함하지 않는다.
 - `draft_item` 관련 프롬프트는 "주석 읽기 -> 값 채우기 -> 주석 제거" 순서를 명시해야 한다.
 - 2026-03-05: `if)` 가상 시나리오 출력은 줄 단위 `a -> b` 포맷만 사용한다. 각 단계는 반드시 다음 줄에 분리해서 작성한다.
-- 2026-03-05: 사용자가 `~~~을 만들어줘` 형태로 요청하면 매니저 pane이 워커 pane을 단계별로 열고(`tmux split-window`), `orc send-tmux`로 `auto -> plan -> drafts -> impl -> check_orc_code`를 순차 위임/완료 회수/재시도 판단하는 흐름을 우선 적용한다.
+- 2026-03-05: 사용자가 `~~~을 만들어줘` 형태로 요청하면 매니저 pane이 `orc worker-create -> worker-send -> worker-wait -> worker-close` 표준으로 `auto -> plan -> drafts -> impl -> check_orc_code`를 순차 위임/완료 회수/재시도 판단하는 흐름을 우선 적용한다.
 - 2026-03-05: 트리거 문구는 `~~~을 만들어줘`, `~~~을 추가해줘`, `~을 읽고 처리해줘` 3가지를 동일 계열로 인식한다. 단, `읽고 처리해줘`는 기존 `job.md`를 읽는 명령 경로(`create_job_md`, `add_code_draft -f`)를 사용한다.
 - 2026-03-08: draft 타입 스키마 변경 시 web UI `edit_{type}_drafts` 모달(`edit_code_drafts`, `edit_mono_drafts`, `edit_video_drafts`, `edit_write_drafts`)을 동일 변경에서 함께 갱신한다.
 - 2026-03-06: profile 레이어 리팩토링 작업 시 별도 브랜치에서 진행한다.

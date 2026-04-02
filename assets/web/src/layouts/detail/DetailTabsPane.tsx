@@ -14,16 +14,16 @@ type Props = {
   openEditor: () => void;
   actionsDisabled: boolean;
   sectionLabel?: string;
-  editRules: string;
-  editConstraints: string;
-  editFeatures: string;
-  setEditRules: (value: string) => void;
-  setEditConstraints: (value: string) => void;
-  setEditFeatures: (value: string) => void;
-  saveListPane: (pane: "rules" | "constraints" | "features") => Promise<void>;
-  listSaving: boolean;
+  editRules?: string;
+  editConstraints?: string;
+  editFeatures?: string;
+  setEditRules?: (value: string) => void;
+  setEditConstraints?: (value: string) => void;
+  setEditFeatures?: (value: string) => void;
+  saveListPane?: (pane: "rules" | "constraints" | "features") => Promise<void>;
+  listSaving?: boolean;
   projectInfoSaving?: boolean;
-}
+};
 
 export function DetailTabsPane({
   rules,
@@ -34,14 +34,14 @@ export function DetailTabsPane({
   openEditor,
   actionsDisabled,
   sectionLabel,
-  editRules,
-  editConstraints,
-  editFeatures,
-  setEditRules,
-  setEditConstraints,
-  setEditFeatures,
-  saveListPane,
-  listSaving
+  editRules = rules.join("\n"),
+  editConstraints = constraints.join("\n"),
+  editFeatures = features.join("\n"),
+  setEditRules = () => {},
+  setEditConstraints = () => {},
+  setEditFeatures = () => {},
+  saveListPane = async () => {},
+  listSaving = false
 }: Props) {
   const activePane: "rules" | "constraints" | "features" =
     selectedPane === "rules" || selectedPane === "constraints" || selectedPane === "features"

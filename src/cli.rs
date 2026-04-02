@@ -45,6 +45,10 @@ pub fn print_usage(program: &str) {
         "check_orc_code",
         "open-ui [-w|--web|-b|--build]",
         "serve-web-api [--addr <host:port>]",
+        "worker-create",
+        "worker-send <worker_ref|pane_id> <msg...> [enter|enter-exit|raw|display]",
+        "worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]",
+        "worker-close <worker_ref|pane_id>",
         "send-tmux <pane_id> <msg...> [enter|enter-exit|raw|display]",
         "capture-pane <pane_id> [lines]",
         "wait-ready <pane_id> <pattern> [timeout_ms] [lines]",
@@ -170,6 +174,78 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             }
             super::web_api::serve_web_api(&addr).await
         }
+        "worker-create" => {
+            if !tail.is_empty() {
+                return Err(format!("{raw_command} does not accept arguments"));
+            }
+            super::tmux::worker_create().map(|worker| worker.encode())
+        }
+        "worker-send" => {
+            if tail.len() < 2 {
+                return Err(
+                    "worker-send requires <worker_ref|pane_id> <msg...> [enter|enter-exit|raw|display]"
+                        .to_string(),
+                );
+            }
+            let worker = super::tmux::resolve_worker_ref(&tail[0])?;
+            let (msg_slice, option) = match tail.last().map(String::as_str) {
+                Some("enter" | "enter-exit" | "raw" | "display") if tail.len() >= 3 => {
+                    (&tail[1..tail.len() - 1], tail[tail.len() - 1].as_str())
+                }
+                _ => (&tail[1..], "enter"),
+            };
+            if msg_slice.is_empty() {
+                return Err("worker-send requires non-empty message".to_string());
+            }
+            super::tmux::worker_send(
+                &worker,
+                &msg_slice.join(" "),
+                match option {
+                    "display" => super::tmux::SendOption::Display,
+                    "enter-exit" => super::tmux::SendOption::EnterExit,
+                    "raw" => super::tmux::SendOption::Raw,
+                    _ => super::tmux::SendOption::Enter,
+                },
+            )?;
+            Ok(format!(
+                "worker-send done: pane={} option={} msg={}",
+                worker.pane_id,
+                option,
+                msg_slice.join(" ")
+            ))
+        }
+        "worker-wait" => {
+            if tail.len() < 2 || tail.len() > 4 {
+                return Err(
+                    "worker-wait requires <worker_ref|pane_id> <pattern> [timeout_ms] [lines]"
+                        .to_string(),
+                );
+            }
+            let worker = super::tmux::resolve_worker_ref(&tail[0])?;
+            let timeout_ms = if tail.len() >= 3 {
+                tail[2]
+                    .parse::<u64>()
+                    .map_err(|_| "worker-wait: timeout_ms must be an integer".to_string())?
+            } else {
+                30_000
+            };
+            let lines = if tail.len() >= 4 {
+                tail[3]
+                    .parse::<usize>()
+                    .map_err(|_| "worker-wait: lines must be a positive integer".to_string())?
+            } else {
+                120
+            };
+            super::tmux::worker_wait(&worker, &tail[1], timeout_ms, lines)
+        }
+        "worker-close" => {
+            if tail.len() != 1 {
+                return Err("worker-close requires <worker_ref|pane_id>".to_string());
+            }
+            let worker = super::tmux::resolve_worker_ref(&tail[0])?;
+            super::tmux::worker_close(&worker)?;
+            Ok(format!("worker-close done: pane={}", worker.pane_id))
+        }
         "send-tmux" => {
             if tail.len() < 2 {
                 return Err(
@@ -261,7 +337,10 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         }
         "clit" => {
             if tail.is_empty() {
-                return Err("clit is deprecated; use check_orc_code and helper commands directly".to_string());
+                return Err(
+                    "clit is deprecated; use check_orc_code and helper commands directly"
+                        .to_string(),
+                );
             }
             let _normalized = normalize_clit_args(tail);
             Err("clit test was removed; use check_orc_code plus capture-pane/wait-ready/http-healthcheck helpers".to_string())
@@ -351,5 +430,10 @@ mod tests {
     fn normalize_clit_args_keeps_existing_clit_prefix() {
         let args = vec!["clit".to_string(), "test".to_string()];
         assert_eq!(normalize_clit_args(&args), args);
+    }
+
+    #[test]
+    fn canonical_command_keeps_worker_create() {
+        assert_eq!(canonical_command_for_match("worker-create"), "worker-create");
     }
 }

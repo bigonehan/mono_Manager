@@ -219,7 +219,9 @@ fn run_command_with_timeout(
                         timeout_label, elapsed_sec, wait_detail
                     );
                     let progress_status = if let Some(watch) = progress_watch {
-                        if elapsed_sec >= watch.soft_timeout_sec && last_progress_after_monitor.is_some() {
+                        if elapsed_sec >= watch.soft_timeout_sec
+                            && last_progress_after_monitor.is_some()
+                        {
                             "slow_progress"
                         } else if elapsed_sec >= watch.soft_timeout_sec {
                             "soft_timeout_monitoring"
@@ -242,8 +244,8 @@ fn run_command_with_timeout(
                 if let Some(watch) = progress_watch {
                     let monitor_elapsed_sec =
                         monitor_started_at.map(|instant| instant.elapsed().as_secs());
-                    let progress_elapsed_sec = last_progress_after_monitor
-                        .map(|instant| instant.elapsed().as_secs());
+                    let progress_elapsed_sec =
+                        last_progress_after_monitor.map(|instant| instant.elapsed().as_secs());
                     match progress_watch_decision(
                         watch,
                         elapsed_sec,
@@ -292,7 +294,10 @@ fn run_command_with_timeout(
                                 timeout_label,
                                 "hard_timeout",
                                 elapsed_sec,
-                                &format!("timed out after hard timeout {}s", watch.hard_timeout_sec),
+                                &format!(
+                                    "timed out after hard timeout {}s",
+                                    watch.hard_timeout_sec
+                                ),
                             );
                             return Err(format!(
                                 "{} timed out after hard timeout {}s",
@@ -355,6 +360,44 @@ fn quote_sh(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
+fn build_tmux_llm_exec_command(
+    dir: &Path,
+    llm_bin: &str,
+    prompt_path: &Path,
+    stdout_path: &Path,
+    stderr_path: &Path,
+    code_path: &Path,
+    add_yes_flag: bool,
+    add_dangerous_flag: bool,
+) -> String {
+    let mut flags = Vec::new();
+    if add_yes_flag {
+        flags.push("-y".to_string());
+    }
+    if add_dangerous_flag {
+        flags.push(CODEX_DANGEROUS_FLAG.to_string());
+    }
+    let flags_joined = if flags.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", flags.join(" "))
+    };
+    format!(
+        "cd {dir}; echo \"[orc-llm] start: {llm_display} exec\"; echo \"[orc-llm] cwd: {dir_display}\"; \
+set -l prompt_value (string collect < {prompt}); \
+begin; {llm} exec{flags} \"$prompt_value\"; set -l cmd_status $status; printf \"%s\" \"$cmd_status\" > {code}; end > {stdout} 2> {stderr}",
+        dir = quote_sh(&dir.display().to_string()),
+        dir_display = dir.display(),
+        llm_display = llm_bin,
+        llm = quote_sh(llm_bin),
+        flags = flags_joined,
+        prompt = quote_sh(&prompt_path.display().to_string()),
+        code = quote_sh(&code_path.display().to_string()),
+        stdout = quote_sh(&stdout_path.display().to_string()),
+        stderr = quote_sh(&stderr_path.display().to_string()),
+    )
+}
+
 fn normalize_exec_prompt(prompt: &str) -> String {
     if prompt.contains("쳐아서") {
         prompt.replace("쳐아서", "찾아서")
@@ -380,50 +423,26 @@ fn run_llm_via_tmux(
     let stamp = crate::now_unix();
     let token = format!("{}_{}", stamp, std::process::id());
     let prompt_path = runtime.join(format!("tmux-llm-{}.prompt.txt", token));
-    let script_path = runtime.join(format!("tmux-llm-{}.sh", token));
     let stdout_path = runtime.join(format!("tmux-llm-{}.stdout.log", token));
     let stderr_path = runtime.join(format!("tmux-llm-{}.stderr.log", token));
     let code_path = runtime.join(format!("tmux-llm-{}.code", token));
     fs::write(&prompt_path, prompt.as_str())
         .map_err(|e| format!("failed to write {}: {}", prompt_path.display(), e))?;
-
-    let mut flags = Vec::new();
-    if add_yes_flag {
-        flags.push("-y".to_string());
-    }
-    if add_dangerous_flag {
-        flags.push(CODEX_DANGEROUS_FLAG.to_string());
-    }
-    let flags_joined = if flags.is_empty() {
-        String::new()
-    } else {
-        format!(" {}", flags.join(" "))
-    };
-    let script = format!(
-        "#!/usr/bin/env bash\n\
-cd {dir}\n\
-echo \"[orc-llm] start: {llm} exec\"\n\
-echo \"[orc-llm] cwd: {dir_display}\"\n\
-{llm} exec{flags} \"$(cat {prompt})\" > >(tee {stdout}) 2> >(tee {stderr} >&2)\n\
-status=$?\n\
-printf \"%s\" \"$status\" > {code}\n",
-        dir = quote_sh(&dir.display().to_string()),
-        dir_display = dir.display(),
-        llm = quote_sh(llm_bin),
-        flags = flags_joined,
-        prompt = quote_sh(&prompt_path.display().to_string()),
-        stdout = quote_sh(&stdout_path.display().to_string()),
-        stderr = quote_sh(&stderr_path.display().to_string()),
-        code = quote_sh(&code_path.display().to_string()),
-    );
-    fs::write(&script_path, script)
-        .map_err(|e| format!("failed to write {}: {}", script_path.display(), e))?;
-
-    let script_cmd = format!("bash {}", quote_sh(&script_path.display().to_string()));
-    let pane_id = crate::tmux::split_window_run(&script_cmd)
-        .map_err(|e| format!("{} (tmux split/run failed: {})", timeout_label, e))?;
-    let worker = crate::tmux::register_worker_pane(&pane_id);
+    let worker = crate::tmux::worker_create()
+        .map_err(|e| format!("{} (worker-create failed: {})", timeout_label, e))?;
     let _ = crate::tmux::rename_pane(&worker.pane_id, &format!("llm-{}", worker.short_id()));
+    let worker_command = build_tmux_llm_exec_command(
+        dir,
+        llm_bin,
+        &prompt_path,
+        &stdout_path,
+        &stderr_path,
+        &code_path,
+        add_yes_flag,
+        add_dangerous_flag,
+    );
+    crate::tmux::worker_send(&worker, &worker_command, crate::tmux::SendOption::Enter)
+        .map_err(|e| format!("{} (worker-send failed: {})", timeout_label, e))?;
 
     let started = Instant::now();
     let parent_pane = crate::tmux::current_pane_id().ok();
@@ -443,7 +462,8 @@ printf \"%s\" \"$status\" > {code}\n",
                 last_progress_after_monitor = Some(Instant::now());
             }
         }
-        if detect_workspace_activity(dir, &mut last_workspace_activity) && monitor_started_at.is_some()
+        if detect_workspace_activity(dir, &mut last_workspace_activity)
+            && monitor_started_at.is_some()
         {
             last_progress_after_monitor = Some(Instant::now());
         }
@@ -488,8 +508,12 @@ printf \"%s\" \"$status\" > {code}\n",
             let monitor_elapsed_sec = monitor_started_at.map(|instant| instant.elapsed().as_secs());
             let progress_elapsed_sec =
                 last_progress_after_monitor.map(|instant| instant.elapsed().as_secs());
-            match progress_watch_decision(watch, elapsed_sec, monitor_elapsed_sec, progress_elapsed_sec)
-            {
+            match progress_watch_decision(
+                watch,
+                elapsed_sec,
+                monitor_elapsed_sec,
+                progress_elapsed_sec,
+            ) {
                 ProgressWatchDecision::Continue => {}
                 ProgressWatchDecision::StartMonitoring => {
                     monitor_started_at = Some(Instant::now());

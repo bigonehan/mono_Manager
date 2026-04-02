@@ -11,6 +11,9 @@
 <!-- 현재 프로젝트의 위치 -->
 ## state
 <!-- 현재 프로젝트의 상태 init(기본값)|wait|work|check|complete -->
+# architecture
+name:
+<!-- architecture skill id -->
 # features
 <!-- 프로젝트에서 제공하는 기능 list형태  -->
 # rules

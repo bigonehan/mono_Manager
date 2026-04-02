@@ -19,6 +19,11 @@ pub struct AiConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct WebConfig {
+    pub workspace_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     pub profile: Option<String>,
     pub shell: Option<String>,
@@ -32,6 +37,7 @@ pub struct AppConfig {
     pub llm_retry_count: Option<u32>,
     pub keymap: Option<KeymapConfig>,
     pub ai: Option<AiConfig>,
+    pub web: Option<WebConfig>,
     pub performance: Option<PerformanceConfig>,
 }
 
@@ -99,5 +105,13 @@ impl AppConfig {
             .map(str::trim)
             .filter(|v| !v.is_empty())
             .unwrap_or("fish")
+    }
+
+    pub fn web_workspace_path(&self) -> Option<&str> {
+        self.web
+            .as_ref()
+            .and_then(|web| web.workspace_path.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
     }
 }

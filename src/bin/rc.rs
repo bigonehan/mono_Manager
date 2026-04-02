@@ -573,7 +573,15 @@ fn build_plan(
         .join("build_plan.txt");
     let prompt_template = match fs::read_to_string(&prompt_path) {
         Ok(body) => body,
-        Err(_) => return Ok(fallback_plan_body(target_path, mode, runner, headed, config)),
+        Err(_) => {
+            return Ok(fallback_plan_body(
+                target_path,
+                mode,
+                runner,
+                headed,
+                config,
+            ))
+        }
     };
     let inventory = describe_target_path(target_path)?;
     let prompt = format!(
@@ -1118,9 +1126,7 @@ fn parse_web_actions(mode: &str) -> Vec<WebAction> {
             "selector" => parse_action_arg(mode, &mut index).map(WebAction::Selector),
             "wait" => parse_action_arg(mode, &mut index).map(WebAction::Wait),
             "click" => parse_action_arg(mode, &mut index).map(WebAction::ClickLabel),
-            "click-selector" => {
-                parse_action_arg(mode, &mut index).map(WebAction::ClickSelector)
-            }
+            "click-selector" => parse_action_arg(mode, &mut index).map(WebAction::ClickSelector),
             "fill" => {
                 let selector = parse_action_arg(mode, &mut index);
                 let value = parse_action_arg(mode, &mut index);
@@ -1196,21 +1202,8 @@ fn parse_action_arg(input: &str, index: &mut usize) -> Option<String> {
 fn mission_requires_state_verification(mode: &str) -> bool {
     let lowered = mode.to_ascii_lowercase();
     [
-        "save",
-        "delete",
-        "remove",
-        "edit",
-        "update",
-        "assign",
-        "create",
-        "insert",
-        "submit",
-        "저장",
-        "삭제",
-        "수정",
-        "추가",
-        "생성",
-        "할당",
+        "save", "delete", "remove", "edit", "update", "assign", "create", "insert", "submit",
+        "저장", "삭제", "수정", "추가", "생성", "할당",
     ]
     .iter()
     .any(|needle| lowered.contains(needle))
@@ -1223,9 +1216,12 @@ fn mission_has_persistence_check(actions: &[WebAction]) -> bool {
         match action {
             WebAction::ClickLabel(label) => {
                 let lowered = label.to_ascii_lowercase();
-                if ["save", "delete", "remove", "edit", "assign", "submit", "저장", "삭제", "수정", "할당"]
-                    .iter()
-                    .any(|needle| lowered.contains(needle))
+                if [
+                    "save", "delete", "remove", "edit", "assign", "submit", "저장", "삭제", "수정",
+                    "할당",
+                ]
+                .iter()
+                .any(|needle| lowered.contains(needle))
                 {
                     mutation_seen = true;
                 }
@@ -1869,17 +1865,17 @@ fn maybe_spawn_codex_worker(workdir: &Path) -> Result<()> {
     if std::env::var("TMUX").ok().is_none() {
         return Ok(());
     }
-    let pane_output = Command::new("tmux")
-        .args(["split-window", "-h", "-P", "-F", "#{pane_id}"])
+    let pane_output = Command::new("orc")
+        .arg("worker-create")
         .output()
-        .with_context(|| "failed to create tmux pane")?;
+        .with_context(|| "failed to create tmux worker")?;
     if !pane_output.status.success() {
         return Ok(());
     }
-    let pane_id = String::from_utf8_lossy(&pane_output.stdout)
+    let worker_ref = String::from_utf8_lossy(&pane_output.stdout)
         .trim()
         .to_string();
-    if pane_id.is_empty() {
+    if worker_ref.is_empty() {
         return Ok(());
     }
     let message = format!(
@@ -1898,8 +1894,8 @@ fn maybe_spawn_codex_worker(workdir: &Path) -> Result<()> {
         danger_flag,
         message
     );
-    let status = Command::new("tmux")
-        .args(["send-keys", "-t", &pane_id, &command, "Enter"])
+    let status = Command::new("orc")
+        .args(["worker-send", &worker_ref, &command, "enter"])
         .status()
         .with_context(|| "failed to start codex in tmux pane")?;
     if !status.success() {
@@ -1944,7 +1940,8 @@ fn cleanup_successful_screenshots(
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
-        log.captures.retain(|path| !removed.iter().any(|removed_path| removed_path == path));
+        log.captures
+            .retain(|path| !removed.iter().any(|removed_path| removed_path == path));
     }
     Ok(())
 }
@@ -2204,11 +2201,13 @@ mod tests {
         assert!(commands
             .iter()
             .any(|command| command.contains("click \"#save-group-preset-btn\"")));
-        assert!(commands
-            .iter()
-            .filter(|command| command.contains("open http://localhost:5173/preset.html"))
-            .count()
-            >= 2);
+        assert!(
+            commands
+                .iter()
+                .filter(|command| command.contains("open http://localhost:5173/preset.html"))
+                .count()
+                >= 2
+        );
         assert!(commands
             .iter()
             .any(|command| command.contains(r#"wait ".preset-item-card""#)));
@@ -2344,8 +2343,10 @@ mod tests {
     fn cleans_successful_screenshots_and_removes_capture_entries() {
         let dir = tempdir().expect("tempdir");
         let target = dir.path().join("app");
-        fs::create_dir_all(target.join(".project/screenshot")).expect("create target screenshot dir");
-        fs::create_dir_all(dir.path().join(".project/screenshot")).expect("create work screenshot dir");
+        fs::create_dir_all(target.join(".project/screenshot"))
+            .expect("create target screenshot dir");
+        fs::create_dir_all(dir.path().join(".project/screenshot"))
+            .expect("create work screenshot dir");
         let target_capture = target.join(".project/screenshot/rc-web.png");
         let rect_capture = dir.path().join(".project/screenshot/rect-capture.png");
         let screen_capture = dir.path().join(".project/screenshot/screen-capture.png");
@@ -2359,7 +2360,11 @@ mod tests {
             steps: vec![],
             output_log: vec![],
             errors: vec![],
-            captures: vec![target_capture.clone(), rect_capture.clone(), screen_capture.clone()],
+            captures: vec![
+                target_capture.clone(),
+                rect_capture.clone(),
+                screen_capture.clone(),
+            ],
         };
         cleanup_successful_screenshots(dir.path(), &target, &mut log).expect("cleanup");
         assert!(!target_capture.exists());

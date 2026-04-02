@@ -84,6 +84,7 @@ struct ProjectDetail {
     project_type: ProjectType,
     spec: String,
     goal: String,
+    architecture: String,
     rules: Vec<String>,
     constraints: Vec<String>,
     features: Vec<String>,
@@ -163,6 +164,7 @@ struct ParsedProjectMd {
     description: String,
     spec: String,
     goal: String,
+    architecture: String,
     rules: Vec<String>,
     constraints: Vec<String>,
     features: Vec<String>,
@@ -211,6 +213,8 @@ struct ProjectInfoRequest {
     description: String,
     spec: String,
     goal: String,
+    #[serde(default)]
+    architecture: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -412,6 +416,7 @@ async fn post_project_info(
         &body.description,
         &body.spec,
         &body.goal,
+        &body.architecture,
     ) {
         Ok(detail) => ok_json(json!({ "detail": detail })),
         Err(e) => err_json(e),
@@ -834,7 +839,7 @@ fn ensure_project_files(project: &ProjectRecord) -> Result<(), String> {
     let pmd = project_md_path(&project_path);
     if !pmd.exists() {
         let raw = format!(
-            "# info\nname: {}\ndescription: {}\nspec: auto\ngoal: init\n\n# rules\n- \n\n# constraints\n- \n\n# features\n- \n",
+            "# info\nname: {}\ndescription: {}\nspec: auto\ngoal: init\n\n# architecture\nname: \n\n# rules\n- \n\n# constraints\n- \n\n# features\n- \n",
             project.name, project.description
         );
         fs::write(&pmd, raw).map_err(|e| format!("failed to write {}: {}", pmd.display(), e))?;
@@ -907,6 +912,7 @@ fn create_project(repo_root: &Path, input: CreateProjectRequest) -> Result<Proje
             &record.description,
             input.spec.trim(),
             "init",
+            "",
         )?;
     }
 
@@ -1096,6 +1102,7 @@ fn load_project_detail(repo_root: &Path, id: &str) -> Result<ProjectDetail, Stri
         project_type: project.project_type.clone(),
         spec: parsed.spec,
         goal: parsed.goal,
+        architecture: parsed.architecture,
         rules: parsed.rules,
         constraints: parsed.constraints,
         features: parsed.features,
@@ -1123,6 +1130,7 @@ fn save_project_info(
     description: &str,
     spec: &str,
     goal: &str,
+    architecture: &str,
 ) -> Result<ProjectDetail, String> {
     let mut registry = load_registry(repo_root)?;
     let project = registry
@@ -1142,6 +1150,7 @@ fn save_project_info(
             description: description.to_string(),
             spec: spec.to_string(),
             goal: goal.to_string(),
+            architecture: architecture.to_string(),
             rules: current.rules,
             constraints: current.constraints,
             features: current.features,
@@ -1168,6 +1177,7 @@ fn save_project_lists(
             description: current.description.clone(),
             spec: current.spec.clone(),
             goal: current.goal.clone(),
+            architecture: current.architecture.clone(),
             rules: rules.clone(),
             constraints: constraints.clone(),
             features: features.clone(),
@@ -1449,12 +1459,14 @@ fn parse_project_md(raw: &str) -> ParsedProjectMd {
         description: String::new(),
         spec: String::new(),
         goal: String::new(),
+        architecture: String::new(),
         rules: vec![],
         constraints: vec![],
         features: vec![],
         domains: vec![],
     };
     let mut section = "none";
+    let mut in_architecture = false;
     let mut in_domains = false;
     let mut active_domain_idx: Option<usize> = None;
     let mut domain_subsection = String::new();
@@ -1473,13 +1485,22 @@ fn parse_project_md(raw: &str) -> ParsedProjectMd {
             section = "features";
             continue;
         }
+        if lower == "# architecture" {
+            section = "none";
+            in_architecture = true;
+            continue;
+        }
         if lower == "# domains" {
             section = "none";
+            in_architecture = false;
             in_domains = true;
             continue;
         }
         if t.starts_with('#') {
             section = "none";
+            if in_architecture && lower != "# architecture" {
+                in_architecture = false;
+            }
             if in_domains && t.starts_with("# ") && lower != "# domains" {
                 in_domains = false;
                 active_domain_idx = None;
@@ -1549,7 +1570,9 @@ fn parse_project_md(raw: &str) -> ParsedProjectMd {
         if let Some((key, value)) = t.split_once(':') {
             let key = key.trim().to_ascii_lowercase();
             let value = value.trim().to_string();
-            if key == "name" {
+            if in_architecture && key == "name" {
+                out.architecture = value;
+            } else if key == "name" {
                 out.name = value;
             } else if key == "description" {
                 out.description = value;
@@ -1573,6 +1596,9 @@ fn write_project_md(project_path: &Path, doc: &ParsedProjectMd) -> Result<(), St
         format!("description: {}", doc.description),
         format!("spec: {}", doc.spec),
         format!("goal: {}", doc.goal),
+        String::new(),
+        "# architecture".to_string(),
+        format!("name: {}", doc.architecture),
         String::new(),
         "# rules".to_string(),
     ];

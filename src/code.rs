@@ -79,6 +79,19 @@ pub(crate) struct CodeDraftsDoc {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ProjectMdMeta {
+    architecture: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ArchitectureContract {
+    skill_id: String,
+    skill_path: PathBuf,
+    constraints: Vec<String>,
+    checks: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct WorkflowEvidenceSnapshot {
     pub job_exists: bool,
     pub job_planned_len: usize,
@@ -125,13 +138,19 @@ fn impl_progress_runtime_dir(root: &Path) -> PathBuf {
 }
 
 fn impl_progress_index_path(root: &Path) -> PathBuf {
-    root.join(".project").join("runtime").join("impl_progress.json")
+    root.join(".project")
+        .join("runtime")
+        .join("impl_progress.json")
 }
 
 fn ensure_project_dir_from(root: &Path) -> Result<PathBuf, String> {
     let dir = root.join(".project");
     fs::create_dir_all(&dir).map_err(|e| format!("failed to create .project: {}", e))?;
     Ok(dir)
+}
+
+fn project_md_path_from(root: &Path) -> PathBuf {
+    root.join(".project").join("project.md")
 }
 
 fn now_unix_sec() -> u64 {
@@ -150,7 +169,10 @@ fn impl_progress_file_name(draft_name: &str) -> String {
     }
 }
 
-fn save_impl_progress_snapshot(root: &Path, snapshot: &ImplDraftProgressSnapshot) -> Result<(), String> {
+fn save_impl_progress_snapshot(
+    root: &Path,
+    snapshot: &ImplDraftProgressSnapshot,
+) -> Result<(), String> {
     let runtime_dir = impl_progress_runtime_dir(root);
     fs::create_dir_all(&runtime_dir)
         .map_err(|e| format!("failed to create impl progress runtime dir: {}", e))?;
@@ -316,7 +338,7 @@ pub(crate) fn init_orc_job() -> Result<String, String> {
 }
 
 pub(crate) fn create_job_md() -> Result<String, String> {
-    let project_md_path = Path::new(".project").join("project.md");
+    let project_md_path = project_md_path_from(Path::new("."));
     if !project_md_path.exists() {
         return Err("missing .project/project.md".to_string());
     }
@@ -325,10 +347,16 @@ pub(crate) fn create_job_md() -> Result<String, String> {
     let prompt_template = read_job_md_prompt_template()?;
     let project_md = fs::read_to_string(&project_md_path)
         .map_err(|e| format!("failed to read {}: {}", project_md_path.display(), e))?;
+    let architecture_contract = load_architecture_contract_from_root(Path::new("."))?;
     let seed_body = fs::read_to_string(&seed_path)
         .map_err(|e| format!("failed to read {}: {}", seed_path.display(), e))?;
-    let prompt =
-        build_create_job_md_prompt(&prompt_template, &project_md, source_label, &seed_body);
+    let prompt = build_create_job_md_prompt(
+        &prompt_template,
+        &project_md,
+        architecture_contract.as_ref(),
+        source_label,
+        &seed_body,
+    );
 
     let raw = crate::run_codex_exec_capture_with_timeout(&prompt, CREATE_JOB_MD_TIMEOUT_SEC)?;
     let normalized = normalize_job_md_content(&raw)?;
@@ -535,16 +563,41 @@ fn read_bootstrap_seed(project_root: &Path) -> Result<BootstrapSeed, String> {
 fn build_create_job_md_prompt(
     template: &str,
     project_md: &str,
+    architecture_contract: Option<&ArchitectureContract>,
     source_label: &str,
     seed_body: &str,
 ) -> String {
-    let mut normalized = format!(
-        "{}\n\n# project.md\n{}\n\n# {}\n{}",
-        template.trim(),
-        project_md.trim(),
-        source_label,
-        seed_body.trim()
-    );
+    let mut normalized = format!("{}\n\n# project.md\n{}", template.trim(), project_md.trim());
+    if let Some(contract) = architecture_contract {
+        let constraints = if contract.constraints.is_empty() {
+            "- (none)".to_string()
+        } else {
+            contract
+                .constraints
+                .iter()
+                .map(|item| format!("- {}", item))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let checks = if contract.checks.is_empty() {
+            "- (none)".to_string()
+        } else {
+            contract
+                .checks
+                .iter()
+                .map(|item| format!("- {}", item))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        normalized.push_str(&format!(
+            "\n\n# architecture skill\nname: {}\npath: {}\n\n## constraints\n{}\n\n## checks\n{}",
+            contract.skill_id,
+            contract.skill_path.display(),
+            constraints,
+            checks
+        ));
+    }
+    normalized.push_str(&format!("\n\n# {}\n{}", source_label, seed_body.trim()));
     if !normalized.ends_with('\n') {
         normalized.push('\n');
     }
@@ -621,6 +674,13 @@ pub(crate) fn add_orc_drafts() -> Result<String, String> {
 fn add_orc_drafts_from(root: &Path) -> Result<String, String> {
     let mut job = load_job_doc_from(root)?;
     let mut drafts = load_drafts_doc_from(root)?;
+    let architecture_contract = match load_architecture_contract_from_root(root) {
+        Ok(value) => value,
+        Err(error) => {
+            append_job_problem(root, &error)?;
+            return Err(error);
+        }
+    };
 
     let mut added = 0;
     let mut skipped_due_budget = 0;
@@ -642,11 +702,22 @@ fn add_orc_drafts_from(root: &Path) -> Result<String, String> {
         }
 
         let mut item = build_draft_item_from_requirement(req);
+        if let Some(contract) = architecture_contract.as_ref() {
+            merge_architecture_contract_into_draft_item(&mut item, contract);
+        }
         item.name = key.clone();
         item.state = "planned".to_string();
         drafts.draft.push(item);
         added += 1;
     }
+
+    if let Some(contract) = architecture_contract.as_ref() {
+        for draft in drafts.draft.iter_mut() {
+            merge_architecture_contract_into_draft_item(draft, contract);
+        }
+    }
+
+    ensure_add_orc_drafts_produced_targets(&job, &drafts)?;
 
     save_job_doc_from(root, &job)?;
     save_drafts_doc_from(root, &drafts)?;
@@ -654,6 +725,51 @@ fn add_orc_drafts_from(root: &Path) -> Result<String, String> {
         "add_orc_drafts completed: added {} items, deferred {} items (budget)",
         added, skipped_due_budget
     ))
+}
+
+fn ensure_add_orc_drafts_produced_targets(
+    job: &JobDoc,
+    drafts: &CodeDraftsDoc,
+) -> Result<(), String> {
+    if drafts.draft.is_empty() {
+        if job.requirement.is_empty() {
+            return Err(
+                "add_orc_drafts produced 0 draft items: job.md requirement section is empty"
+                    .to_string(),
+            );
+        }
+        let requirement_names: Vec<String> = job
+            .requirement
+            .iter()
+            .map(|req| req.name.trim())
+            .filter(|name| !name.is_empty())
+            .map(|name| name.to_string())
+            .collect();
+        if requirement_names.is_empty() {
+            return Err(
+                "add_orc_drafts produced 0 draft items: job.md requirements have no usable names"
+                    .to_string(),
+            );
+        }
+        return Err(format!(
+            "add_orc_drafts produced 0 draft items from requirements: {}",
+            requirement_names.join(", ")
+        ));
+    }
+
+    let actionable_count = drafts
+        .draft
+        .iter()
+        .filter(|item| matches!(item.state.as_str(), "planned" | "work" | "worked"))
+        .count();
+    if actionable_count == 0 {
+        return Err(
+            "add_orc_drafts produced 0 actionable draft items: drafts.yaml has no planned/work items"
+                .to_string(),
+        );
+    }
+
+    Ok(())
 }
 
 fn build_draft_item_from_requirement(req: &JobRequirement) -> DraftItemDoc {
@@ -729,9 +845,17 @@ pub(crate) fn check_orc_code() -> Result<String, String> {
     let _prompt_template = read_prompt("check_code.md")?;
     let mut job = load_job_doc()?;
     let drafts = load_drafts_doc()?;
-    job.checklist = build_job_checklist(&job, &drafts);
+    let architecture_contract = match load_architecture_contract_from_root(Path::new(".")) {
+        Ok(value) => value,
+        Err(error) => {
+            append_job_problem(Path::new("."), &error)?;
+            return Err(error);
+        }
+    };
+    job.checklist = build_job_checklist(&job, &drafts, architecture_contract.as_ref());
 
-    let has_unresolved_problems = job.problems.iter().any(|item| !item.trim().is_empty()) || !job.task.fail.is_empty();
+    let has_unresolved_problems =
+        job.problems.iter().any(|item| !item.trim().is_empty()) || !job.task.fail.is_empty();
     if !has_unresolved_problems {
         let verify_targets = job.task.check.clone();
         for name in verify_targets {
@@ -915,7 +1039,8 @@ fn parse_job_md(raw: &str) -> Result<JobDoc, String> {
                     task_list = "work";
                 } else if trimmed.starts_with("## verify") || trimmed.starts_with("## check") {
                     task_list = "check";
-                } else if trimmed.starts_with("## complete") || trimmed.starts_with("## completed") {
+                } else if trimmed.starts_with("## complete") || trimmed.starts_with("## completed")
+                {
                     task_list = "completed";
                 } else if trimmed.starts_with("## fail") {
                     task_list = "fail";
@@ -1136,7 +1261,11 @@ fn normalize_problem_check_entry(problem: &str) -> String {
     format_checklist_entry(input, "resolved", trimmed)
 }
 
-fn build_job_checklist(job: &JobDoc, drafts: &CodeDraftsDoc) -> Vec<String> {
+fn build_job_checklist(
+    job: &JobDoc,
+    drafts: &CodeDraftsDoc,
+    architecture_contract: Option<&ArchitectureContract>,
+) -> Vec<String> {
     let mut checklist = Vec::new();
 
     for problem in &job.problems {
@@ -1178,7 +1307,25 @@ fn build_job_checklist(job: &JobDoc, drafts: &CodeDraftsDoc) -> Vec<String> {
             }
         }
 
-        if !checklist.iter().any(|item| item.starts_with(&format!("{} ->", task_name.trim()))) {
+        if let Some(contract) = architecture_contract {
+            for item in &contract.constraints {
+                push_unique(
+                    &mut checklist,
+                    format_checklist_entry(task_name, "verified", item),
+                );
+            }
+            for item in &contract.checks {
+                push_unique(
+                    &mut checklist,
+                    format_checklist_entry(task_name, "verified", item),
+                );
+            }
+        }
+
+        if !checklist
+            .iter()
+            .any(|item| item.starts_with(&format!("{} ->", task_name.trim())))
+        {
             push_unique(
                 &mut checklist,
                 format_checklist_entry(task_name, "verified", &format!("verify {}", task_name)),
@@ -1187,6 +1334,16 @@ fn build_job_checklist(job: &JobDoc, drafts: &CodeDraftsDoc) -> Vec<String> {
     }
 
     checklist
+}
+
+fn append_job_problem(root: &Path, problem: &str) -> Result<(), String> {
+    let trimmed = problem.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    let mut job = load_job_doc_from(root)?;
+    push_unique(&mut job.problems, trimmed.to_string());
+    save_job_doc_from(root, &job)
 }
 
 fn replace_markdown_section(raw: &str, header: &str, body: &str) -> String {
@@ -1232,6 +1389,143 @@ fn extract_plain_list_under_header(markdown: &str, header: &str) -> Vec<String> 
         }
     }
     out
+}
+
+fn parse_project_md_meta(markdown: &str) -> ProjectMdMeta {
+    let mut meta = ProjectMdMeta::default();
+    let mut in_architecture = false;
+    for line in markdown.lines() {
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case("# architecture") {
+            in_architecture = true;
+            continue;
+        }
+        if in_architecture && trimmed.starts_with('#') {
+            break;
+        }
+        if let Some((key, value)) = trimmed.split_once(':') {
+            if in_architecture && key.trim().eq_ignore_ascii_case("name") {
+                meta.architecture = value.trim().to_string();
+            }
+        }
+    }
+    meta
+}
+
+fn load_architecture_contract_from_root(
+    root: &Path,
+) -> Result<Option<ArchitectureContract>, String> {
+    let project_md_path = project_md_path_from(root);
+    if !project_md_path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&project_md_path)
+        .map_err(|e| format!("failed to read {}: {}", project_md_path.display(), e))?;
+    let meta = parse_project_md_meta(&raw);
+    if meta.architecture.trim().is_empty() {
+        return Ok(None);
+    }
+    let skill_id = meta.architecture.trim().to_string();
+    let skill_path = resolve_architecture_skill_path(&skill_id).ok_or_else(|| {
+        format!(
+            "architecture skill not found: {} (expected /home/tree/ai/skills/{}/SKILL.md or /home/tree/.codex/skills/{}/SKILL.md)",
+            skill_id, skill_id, skill_id
+        )
+    })?;
+    let body = fs::read_to_string(&skill_path).map_err(|e| {
+        format!(
+            "failed to read architecture skill {}: {}",
+            skill_path.display(),
+            e
+        )
+    })?;
+    parse_architecture_contract(&skill_id, &skill_path, &body).map(Some)
+}
+
+fn resolve_architecture_skill_path(skill_id: &str) -> Option<PathBuf> {
+    let candidates = [
+        Path::new("/home/tree/ai/skills")
+            .join(skill_id)
+            .join("SKILL.md"),
+        Path::new("/home/tree/.codex/skills")
+            .join(skill_id)
+            .join("SKILL.md"),
+    ];
+    candidates.into_iter().find(|path| path.exists())
+}
+
+fn parse_architecture_contract(
+    skill_id: &str,
+    skill_path: &Path,
+    raw: &str,
+) -> Result<ArchitectureContract, String> {
+    let mut in_contract = false;
+    let mut section = "";
+    let mut constraints = Vec::new();
+    let mut checks = Vec::new();
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case("## ORC Architecture Contract") {
+            in_contract = true;
+            section = "";
+            continue;
+        }
+        if in_contract
+            && trimmed.starts_with("## ")
+            && !trimmed.eq_ignore_ascii_case("## ORC Architecture Contract")
+        {
+            break;
+        }
+        if !in_contract {
+            continue;
+        }
+        if trimmed.eq_ignore_ascii_case("### Constraints") {
+            section = "constraints";
+            continue;
+        }
+        if trimmed.eq_ignore_ascii_case("### Checks") {
+            section = "checks";
+            continue;
+        }
+        if let Some(item) = trimmed
+            .strip_prefix("- ")
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+        {
+            match section {
+                "constraints" => constraints.push(item.to_string()),
+                "checks" => checks.push(item.to_string()),
+                _ => {}
+            }
+        }
+    }
+
+    if constraints.is_empty() && checks.is_empty() {
+        return Err(format!(
+            "architecture skill missing ORC contract entries: {}",
+            skill_path.display()
+        ));
+    }
+
+    Ok(ArchitectureContract {
+        skill_id: skill_id.to_string(),
+        skill_path: skill_path.to_path_buf(),
+        constraints,
+        checks,
+    })
+}
+
+fn merge_architecture_contract_into_draft_item(
+    item: &mut DraftItemDoc,
+    contract: &ArchitectureContract,
+) {
+    for constraint in &contract.constraints {
+        push_unique(&mut item.constraints, constraint.clone());
+    }
+    for check in &contract.checks {
+        push_unique(&mut item.check, check.clone());
+    }
 }
 
 fn normalize_feature_key(name: &str) -> String {
@@ -1369,7 +1663,7 @@ fn render_project_md(
             .join("\n")
     };
     format!(
-        "# info\nname: {name}\ndescription: {description}\nspec: {spec}\npath: {path}\nstate: init\n\n# features\n{feature_block}\n\n# rules\n- 프로젝트 내부의 공통 규칙\n\n# constraints\n- 프로젝트 내부의 공통 제약\n\n# domains\n## core\n### states\n- init\n### action\n- bootstrap\n### rules\n- spec 기준으로 초기 실행 환경을 준비한다.\n### constraints\n- 최소 골격만 생성한다.\n"
+        "# info\nname: {name}\ndescription: {description}\nspec: {spec}\npath: {path}\nstate: init\n\n# architecture\nname: \n\n# features\n{feature_block}\n\n# rules\n- 프로젝트 내부의 공통 규칙\n\n# constraints\n- 프로젝트 내부의 공통 제약\n\n# domains\n## core\n### states\n- init\n### action\n- bootstrap\n### rules\n- spec 기준으로 초기 실행 환경을 준비한다.\n### constraints\n- 최소 골격만 생성한다.\n"
     )
 }
 
@@ -1455,13 +1749,7 @@ async fn impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<ImplRunRes
 fn impl_single_draft_item(item: &DraftItemDoc) -> Result<(), String> {
     let cwd = std::env::current_dir().map_err(|e| format!("failed to resolve cwd: {}", e))?;
     let started = Instant::now();
-    write_impl_draft_progress(
-        &cwd,
-        &item.name,
-        "running",
-        0,
-        "impl draft started",
-    )?;
+    write_impl_draft_progress(&cwd, &item.name, "running", 0, "impl draft started")?;
     let prompt_base = read_prompt("build_parallel.md")?;
     let task_yaml = serde_yaml::to_string(item)
         .map_err(|e| format!("failed to encode draft item yaml: {}", e))?;
@@ -1601,21 +1889,22 @@ struct ImplRunResult {
 #[cfg(test)]
 mod tests {
     use super::{
-        add_orc_drafts, build_create_job_md_prompt, build_draft_item_from_requirement,
-        build_initial_project_md, check_orc_code, cleanup_drafts_yaml_after_success, create_input_md,
-        flow_rust_orchestra, get_workspace_state, infer_spec_from_message, job_task_state_change,
-        llm_impl_output_indicates_failure, load_drafts_doc, load_impl_progress_snapshots,
-        merge_requirement_rule,
-        move_job_task_item, normalize_job_md_content, parse_common_opts,
-        parse_outline_requirements_to_job_doc, read_bootstrap_seed, set_draft_item_state,
-        transition_impl_result, transition_impl_start, update_impl_draft_progress_from_watch,
-        auto_feature_names_from_message, BootstrapSeed, CodeDraftsDoc, CommonOpts, DraftItemDoc,
-        JobDoc, JobRequirement,
+        add_orc_drafts, auto_feature_names_from_message, build_create_job_md_prompt,
+        build_draft_item_from_requirement, build_initial_project_md, check_orc_code,
+        cleanup_drafts_yaml_after_success, create_input_md,
+        ensure_add_orc_drafts_produced_targets, flow_rust_orchestra, get_workspace_state,
+        infer_spec_from_message, job_task_state_change, llm_impl_output_indicates_failure,
+        load_architecture_contract_from_root, load_drafts_doc, load_impl_progress_snapshots,
+        merge_requirement_rule, move_job_task_item, normalize_job_md_content, parse_common_opts,
+        parse_outline_requirements_to_job_doc, parse_project_md_meta, read_bootstrap_seed,
+        set_draft_item_state, transition_impl_result, transition_impl_start,
+        update_impl_draft_progress_from_watch, BootstrapSeed, CodeDraftsDoc, CommonOpts,
+        DraftItemDoc, JobDoc, JobRequirement,
     };
     use std::env;
     use std::fs;
-    use std::path::Path;
     use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::path::Path;
     use std::sync::{Mutex, OnceLock};
 
     fn with_locked_workspace<T>(test_name: &str, run: impl FnOnce() -> T) -> T {
@@ -1944,7 +2233,10 @@ mod tests {
         let item = build_draft_item_from_requirement(&req);
 
         assert_eq!(item.name, "도메인_패널_정렬_수정");
-        assert_eq!(item.tasks, vec!["implement 도메인_패널_정렬_수정".to_string()]);
+        assert_eq!(
+            item.tasks,
+            vec!["implement 도메인_패널_정렬_수정".to_string()]
+        );
         assert_eq!(
             item.constraints,
             vec![
@@ -1978,11 +2270,18 @@ mod tests {
             .expect("write job");
             fs::write(".project/drafts.yaml", "draft: []\n").expect("write drafts");
 
-            add_orc_drafts().expect("run add_orc_drafts");
-            let drafts = load_drafts_doc().expect("load drafts");
+            let err = add_orc_drafts().expect_err("run add_orc_drafts");
 
-            assert!(drafts.draft.is_empty());
+            assert!(err.contains("produced 0 draft items"));
         });
+    }
+
+    #[test]
+    fn ensure_add_orc_drafts_produced_targets_rejects_empty_requirement_state() {
+        let err = ensure_add_orc_drafts_produced_targets(&JobDoc::default(), &CodeDraftsDoc::default())
+            .expect_err("empty requirements must fail");
+
+        assert!(err.contains("requirement section is empty"));
     }
 
     #[test]
@@ -2025,9 +2324,18 @@ mod tests {
                 .find(|draft| draft.name == "도메인_패널_정렬_수정")
                 .expect("korean draft item");
 
-            assert_eq!(item.rule, vec!["헤더와 본문 패널의 좌우 기준선을 맞춘다".to_string()]);
-            assert_eq!(item.step, vec!["current.png 기준으로 정렬을 고친다".to_string()]);
-            assert_eq!(item.tasks, vec!["implement 도메인_패널_정렬_수정".to_string()]);
+            assert_eq!(
+                item.rule,
+                vec!["헤더와 본문 패널의 좌우 기준선을 맞춘다".to_string()]
+            );
+            assert_eq!(
+                item.step,
+                vec!["current.png 기준으로 정렬을 고친다".to_string()]
+            );
+            assert_eq!(
+                item.tasks,
+                vec!["implement 도메인_패널_정렬_수정".to_string()]
+            );
         });
     }
 
@@ -2370,12 +2678,46 @@ mod tests {
         let prompt = build_create_job_md_prompt(
             "template",
             "# info\nname: demo\n",
+            None,
             "job.md",
             "drafts:\n  planned:\n    - cli_create_job_md\n",
         );
         assert!(prompt.contains("template"));
         assert!(prompt.contains("# project.md"));
         assert!(prompt.contains("# job.md"));
+    }
+
+    #[test]
+    fn parse_project_md_meta_reads_architecture_name() {
+        let meta = parse_project_md_meta(
+            "# info\nname: demo\n\n# architecture\nname: architecture-layered\n",
+        );
+        assert_eq!(meta.architecture, "architecture-layered");
+    }
+
+    #[test]
+    fn load_architecture_contract_from_root_reads_sample_skill() {
+        with_locked_workspace("load_architecture_contract", || {
+            fs::create_dir_all(".project").expect("create project dir");
+            fs::write(
+                ".project/project.md",
+                "# info\nname: demo\n\n# architecture\nname: architecture-layered\n",
+            )
+            .expect("write project.md");
+
+            let contract = load_architecture_contract_from_root(Path::new("."))
+                .expect("load contract")
+                .expect("contract present");
+            assert_eq!(contract.skill_id, "architecture-layered");
+            assert!(contract
+                .constraints
+                .iter()
+                .any(|item| item.contains("src/domain/** -> src/infrastructure/**")));
+            assert!(contract
+                .checks
+                .iter()
+                .any(|item| item.contains("presentation -> repository implementation")));
+        });
     }
 
     #[test]

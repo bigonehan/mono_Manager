@@ -76,6 +76,7 @@ export type ProjectDetail = {
   project_type: "code" | "mono";
   spec: string;
   goal: string;
+  architecture: string;
   rules: string[];
   constraints: string[];
   features: string[];
@@ -422,7 +423,7 @@ function ensureProjectFiles(project: ProjectRecord): void {
   if (!fs.existsSync(pmd)) {
     fs.writeFileSync(
       pmd,
-      `# info\nname: ${project.name}\ndescription: ${project.description}\nspec: auto\ngoal: init\n\n# rules\n- \n\n# constraints\n- \n\n# features\n- \n`,
+      `# info\nname: ${project.name}\ndescription: ${project.description}\nspec: auto\ngoal: init\n\n# architecture\nname: \n\n# rules\n- \n\n# constraints\n- \n\n# features\n- \n`,
       "utf8"
     );
   }
@@ -733,7 +734,8 @@ export function createProject(input: {
       name: detail.name,
       description: detail.description,
       spec: input.spec,
-      goal: detail.goal
+      goal: detail.goal,
+      architecture: detail.architecture
     });
   }
 
@@ -891,6 +893,7 @@ function readProjectMdAttributes(raw: string): {
   description: string;
   spec: string;
   goal: string;
+  architecture: string;
   rules: string[];
   constraints: string[];
   features: string[];
@@ -901,6 +904,7 @@ function readProjectMdAttributes(raw: string): {
     description: "",
     spec: "",
     goal: "",
+    architecture: "",
     rules: [] as string[],
     constraints: [] as string[],
     features: [] as string[],
@@ -908,6 +912,7 @@ function readProjectMdAttributes(raw: string): {
   };
 
   let section: "rules" | "constraints" | "features" | "none" = "none";
+  let inArchitecture = false;
   let inDomains = false;
   let activeDomain: DomainRow | null = null;
   let domainSubsection = "";
@@ -925,13 +930,22 @@ function readProjectMdAttributes(raw: string): {
       section = "features";
       continue;
     }
+    if (t.toLowerCase() === "# architecture") {
+      section = "none";
+      inArchitecture = true;
+      continue;
+    }
     if (t.toLowerCase() === "# domains") {
       section = "none";
+      inArchitecture = false;
       inDomains = true;
       continue;
     }
     if (t.startsWith("#")) {
       section = "none";
+      if (inArchitecture && t.toLowerCase() !== "# architecture") {
+        inArchitecture = false;
+      }
       if (inDomains && /^#\s+/i.test(t) && t.toLowerCase() !== "# domains") {
         inDomains = false;
         activeDomain = null;
@@ -995,7 +1009,8 @@ function readProjectMdAttributes(raw: string): {
     }
     const key = pair[0].trim().toLowerCase();
     const value = pair.slice(1).join(":").trim();
-    if (key === "name") out.name = value;
+    if (inArchitecture && key === "name") out.architecture = value;
+    if (!inArchitecture && key === "name") out.name = value;
     if (key === "description") out.description = value;
     if (key === "spec") out.spec = value;
     if (key === "goal") out.goal = value;
@@ -1009,6 +1024,7 @@ function writeProjectMd(projectPath: string, doc: {
   description: string;
   spec: string;
   goal: string;
+  architecture: string;
   rules: string[];
   constraints: string[];
   features: string[];
@@ -1020,6 +1036,9 @@ function writeProjectMd(projectPath: string, doc: {
     `description: ${doc.description}`,
     `spec: ${doc.spec}`,
     `goal: ${doc.goal}`,
+    "",
+    "# architecture",
+    `name: ${doc.architecture}`,
     "",
     "# rules",
     ...(doc.rules.length > 0 ? doc.rules : [""]).map((v) => `- ${v}`),
@@ -1193,6 +1212,7 @@ function syncDomainFeaturesFromSource(
     description: parsed.description,
     spec: parsed.spec,
     goal: parsed.goal,
+    architecture: parsed.architecture,
     rules: parsed.rules,
     constraints: parsed.constraints,
     features: parsed.features,
@@ -2068,6 +2088,7 @@ export function loadProjectDetail(id: string): ProjectDetail {
     project_type: project.project_type,
     spec: parsed.spec,
     goal: parsed.goal,
+    architecture: parsed.architecture,
     rules: parsed.rules.filter((v) => v.length > 0),
     constraints: parsed.constraints.filter((v) => v.length > 0),
     features: parsed.features.filter((v) => v.length > 0),
@@ -2123,6 +2144,7 @@ export function saveProjectInfo(id: string, input: {
   description: string;
   spec: string;
   goal: string;
+  architecture: string;
 }): ProjectDetail {
   const updated = updateProject(id, {
     name: input.name,
@@ -2134,6 +2156,7 @@ export function saveProjectInfo(id: string, input: {
     description: input.description,
     spec: input.spec,
     goal: input.goal,
+    architecture: input.architecture,
     rules: current.rules,
     constraints: current.constraints,
     features: current.features,
@@ -2153,6 +2176,7 @@ export function saveLists(id: string, input: {
     description: current.description,
     spec: current.spec,
     goal: current.goal,
+    architecture: current.architecture,
     rules: input.rules,
     constraints: input.constraints,
     features: input.features,
@@ -2183,6 +2207,7 @@ export function saveDomains(id: string, input: {
     description: current.description,
     spec: current.spec,
     goal: current.goal,
+    architecture: current.architecture,
     rules: current.rules,
     constraints: current.constraints,
     features: current.features,
@@ -2251,6 +2276,7 @@ function finalizeCompletedDrafts(id: string): string {
     description: parsed.description || detail.description,
     spec: parsed.spec || detail.spec,
     goal: parsed.goal || detail.goal,
+    architecture: parsed.architecture || detail.architecture,
     rules: parsed.rules,
     constraints: parsed.constraints,
     features: mergedFeatures,
