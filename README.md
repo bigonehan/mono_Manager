@@ -3,6 +3,8 @@
 ## Run
 - Build and run with the `orc` binary target:
   - `cargo run --bin orc -- <command>`
+- Build and run with the `rc` helper binary target:
+  - `cargo run --bin rc -- <command>`
 
 ## Main Commands (orc)
 - `orc help`
@@ -27,6 +29,8 @@
 - `orc worker-send <worker_ref|pane_id> <msg...> [enter|enter-exit|raw|display]`
 - `orc worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]`
 - `orc worker-close <worker_ref|pane_id>`
+- `orc manager-trace <stage> [detail...]`
+- `orc check-manager-trace [preflight|impl|check|final]`
 - `orc capture-pane <pane_id> [lines]`
 - `orc wait-ready <pane_id> <pattern> [timeout_ms] [lines]`
 - `orc http-healthcheck <url> [timeout_ms]`
@@ -54,6 +58,10 @@
   - `orc worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]`
 - Close a worker pane:
   - `orc worker-close <worker_ref|pane_id>`
+- Append an `orc_manager` trace stage:
+  - `orc manager-trace <stage> [detail...]`
+- Verify `orc_manager` trace order:
+  - `orc check-manager-trace [preflight|impl|check|final]`
 
 ## tmux Worker Helpers
 - Capture recent pane output:
@@ -65,6 +73,8 @@
 - `orc send-tmux`는 일반 tmux 브리지로 유지되지만 worker orchestration 표준으로는 사용하지 않는다.
 
 ## Notes
+- `cargo run --bin rc -- run-playwright-qa --web-root assets/web -- <command...>` runs Playwright/Node QA commands from the installed web workspace with `NODE_PATH`, `.bin`, and helper env wired by `rc`.
+- `cargo run --bin rc -- check-front-ui-rules` is the canonical UI alignment check entrypoint used by the repo wrappers/docs.
 - `orc chat -n <name>` 실행 시 `.temp/<name>.yaml`이 없거나 비어 있으면 기본 chat room YAML이 자동 생성됩니다.
 - `orc chat -n <name> --background`는 watcher를 백그라운드로 실행하고, 출력은 `.temp/<name>.watch.log`에 기록됩니다.
 - 같은 tmux pane(기준: `TMUX_PANE`)에서 `orc chat`을 여러 번 호출하면 동일 `sender_id`를 재사용합니다. 즉 같은 window라도 pane이 다르면 `sender_id`는 독립적으로 관리됩니다. tmux 외 환경은 fallback(`PPID + TTY`), 강제 지정은 `ORC_CHAT_SESSION_KEY`를 사용합니다 (`.temp/<name>.sessions.yaml`).

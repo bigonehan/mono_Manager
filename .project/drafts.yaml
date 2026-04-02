@@ -1,7 +1,20 @@
-runner: Unknown
-procedures:
-- name: default_check
-  expected: program runs without error
-  steps:
-  - command_template: echo unsupported project type
-    responses: []
+draft:
+- name: playwright_qa_ad_hangover_recovery
+  state: work
+  type: action
+  domain:
+  - core
+  depends_on: []
+  scope: []
+  rule:
+  - stabilize the generated Playwright QA path so selector waits and preview extraction do not fail on the reported ad-hangover flow
+  - keep manager orchestration aligned with the orc_manager skill and worker API first rule
+  - reverify through worker-separated impl, qa, check, and improve stages
+  step:
+  - trigger -> process -> result
+  tasks:
+  - implement playwright_qa_ad_hangover_recovery
+  constraints:
+  - 'playwright_qa_ad_hangover_recovery -> playwright_qa_ad_hangover_recovery : requirement 기반 draft item 생성'
+  check:
+  - verify playwright_qa_ad_hangover_recovery

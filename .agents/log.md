@@ -1,3 +1,13 @@
+## 2026-04-02 - 작업한일
+- `.../src/cli.rs`에 `orc manager-trace`, `orc check-manager-trace` 명령과 구형 alias(`orc_manager_trace`, `check_orc_manager_trace`)를 추가해 `orc_manager` trace 기록/검증을 ORC 내부 함수로 이관함.
+- `.../README.md`, `.../orc_manager/SKILL.md`, `.../codex/AGENTS.override.md`를 새 ORC 명령 기준으로 동기화하고, 레거시 `.../scripts/orc_manager_trace.sh`, `.../scripts/check_orc_manager_trace.sh` 파일과 호출 언급을 제거함.
+- 검증은 `cargo test`, `cargo run --bin orc -- --help`, 임시 작업 디렉터리에서 `orc manager-trace`/`orc check-manager-trace final` 실동작으로 수행함.
+
+## 2026-04-02 - 작업한일
+- `.../src/bin/rc.rs`, `.../src/bin/rc/browser.rs`에 `run-playwright-qa`, `check-front-ui-rules` 서브커맨드와 QA/env staging 로직을 추가해 기존 Python/Shell 스크립트 동작을 `rc` 내부 함수로 이관함.
+- `.../scripts/run_playwright_qa.py`, `.../scripts/check_front_ui_rules.sh`를 얇은 wrapper로 축소하고, `.../assets/prompts/check_code.md`, `.../AGENTS.md`, `.../README.md`의 호출 경로를 새 `rc` 엔트리포인트 기준으로 동기화함.
+- 검증은 `cargo test --bin rc`, `cargo test`, `cargo run --bin rc -- check-front-ui-rules`, wrapper 실행으로 수행함.
+
 ## 2026-04-01 - 작업한일
 - `.../assets/presets/{code,mono}/prompts/build_job_md_auto.txt`, `infer_draft_item.txt`, `add_code_draft_by_{message,file}.txt`에 계획 단계용 senior review 거부 사유 식별 규칙을 추가함.
 - `.../AGENTS.md`에 `Planning Review Gate`를 추가해 `job.md -> drafts.yaml -> draft_item` 계획 단계에서 불명확한 요구, 과한 추상화, 검증 누락, 회귀 위험, 네이밍 불일치, dead path, 불필요한 복잡도, 범위 초과 수정 점검을 강제함.
@@ -3158,3 +3168,7 @@
 - `.../src/tmux/mod.rs`, `.../src/cli.rs`, `.../src/chat.rs`, `.../src/bin/rc.rs`에 ORC worker 표준 API(`worker-create/send/wait/close`)를 추가하고, tmux worker 스크립트 생성 없이 내부 함수로 pane orchestration 하도록 변경함.
 - `.../README.md`, `.../AGENTS.md`, `/home/tree/ai/codex/AGENTS.override.md`, `/home/tree/.codex/skills/manager/SKILL.md`, `/home/tree/ai/skills/orc-cli-workflow/SKILL.md`, `/home/tree/ai/skills/orc_manager/SKILL.md`를 새 worker API 기준으로 동기화함.
 - 검증은 `cargo test`와 worker 관련 문자열 검색(`rg`) 및 설치 갱신으로 수행함.
+## 2026-04-02 - 작업한일
+- `.../scripts/playwright_safe_helpers.mjs`를 추가해 ad-hoc Playwright node script가 regex literal escape 실수로 깨지지 않도록 공용 regex/testid helper를 체크인함.
+- `.../scripts/run_playwright_qa.py`는 `ORC_QA_PLAYWRIGHT_HELPERS` 절대경로를 제공하고, 기존 `NODE_PATH`/`PATH`를 덮어쓰지 않고 prepend 방식으로 병합하도록 최소 수정함.
+- `.../assets/prompts/check_code.md`에는 `getByTestId` 사용 전 실제 `data-testid` 수집/검증과 공용 helper 재사용 규칙을 추가했고, 검증은 `node --test scripts/playwright_safe_helpers.test.mjs`와 대상 파일 기준 `git diff` 확인으로 수행함.
