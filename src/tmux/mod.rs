@@ -154,17 +154,27 @@ fn resolve_send_option(option: &str) -> Result<SendOption, String> {
     }
 }
 
+fn send_literal(pane_id: &str, msg: &str) -> Result<(), String> {
+    if msg.is_empty() {
+        return Ok(());
+    }
+    run_tmux(&["send-keys", "-l", "-t", pane_id, msg])?;
+    Ok(())
+}
+
 pub fn send_keys(pane_id: &str, msg: &str, option: SendOption) -> Result<(), String> {
     match option {
         SendOption::Enter => {
-            run_tmux(&["send-keys", "-t", pane_id, msg, "C-m"])?;
+            send_literal(pane_id, msg)?;
+            run_tmux(&["send-keys", "-t", pane_id, "C-m"])?;
         }
         SendOption::EnterExit => {
-            let wrapped = format!("{}; exit", msg);
-            run_tmux(&["send-keys", "-t", pane_id, wrapped.as_str(), "C-m"])?;
+            let wrapped = format!("{msg}\nexit");
+            send_literal(pane_id, &wrapped)?;
+            run_tmux(&["send-keys", "-t", pane_id, "C-m"])?;
         }
         SendOption::Raw => {
-            run_tmux(&["send-keys", "-t", pane_id, msg])?;
+            send_literal(pane_id, msg)?;
         }
         SendOption::Display => {
             display_message(pane_id, msg)?;

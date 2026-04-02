@@ -1,6 +1,10 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{fs, fs::OpenOptions, io::Write};
+use std::{
+    fs,
+    fs::OpenOptions,
+    io::{self, IsTerminal, Read, Write},
+};
 
 pub fn program_name(args: &[String]) -> &str {
     args.first()
@@ -48,13 +52,13 @@ pub fn print_usage(program: &str) {
         "open-ui [-w|--web|-b|--build]",
         "serve-web-api [--addr <host:port>]",
         "worker-create",
-        "worker-send <worker_ref|pane_id> <msg...> [enter|enter-exit|raw|display]",
+        "worker-send <worker_ref|pane_id> <msg...>|--stdin [enter|enter-exit|raw|display]",
         "worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]",
         "worker-close <worker_ref|pane_id>",
         "worker-dev-url <worker_ref|pane_id> [lines]",
         "manager-trace <stage> [detail...]",
         "check-manager-trace [preflight|impl|check|final]",
-        "send-tmux <pane_id> <msg...> [enter|enter-exit|raw|display]",
+        "send-tmux <pane_id> <msg...>|--stdin [enter|enter-exit|raw|display]",
         "capture-pane <pane_id> [lines]",
         "wait-ready <pane_id> <pattern> [timeout_ms] [lines]",
         "http-healthcheck <url> [timeout_ms]",
@@ -79,6 +83,30 @@ fn normalize_clit_args(args: &[String]) -> Vec<String> {
     normalized.push("clit".to_string());
     normalized.extend(args.iter().cloned());
     normalized
+}
+
+fn normalize_stdin_send_message(command_name: &str, mut buffer: String) -> Result<String, String> {
+    if let Some(stripped) = buffer.strip_suffix("\r\n") {
+        buffer = stripped.to_string();
+    } else if let Some(stripped) = buffer.strip_suffix('\n') {
+        buffer = stripped.to_string();
+    }
+    if buffer.is_empty() {
+        return Err(format!("{command_name} requires non-empty message"));
+    }
+    Ok(buffer)
+}
+
+fn read_send_message_from_stdin(command_name: &str) -> Result<String, String> {
+    let mut stdin = io::stdin();
+    if stdin.is_terminal() {
+        return Err(format!("{command_name} --stdin requires piped stdin"));
+    }
+    let mut buffer = String::new();
+    stdin
+        .read_to_string(&mut buffer)
+        .map_err(|e| format!("{command_name} failed to read stdin: {e}"))?;
+    normalize_stdin_send_message(command_name, buffer)
 }
 
 fn canonical_command_for_match(command: &str) -> &str {
@@ -305,23 +333,37 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         "worker-send" => {
             if tail.len() < 2 {
                 return Err(
-                    "worker-send requires <worker_ref|pane_id> <msg...> [enter|enter-exit|raw|display]"
+                    "worker-send requires <worker_ref|pane_id> <msg...>|--stdin [enter|enter-exit|raw|display]"
                         .to_string(),
                 );
             }
             let worker = super::tmux::resolve_worker_ref(&tail[0])?;
-            let (msg_slice, option) = match tail.last().map(String::as_str) {
-                Some("enter" | "enter-exit" | "raw" | "display") if tail.len() >= 3 => {
-                    (&tail[1..tail.len() - 1], tail[tail.len() - 1].as_str())
+            let (msg, option) = if tail[1] == "--stdin" {
+                let option = match tail.get(2).map(String::as_str) {
+                    Some("enter" | "enter-exit" | "raw" | "display") => tail[2].as_str(),
+                    Some(other) => {
+                        return Err(format!(
+                            "worker-send --stdin accepts only one optional send option, got {other}"
+                        ));
+                    }
+                    None => "enter",
+                };
+                (read_send_message_from_stdin("worker-send")?, option)
+            } else {
+                let (msg_slice, option) = match tail.last().map(String::as_str) {
+                    Some("enter" | "enter-exit" | "raw" | "display") if tail.len() >= 3 => {
+                        (&tail[1..tail.len() - 1], tail[tail.len() - 1].as_str())
+                    }
+                    _ => (&tail[1..], "enter"),
+                };
+                if msg_slice.is_empty() {
+                    return Err("worker-send requires non-empty message".to_string());
                 }
-                _ => (&tail[1..], "enter"),
+                (msg_slice.join(" "), option)
             };
-            if msg_slice.is_empty() {
-                return Err("worker-send requires non-empty message".to_string());
-            }
             super::tmux::worker_send(
                 &worker,
-                &msg_slice.join(" "),
+                &msg,
                 match option {
                     "display" => super::tmux::SendOption::Display,
                     "enter-exit" => super::tmux::SendOption::EnterExit,
@@ -333,7 +375,7 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                 "worker-send done: pane={} option={} msg={}",
                 worker.pane_id,
                 option,
-                msg_slice.join(" ")
+                msg
             ))
         }
         "worker-wait" => {
@@ -401,21 +443,34 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         "send-tmux" => {
             if tail.len() < 2 {
                 return Err(
-                    "send-tmux requires <pane_id> <msg...> [enter|enter-exit|raw|display]"
+                    "send-tmux requires <pane_id> <msg...>|--stdin [enter|enter-exit|raw|display]"
                         .to_string(),
                 );
             }
             let pane_id = &tail[0];
-            let (msg_slice, option) = match tail.last().map(String::as_str) {
-                Some("enter" | "enter-exit" | "raw" | "display") if tail.len() >= 3 => {
-                    (&tail[1..tail.len() - 1], tail[tail.len() - 1].as_str())
+            let (msg, option) = if tail[1] == "--stdin" {
+                let option = match tail.get(2).map(String::as_str) {
+                    Some("enter" | "enter-exit" | "raw" | "display") => tail[2].as_str(),
+                    Some(other) => {
+                        return Err(format!(
+                            "send-tmux --stdin accepts only one optional send option, got {other}"
+                        ));
+                    }
+                    None => "enter",
+                };
+                (read_send_message_from_stdin("send-tmux")?, option)
+            } else {
+                let (msg_slice, option) = match tail.last().map(String::as_str) {
+                    Some("enter" | "enter-exit" | "raw" | "display") if tail.len() >= 3 => {
+                        (&tail[1..tail.len() - 1], tail[tail.len() - 1].as_str())
+                    }
+                    _ => (&tail[1..], "enter"),
+                };
+                if msg_slice.is_empty() {
+                    return Err("send-tmux requires non-empty message".to_string());
                 }
-                _ => (&tail[1..], "enter"),
+                (msg_slice.join(" "), option)
             };
-            if msg_slice.is_empty() {
-                return Err("send-tmux requires non-empty message".to_string());
-            }
-            let msg = msg_slice.join(" ");
             super::tmux::tsend(pane_id, &msg, option)
         }
         "capture-pane" => {
@@ -608,5 +663,19 @@ mod tests {
             canonical_command_for_match("check_orc_manager_trace"),
             "check-manager-trace"
         );
+    }
+
+    #[test]
+    fn normalize_stdin_send_message_drops_single_trailing_newline() {
+        assert_eq!(
+            super::normalize_stdin_send_message("worker-send", "echo hi\n".to_string())
+                .expect("message"),
+            "echo hi"
+        );
+    }
+
+    #[test]
+    fn normalize_stdin_send_message_rejects_empty_body() {
+        assert!(super::normalize_stdin_send_message("worker-send", "\n".to_string()).is_err());
     }
 }

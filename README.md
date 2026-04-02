@@ -26,7 +26,7 @@
 - `orc open-ui [-w|--web|-b|--build]`
 - `orc serve-web-api [--addr <host:port>]`
 - `orc worker-create`
-- `orc worker-send <worker_ref|pane_id> <msg...> [enter|enter-exit|raw|display]`
+- `orc worker-send <worker_ref|pane_id> <msg...>|--stdin [enter|enter-exit|raw|display]`
 - `orc worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]`
 - `orc worker-close <worker_ref|pane_id>`
 - `orc worker-dev-url <worker_ref|pane_id> [lines]`
@@ -54,7 +54,7 @@
 - Create a worker pane and get a reusable worker ref:
   - `orc worker-create`
 - Send text to a worker pane:
-  - `orc worker-send <worker_ref|pane_id> <msg...> [enter|enter-exit|raw|display]`
+  - `orc worker-send <worker_ref|pane_id> <msg...>|--stdin [enter|enter-exit|raw|display]`
 - Wait until worker output contains a pattern:
   - `orc worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]`
 - Close a worker pane:
