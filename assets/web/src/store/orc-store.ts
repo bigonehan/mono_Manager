@@ -25,6 +25,7 @@ export type Detail = {
   project_type: "code" | "mono";
   spec: string;
   goal: string;
+  architecture: string;
   rules: string[];
   constraints: string[];
   features: string[];
@@ -88,6 +89,7 @@ type OrcStore = {
   editDescription: string;
   editSpec: string;
   editGoal: string;
+  editArchitecture: string;
   editRules: string;
   editConstraints: string;
   editFeatures: string;
@@ -116,6 +118,7 @@ type OrcStore = {
   setEditDescription: (v: string) => void;
   setEditSpec: (v: string) => void;
   setEditGoal: (v: string) => void;
+  setEditArchitecture: (v: string) => void;
   setEditRules: (v: string) => void;
   setEditConstraints: (v: string) => void;
   setEditFeatures: (v: string) => void;
@@ -146,6 +149,7 @@ export const useOrcStore = create<OrcStore>()(
       editDescription: "",
       editSpec: "",
       editGoal: "",
+      editArchitecture: "",
       editRules: "",
       editConstraints: "",
       editFeatures: "",
@@ -180,6 +184,7 @@ export const useOrcStore = create<OrcStore>()(
       setEditDescription: (v) => set({ editDescription: v }),
       setEditSpec: (v) => set({ editSpec: v }),
       setEditGoal: (v) => set({ editGoal: v }),
+      setEditArchitecture: (v) => set({ editArchitecture: v }),
       setEditRules: (v) => set({ editRules: v }),
       setEditConstraints: (v) => set({ editConstraints: v }),
       setEditFeatures: (v) => set({ editFeatures: v }),

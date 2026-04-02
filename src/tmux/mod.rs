@@ -11,7 +11,7 @@ pub enum SendOption {
     Display,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkerPaneRef {
     pub worker_id: String,
     pub pane_id: String,
@@ -24,6 +24,35 @@ impl WorkerPaneRef {
             .split('-')
             .next()
             .unwrap_or(self.worker_id.as_str())
+    }
+
+    pub fn encode(&self) -> String {
+        format!(
+            "{}::{}::{}",
+            self.worker_id,
+            self.pane_id,
+            self.pane_pid.clone().unwrap_or_default()
+        )
+    }
+
+    pub fn decode(raw: &str) -> Result<Self, String> {
+        let trimmed = raw.trim();
+        let mut parts = trimmed.splitn(3, "::");
+        let worker_id = parts.next().unwrap_or_default().trim();
+        let pane_id = parts.next().unwrap_or_default().trim();
+        let pane_pid = parts.next().unwrap_or_default().trim();
+        if worker_id.is_empty() || pane_id.is_empty() {
+            return Err(format!("invalid worker ref: {}", trimmed));
+        }
+        Ok(Self {
+            worker_id: worker_id.to_string(),
+            pane_id: pane_id.to_string(),
+            pane_pid: if pane_pid.is_empty() {
+                None
+            } else {
+                Some(pane_pid.to_string())
+            },
+        })
     }
 }
 
@@ -45,7 +74,9 @@ fn run_tmux_optional(args: &[&str]) -> Result<Option<String>, String> {
         .output()
         .map_err(|e| format!("failed to execute tmux: {}", e))?;
     if output.status.success() {
-        return Ok(Some(String::from_utf8_lossy(&output.stdout).trim().to_string()));
+        return Ok(Some(
+            String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        ));
     }
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if stderr.contains("can't find pane") || stderr.contains("can't find window") {
@@ -113,6 +144,16 @@ pub fn split_window_run(command: &str) -> Result<String, String> {
     ])
 }
 
+fn resolve_send_option(option: &str) -> Result<SendOption, String> {
+    match option {
+        "display" => Ok(SendOption::Display),
+        "enter-exit" => Ok(SendOption::EnterExit),
+        "raw" => Ok(SendOption::Raw),
+        "enter" => Ok(SendOption::Enter),
+        _ => Err("tsend option must be `enter`, `enter-exit`, `raw`, or `display`".to_string()),
+    }
+}
+
 pub fn send_keys(pane_id: &str, msg: &str, option: SendOption) -> Result<(), String> {
     match option {
         SendOption::Enter => {
@@ -150,9 +191,20 @@ pub fn pane_pid(pane_id: &str) -> Result<String, String> {
     run_tmux(&["display-message", "-p", "-t", pane_id, "#{pane_pid}"])
 }
 
+fn pane_pid_optional(pane_id: &str) -> Result<Option<String>, String> {
+    run_tmux_optional(&["display-message", "-p", "-t", pane_id, "#{pane_pid}"])
+}
+
 pub fn capture_pane_tail(pane_id: &str, lines: usize) -> Result<String, String> {
     let line_count = lines.max(1).to_string();
-    match run_tmux_optional(&["capture-pane", "-p", "-t", pane_id, "-S", &format!("-{}", line_count)])? {
+    match run_tmux_optional(&[
+        "capture-pane",
+        "-p",
+        "-t",
+        pane_id,
+        "-S",
+        &format!("-{}", line_count),
+    ])? {
         Some(output) => Ok(output),
         None => Err(format!("pane not found: {}", pane_id)),
     }
@@ -167,19 +219,37 @@ pub fn wait_for_ready(
     if pattern.trim().is_empty() {
         return Err("wait_for_ready requires non-empty pattern".to_string());
     }
+    let patterns: Vec<&str> = pattern
+        .split('|')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .collect();
+    if patterns.is_empty() {
+        return Err("wait_for_ready requires non-empty pattern".to_string());
+    }
     let deadline = Instant::now() + Duration::from_millis(timeout_ms.max(1));
     let capture_lines = lines.max(20);
     loop {
         let tail = capture_pane_tail(pane_id, capture_lines)?;
-        if tail.contains(pattern) {
-            return Ok(format!("wait-ready matched: pane={} pattern={}", pane_id, pattern));
+        if patterns.iter().any(|candidate| tail.contains(candidate)) {
+            return Ok(format!(
+                "wait-ready matched: pane={} pattern={}",
+                pane_id, pattern
+            ));
         }
         if Instant::now() >= deadline {
             return Err(format!(
                 "wait-ready timeout: pane={} pattern={} tail={}",
                 pane_id,
                 pattern,
-                tail.lines().rev().take(10).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\\n")
+                tail.lines()
+                    .rev()
+                    .take(10)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<Vec<_>>()
+                    .join("\\n")
             ));
         }
         sleep(Duration::from_millis(250));
@@ -204,7 +274,9 @@ pub fn http_healthcheck(url: &str, timeout_ms: u64) -> Result<String, String> {
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if !output.status.success() {
-        return Err(format!("http-healthcheck failed: {} {}", url, stderr).trim().to_string());
+        return Err(format!("http-healthcheck failed: {} {}", url, stderr)
+            .trim()
+            .to_string());
     }
     if !stdout.contains("HTTP_STATUS=") {
         return Err(format!("http-healthcheck missing status marker: {}", url));
@@ -249,8 +321,61 @@ pub fn register_worker_pane(pane_id: &str) -> WorkerPaneRef {
     }
 }
 
+pub fn resolve_worker_ref(raw: &str) -> Result<WorkerPaneRef, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("worker ref must not be empty".to_string());
+    }
+    if trimmed.contains("::") {
+        return WorkerPaneRef::decode(trimmed);
+    }
+    Ok(register_worker_pane(trimmed))
+}
+
+fn ensure_worker_target(worker: &WorkerPaneRef) -> Result<(), String> {
+    let current_pid = pane_pid_optional(&worker.pane_id)?;
+    let Some(current_pid) = current_pid else {
+        return Err(format!("worker pane not found: {}", worker.pane_id));
+    };
+    if let Some(expected_pid) = worker.pane_pid.as_deref() {
+        let expected_pid = expected_pid.trim();
+        if !expected_pid.is_empty() && current_pid.trim() != expected_pid {
+            return Err(format!(
+                "worker pane pid mismatch: pane={} expected_pid={} actual_pid={}",
+                worker.pane_id, expected_pid, current_pid
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn worker_create() -> Result<WorkerPaneRef, String> {
+    let pane_id = split_window_pane()?;
+    Ok(register_worker_pane(&pane_id))
+}
+
+pub fn worker_send(worker: &WorkerPaneRef, msg: &str, option: SendOption) -> Result<(), String> {
+    ensure_worker_target(worker)?;
+    send_keys(&worker.pane_id, msg, option)
+}
+
+pub fn worker_wait(
+    worker: &WorkerPaneRef,
+    pattern: &str,
+    timeout_ms: u64,
+    lines: usize,
+) -> Result<String, String> {
+    ensure_worker_target(worker)?;
+    wait_for_ready(&worker.pane_id, pattern, timeout_ms, lines)
+}
+
 pub fn kill_worker_pane(worker: &WorkerPaneRef) -> Result<(), String> {
     kill_pane_if_pid_matches(&worker.pane_id, worker.pane_pid.as_deref())
+}
+
+pub fn worker_close(worker: &WorkerPaneRef) -> Result<(), String> {
+    ensure_worker_target(worker)?;
+    kill_worker_pane(worker)
 }
 
 pub fn display_message(pane_id: &str, msg: &str) -> Result<(), String> {
@@ -262,17 +387,7 @@ pub fn display_message(pane_id: &str, msg: &str) -> Result<(), String> {
 }
 
 pub fn tsend(pane_id: &str, msg: &str, option: &str) -> Result<String, String> {
-    let send_option = match option {
-        "display" => SendOption::Display,
-        "enter-exit" => SendOption::EnterExit,
-        "raw" => SendOption::Raw,
-        "enter" => SendOption::Enter,
-        _ => {
-            return Err(
-                "tsend option must be `enter`, `enter-exit`, `raw`, or `display`".to_string(),
-            )
-        }
-    };
+    let send_option = resolve_send_option(option)?;
     send_keys(pane_id, msg, send_option)?;
     Ok(format!(
         "tsend done: pane={} option={} msg={}",
@@ -282,7 +397,7 @@ pub fn tsend(pane_id: &str, msg: &str, option: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::http_healthcheck;
+    use super::{http_healthcheck, resolve_worker_ref, WorkerPaneRef};
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
@@ -321,5 +436,33 @@ mod tests {
         let result = http_healthcheck(&format!("http://{}", addr), 1_000);
         handle.join().expect("server thread join");
         assert!(result.is_err(), "expected error, got {:?}", result);
+    }
+
+    #[test]
+    fn worker_ref_round_trip_preserves_fields() {
+        let worker = WorkerPaneRef {
+            worker_id: "worker-123".to_string(),
+            pane_id: "%42".to_string(),
+            pane_pid: Some("1000".to_string()),
+        };
+        let encoded = worker.encode();
+        let decoded = WorkerPaneRef::decode(&encoded).expect("decode");
+        assert_eq!(decoded, worker);
+    }
+
+    #[test]
+    fn resolve_worker_ref_accepts_encoded_and_pane_id() {
+        let worker = WorkerPaneRef {
+            worker_id: "worker-123".to_string(),
+            pane_id: "%42".to_string(),
+            pane_pid: Some("1000".to_string()),
+        };
+        assert_eq!(
+            resolve_worker_ref(&worker.encode()).expect("encoded worker ref"),
+            worker
+        );
+        let pane_only = resolve_worker_ref("%17").expect("pane id");
+        assert_eq!(pane_only.pane_id, "%17".to_string());
+        assert!(!pane_only.worker_id.trim().is_empty());
     }
 }

@@ -3,6 +3,7 @@ import {
   Ban,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   Code2,
   CornerUpLeft,
   FileText,
@@ -322,6 +323,7 @@ export default function WebApp() {
     editDescription,
     editSpec,
     editGoal,
+    editArchitecture,
     editRules,
     editConstraints,
     editFeatures,
@@ -347,6 +349,7 @@ export default function WebApp() {
     setEditDescription,
     setEditSpec,
     setEditGoal,
+    setEditArchitecture,
     setEditRules,
     setEditConstraints,
     setEditFeatures,
@@ -754,10 +757,11 @@ export default function WebApp() {
     setEditDescription(detail.description);
     setEditSpec(detail.spec);
     setEditGoal(detail.goal);
+    setEditArchitecture(detail.architecture);
     setEditRules(detail.rules.join("\n"));
     setEditConstraints(detail.constraints.join("\n"));
     setEditFeatures(detail.features.join("\n"));
-  }, [detail?.id, detail?.name, detail?.description, detail?.spec, detail?.goal, detail?.rules, detail?.constraints, detail?.features]);
+  }, [detail?.id, detail?.name, detail?.description, detail?.spec, detail?.goal, detail?.architecture, detail?.rules, detail?.constraints, detail?.features]);
 
   useEffect(() => {
     if (tab === "project") {
@@ -1762,6 +1766,7 @@ export default function WebApp() {
     setEditDescription(data.detail.description ?? "");
     setEditSpec(data.detail.spec ?? "");
     setEditGoal(data.detail.goal ?? "");
+    setEditArchitecture(data.detail.architecture ?? "");
     setEditOpen(true);
   }
 
@@ -1774,6 +1779,7 @@ export default function WebApp() {
       setEditDescription(detail.description);
       setEditSpec(detail.spec);
       setEditGoal(detail.goal);
+      setEditArchitecture(detail.architecture);
     } else if (selectedPane === "rules") {
       setEditRules(detail.rules.join("\n"));
     } else if (selectedPane === "constraints") {
@@ -1796,7 +1802,8 @@ export default function WebApp() {
           name: editName,
           description: editDescription,
           spec: editSpec,
-          goal: editGoal
+          goal: editGoal,
+          architecture: editArchitecture
         })
       });
       const data = await res.json();
@@ -1845,7 +1852,8 @@ export default function WebApp() {
           name: editName,
           description: editDescription,
           spec: editSpec,
-          goal: editGoal
+          goal: editGoal,
+          architecture: editArchitecture
         })
       });
       const data = await res.json();
@@ -2482,10 +2490,12 @@ export default function WebApp() {
               editDescription={editDescription}
               editSpec={editSpec}
               editGoal={editGoal}
+              editArchitecture={editArchitecture}
               setEditName={setEditName}
               setEditDescription={setEditDescription}
               setEditSpec={setEditSpec}
               setEditGoal={setEditGoal}
+              setEditArchitecture={setEditArchitecture}
               editRules={editRules}
               editConstraints={editConstraints}
               editFeatures={editFeatures}
@@ -3019,6 +3029,8 @@ export default function WebApp() {
                   <Input value={editSpec} onChange={(e) => setEditSpec(e.target.value)} />
                   <Label>Goal</Label>
                   <Input data-testid="edit-goal" value={editGoal} onChange={(e) => setEditGoal(e.target.value)} />
+                  <Label>Architecture</Label>
+                  <Input value={editArchitecture} onChange={(e) => setEditArchitecture(e.target.value)} />
                 </>
               ) : selectedPane === "rules" ? (
                 <>

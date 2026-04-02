@@ -11,3 +11,5 @@ keymap:
   run_parallel: p
 ai:
   model: codex
+web:
+  workspace_path: /home/tree/project/mono_Manager/assets/web

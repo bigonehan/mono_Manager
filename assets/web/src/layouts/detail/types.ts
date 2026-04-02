@@ -17,10 +17,12 @@ export type DetailLayoutProps = {
   editDescription: string;
   editSpec: string;
   editGoal: string;
+  editArchitecture: string;
   setEditName: (value: string) => void;
   setEditDescription: (value: string) => void;
   setEditSpec: (value: string) => void;
   setEditGoal: (value: string) => void;
+  setEditArchitecture: (value: string) => void;
   editRules: string;
   editConstraints: string;
   editFeatures: string;

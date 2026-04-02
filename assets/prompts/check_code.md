@@ -29,6 +29,10 @@ description: "입력된 기능/목표 기준 체크리스트 생성 후 언어�
 - JS/TS 계열:
   - `vitest` 기반 테스트 실행
   - 라우팅/폼 제출 같은 사용자 흐름은 `playwright` E2E 실행
+  - `playwright` 모듈 로딩 실패(`Cannot find module '@playwright/test'`, `Cannot find module 'playwright'`)는 검증 실패가 아니라 러너 준비 실패로 분류한다.
+  - 위 실패가 나면 mono_Manager에 이미 설치된 workspace(`.../assets/web`)를 기준으로 같은 브라우저 검증 스크립트를 다시 실행한다.
+  - 재실행 기본 명령은 `python /home/tree/project/mono_Manager/scripts/run_playwright_qa.py --web-root /home/tree/project/mono_Manager/assets/web -- <same command>` 를 사용한다.
+  - 설치 workspace 기준 재실행에서도 같은 오류가 나면 그때만 실제 dependency 누락 또는 스크립트 문제로 판정한다.
 - 구현 함수의 반환값이 실제 로직 없이 고정값인지 반드시 점검한다.
   - 예: `Ok(false)`, `Ok(true)`, `return false`, `return true` 같은 하드코딩 반환
   - 입력값/상태/외부결과를 사용하지 않는 고정 반환이면 검증 실패로 기록한다.
@@ -47,6 +51,7 @@ description: "입력된 기능/목표 기준 체크리스트 생성 후 언어�
 - 유넷 테스트 실행후 pass 확인 
 - playwirght로(js/ts인 경우)로 headless 브라우저로 기능 실행후 `checklist`에 있는 기능을 수행하는지 스크린샷 
 - 디자인이나 화면 ui 요청이 있는경우또한 playwirght로 실행후 스크린샷 캡쳐 
+- QA 재실행 시에는 설치 workspace(`.../assets/web`)를 `cwd`로 사용하고 `NODE_PATH`와 `node_modules/.bin` 경로를 그 workspace 기준으로 연결한 상태에서 동일 스크립트를 실행해, 모듈 탐색 경로 문제와 실제 테스트 실패를 분리한다.
 
 # 완료 처리 
 - 완료 시 해결된 항목은 `.job.md#task#verify` 에서 `.job.md#task#complete`로 이동 

@@ -3136,3 +3136,25 @@
 - `.../src/main.rs`와 `.../AGENTS.md`에서 `report.md` 문자열을 전부 제거하고 관련 참조를 다른 표현으로 치환함.
 - 저장소/skill 범위(`.../src`, `.../assets`, `/home/tree/ai/skills`, `/home/tree/.codex/skills`)에서 `rg -n -F "report.md"` 재검색 결과가 0건인지 확인함.
 - 검증은 `cargo test` 전체 통과로 확인함.
+## 2026-04-02 - 작업한일
+- `.../src/code.rs`에 `project.md#architecture` 파싱, architecture skill contract resolver, draft/check 단계 주입, skill 미존재 시 fail-closed 처리를 추가함.
+- `.../src/web_api/mod.rs`, `.../assets/web/src/server/orc.ts`, `.../assets/web/src/components/WebApp.tsx`와 detail layout/store에 architecture 필드를 추가해 Web detail의 project info에서 `project.md#architecture`를 조회/수정할 수 있게 함.
+- `.../assets/templates/project.md`, `.../assets/presets/mono/templates/project.md`, `.../src/ui/mod.rs`를 새 `# architecture` 섹션에 맞게 갱신하고, `.../ai/skills/architecture-layered/SKILL.md` 샘플 contract를 추가함.
+- 검증은 `cargo test`, `npm --prefix assets/web run test:unit`, `npx tsc --noEmit -p tsconfig.json`로 수행함.
+## 2026-04-02 - 작업한일
+- `.../src/code.rs`의 `add_orc_drafts` 후처리에 `draft 0건`과 `actionable draft 0건`을 실패로 막는 검증을 추가해, impl worker가 실제 수정 없이 정상 종료처럼 보이는 경로를 차단함.
+- `.../src/code.rs` 테스트를 갱신해 비정상 빈 requirement/draft 상태가 에러로 고정되도록 회귀 검사를 추가함.
+- 검증은 `cargo test`와 `cargo install --path /home/tree/project/mono_Manager --bin orc --force`로 수행함.
+## 2026-04-02 - 작업한일
+- `.../scripts/run_playwright_qa.py`를 추가해 QA 검증이 임시 Node workspace에서 실행되더라도 `.../assets/web/node_modules`를 재사용하며 같은 Playwright 스크립트를 다시 돌릴 수 있게 함.
+- `.../assets/prompts/check_code.md`에 Playwright 모듈 로딩 실패를 `검증 실패`가 아닌 `러너 준비 실패`로 분기하고, 임시 QA workspace 재실행 절차를 고정함.
+- 검증은 임시 `/tmp/qa-playwright-repro`에서 모듈 로딩 실패를 재현한 뒤 helper 재실행으로 `@playwright/test` 로딩과 `playwright --version` 성공을 확인함.
+## 2026-04-02 - 작업한일
+- `.../configs/configs.yaml`, `.../src/config/mod.rs`, `.../src/web/mod.rs`를 갱신해 mono_Manager의 설치된 web workspace 경로를 설정값으로 고정하고 공용 함수가 그 경로를 단일 기준으로 해석하게 함.
+- `.../scripts/run_playwright_qa.py`를 임시 QA workspace 방식에서 설치된 `.../assets/web` workspace 직접 실행 방식으로 바꿔 Playwright 재실행이 항상 같은 node_modules를 사용하게 함.
+- `.../assets/prompts/check_code.md`도 QA 재실행 기준을 설치 workspace 직접 사용으로 동기화함.
+- 검증은 `python scripts/run_playwright_qa.py --web-root /home/tree/project/mono_Manager/assets/web -- node -e "require('@playwright/test')"` , `python scripts/run_playwright_qa.py --web-root /home/tree/project/mono_Manager/assets/web -- playwright --version`, `cargo test`로 수행함.
+## 2026-04-02 - 작업한일
+- `.../src/tmux/mod.rs`, `.../src/cli.rs`, `.../src/chat.rs`, `.../src/bin/rc.rs`에 ORC worker 표준 API(`worker-create/send/wait/close`)를 추가하고, tmux worker 스크립트 생성 없이 내부 함수로 pane orchestration 하도록 변경함.
+- `.../README.md`, `.../AGENTS.md`, `/home/tree/ai/codex/AGENTS.override.md`, `/home/tree/.codex/skills/manager/SKILL.md`, `/home/tree/ai/skills/orc-cli-workflow/SKILL.md`, `/home/tree/ai/skills/orc_manager/SKILL.md`를 새 worker API 기준으로 동기화함.
+- 검증은 `cargo test`와 worker 관련 문자열 검색(`rg`) 및 설치 갱신으로 수행함.

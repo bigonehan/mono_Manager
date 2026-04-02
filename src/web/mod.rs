@@ -140,8 +140,10 @@ fn open_web_ui_build_preview(web_dir: &Path, web_port: u16) -> Result<String, St
     }
 }
 
-fn resolve_web_dir() -> Result<PathBuf, String> {
-    let web_dir = crate::source_root().join("assets").join("web");
+pub(crate) fn resolve_web_dir() -> Result<PathBuf, String> {
+    let web_dir = crate::load_app_config()
+        .and_then(|config| config.web_workspace_path().map(PathBuf::from))
+        .unwrap_or_else(|| crate::source_root().join("assets").join("web"));
     ensure_web_assets_exist(&web_dir)?;
     Ok(web_dir)
 }

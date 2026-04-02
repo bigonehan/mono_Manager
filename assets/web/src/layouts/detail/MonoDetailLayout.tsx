@@ -32,10 +32,12 @@ export function MonoDetailLayout({
   editDescription,
   editSpec,
   editGoal,
+  editArchitecture,
   setEditName,
   setEditDescription,
   setEditSpec,
   setEditGoal,
+  setEditArchitecture,
   saveProjectInfo,
   projectInfoSaving,
   editRules,
@@ -100,6 +102,13 @@ export function MonoDetailLayout({
               value={editGoal}
               onChange={(e) => setEditGoal(e.target.value)}
               className="mt-1"
+              disabled={actionsDisabled || projectInfoSaving}
+            />
+            <Input
+              value={editArchitecture}
+              onChange={(e) => setEditArchitecture(e.target.value)}
+              className="mt-1"
+              placeholder="architecture skill id"
               disabled={actionsDisabled || projectInfoSaving}
             />
             <Button
