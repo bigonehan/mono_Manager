@@ -27,6 +27,7 @@ const PROJECT_DIR: &str = ".project";
 const PROJECT_LOG_FILE: &str = ".project/log.md";
 const SCREENSHOT_DIR: &str = ".project/screenshot";
 const STEP_HEARTBEAT_SEC: u64 = 15;
+const CODEXO_BIN_PATH: &str = "/home/tree/ai/codex/codexo";
 
 #[derive(Debug, Parser)]
 #[command(name = "rc")]
@@ -742,7 +743,8 @@ fn run_codex_plan_prompt(prompt: &str) -> Result<String> {
     command.args([
         "-lc",
         &format!(
-            "timeout 20 codex exec{} {}",
+            "timeout 20 {} exec{} {}",
+            shell_quote(codex_exec_bin()),
             danger_flag,
             shell_quote(prompt)
         ),
@@ -767,6 +769,14 @@ fn run_codex_plan_prompt(prompt: &str) -> Result<String> {
 
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn codex_exec_bin() -> &'static str {
+    if Path::new(CODEXO_BIN_PATH).is_file() {
+        CODEXO_BIN_PATH
+    } else {
+        "codex"
+    }
 }
 
 fn format_rc_phase_heartbeat(phase: &str, detail: &str, elapsed_sec: u64) -> String {
@@ -1859,7 +1869,8 @@ fn run_codex_checklist_prompt(prompt: &str) -> Result<String> {
     command.args([
         "-lc",
         &format!(
-            "timeout 20 codex exec{} {}",
+            "timeout 20 {} exec{} {}",
+            shell_quote(codex_exec_bin()),
             danger_flag,
             shell_quote(prompt)
         ),
@@ -2007,8 +2018,9 @@ fn maybe_spawn_codex_worker(workdir: &Path) -> Result<()> {
         " --dangerously-bypass-approvals-and-sandbox"
     };
     let command = format!(
-        "cd {} && codex exec{} \"{}\"",
-        workdir.display(),
+        "cd {} && {} exec{} \"{}\"",
+        shell_quote(&workdir.display().to_string()),
+        shell_quote(codex_exec_bin()),
         danger_flag,
         message
     );
@@ -2550,5 +2562,10 @@ mod tests {
     fn builds_window_scripts() {
         assert!(PowerShellWindowsBridge::list_contexts_script().contains("Get-Process"));
         assert!(PowerShellWindowsBridge::select_context_script("1234").contains("1234"));
+    }
+
+    #[test]
+    fn codex_exec_bin_prefers_codexo_absolute_path() {
+        assert_eq!(codex_exec_bin(), CODEXO_BIN_PATH);
     }
 }

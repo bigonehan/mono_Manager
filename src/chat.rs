@@ -8,6 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const CODEX_DANGEROUS_FLAG: &str = "--dangerously-bypass-approvals-and-sandbox";
+const CODEXO_BIN_PATH: &str = "/home/tree/ai/codex/codexo";
 const LONG_WAIT_REPORT_SEC: u64 = 60;
 
 #[derive(Debug, Clone, Copy)]
@@ -360,6 +361,15 @@ fn quote_sh(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
+fn resolve_llm_bin_path(llm_bin: &str) -> String {
+    match llm_bin {
+        "codex" | "codexo" | "codex-run" if Path::new(CODEXO_BIN_PATH).is_file() => {
+            CODEXO_BIN_PATH.to_string()
+        }
+        _ => llm_bin.to_string(),
+    }
+}
+
 fn build_tmux_llm_exec_command(
     dir: &Path,
     llm_bin: &str,
@@ -591,7 +601,7 @@ pub(crate) fn run_codex_exec_capture_with_timeout(
 ) -> Result<String, String> {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let prompt = normalize_exec_prompt(prompt);
-    let model_bin = crate::default_model_bin();
+    let model_bin = resolve_llm_bin_path(&crate::default_model_bin());
     let trace_label = format!("{} exec [{}]", model_bin, prompt_trace_label(&prompt));
     run_codex_exec_capture_in_dir_with_attempts_labeled(
         &cwd,
@@ -670,7 +680,7 @@ fn run_codex_exec_capture_in_dir_with_attempts_labeled_and_progress_watch(
 ) -> Result<String, String> {
     let prompt = normalize_exec_prompt(prompt);
     append_chat_log(dir, "LLM_PROMPT", &prompt);
-    let model_bin = crate::default_model_bin();
+    let model_bin = resolve_llm_bin_path(&crate::default_model_bin());
     let dangerous = crate::model_supports_dangerous_flag(&model_bin);
     let total_attempts = total_attempts.max(1);
     let mut last_error = "unknown llm error".to_string();
@@ -791,9 +801,10 @@ pub(crate) fn run_codex_exec_capture_in_dir_once_with_timeout(
 pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, String> {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let prompt = normalize_exec_prompt(prompt);
+    let llm = resolve_llm_bin_path(llm);
     append_chat_log(&cwd, "LLM_PROMPT", &prompt);
     let timeout_sec = codex_exec_timeout_sec().max(30);
-    let use_dangerous = crate::model_supports_dangerous_flag(llm);
+    let use_dangerous = crate::model_supports_dangerous_flag(&llm);
     let total_attempts = llm_retry_count();
     let trace_label = prompt_trace_label(&prompt);
     let mut last_error = "unknown llm error".to_string();
@@ -816,7 +827,7 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
         if should_use_tmux_for_llm() {
             match run_llm_via_tmux(
                 &cwd,
-                llm,
+                &llm,
                 &prompt,
                 timeout_sec,
                 true,
@@ -831,7 +842,7 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
                 Ok(result) if result.stderr.contains("unexpected argument '-y'") => {
                     match run_llm_via_tmux(
                         &cwd,
-                        llm,
+                        &llm,
                         &prompt,
                         timeout_sec,
                         false,
@@ -859,7 +870,7 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
                 }
             }
         } else {
-            let mut command = Command::new(llm);
+            let mut command = Command::new(&llm);
             command.arg("exec").arg("-y");
             if use_dangerous {
                 command.arg(CODEX_DANGEROUS_FLAG);
@@ -881,7 +892,7 @@ pub(crate) fn run_llm_exec_capture(llm: &str, prompt: &str) -> Result<String, St
                 Ok(output) => {
                     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
                     if stderr.contains("unexpected argument '-y'") {
-                        let mut retry_command = Command::new(llm);
+                        let mut retry_command = Command::new(&llm);
                         retry_command.arg("exec");
                         if use_dangerous {
                             retry_command.arg(CODEX_DANGEROUS_FLAG);
@@ -1010,5 +1021,11 @@ mod tests {
             progress_watch_decision(watch, 301, Some(121), None),
             ProgressWatchDecision::Stalled
         );
+    }
+
+    #[test]
+    fn resolve_llm_bin_path_prefers_codexo_absolute_path() {
+        assert_eq!(super::resolve_llm_bin_path("codex"), super::CODEXO_BIN_PATH);
+        assert_eq!(super::resolve_llm_bin_path("codexo"), super::CODEXO_BIN_PATH);
     }
 }
