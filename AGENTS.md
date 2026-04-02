@@ -24,7 +24,7 @@
 
 ## UI Axis Alignment Hard Gate
 - detail page의 sidebar/main 수평축 정렬 규칙은 이 문서를 단일 원천으로 사용한다.
-- UI 변경이 포함된 작업은 항상 `bash scripts/check_front_ui_rules.sh`를 실행한다.
+- UI 변경이 포함된 작업은 항상 `cargo run --bin rc -- check-front-ui-rules`를 실행한다.
 - 위 검증 실패 시 완료 보고를 금지한다.
 - `current.png` 기준 수평축 규칙:
 - 왼쪽은 `search folders... + mic 버튼` 행이 먼저 나오고, 그 바로 아래 `project sidebar card`가 시작된다.
@@ -33,7 +33,7 @@
 - pane 내부 정렬을 수정한 턴에서는 outer shell만 검사하면 실패로 처리한다.
 - `domains`, `drafts`, `check` 같은 개별 pane의 헤더/본문 라인을 바꿨다면 해당 pane에 전용 `data-testid`를 추가하고, e2e에서 헤더와 본문 panel의 좌우 기준선 오차를 각각 2px 이하로 검증해야 한다.
 - `detail-main-shell만 통과`하거나 `스크린샷 육안 확인만 수행`한 상태로는 완료 보고를 금지한다.
-- fail-closed: 수평선/기준선 관련 수정 후에는 `bash scripts/check_front_ui_rules.sh`와 해당 pane 전용 alignment assertion이 둘 다 통과해야만 종료할 수 있다.
+- fail-closed: 수평선/기준선 관련 수정 후에는 `cargo run --bin rc -- check-front-ui-rules`와 해당 pane 전용 alignment assertion이 둘 다 통과해야만 종료할 수 있다.
 
 ## UI Flow Verification Rule
 - When the user requests a UI change, verify and implement the connected internal behavior flow in the same task.

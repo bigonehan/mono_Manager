@@ -39,6 +39,8 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum TopLevelCommand {
     Clit(ClitCommand),
+    RunPlaywrightQa(RunPlaywrightQaArgs),
+    CheckFrontUiRules,
 }
 
 #[derive(Debug, Args)]
@@ -68,11 +70,32 @@ struct TestArgs {
     headed: HeadedArg,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ParsedCliInput {
     target_path: PathBuf,
     mode: String,
     headed: HeadMode,
+}
+
+#[derive(Debug, Args, Clone)]
+struct RunPlaywrightQaArgs {
+    #[arg(long = "web-root")]
+    web_root: PathBuf,
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    command: Vec<OsString>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedPlaywrightQaInput {
+    web_root: PathBuf,
+    command: Vec<OsString>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ParsedCommand {
+    ClitTest(ParsedCliInput),
+    RunPlaywrightQa(ParsedPlaywrightQaInput),
+    CheckFrontUiRules,
 }
 
 #[derive(Debug)]
@@ -361,20 +384,30 @@ impl WindowsBridge for PowerShellWindowsBridge {
 }
 
 fn main() {
-    if let Err(err) = run() {
-        eprintln!("{err:#}");
-        std::process::exit(1);
+    match run() {
+        Ok(code) => std::process::exit(code),
+        Err(err) => {
+            eprintln!("{err:#}");
+            std::process::exit(1);
+        }
     }
 }
 
-fn run() -> Result<()> {
+fn run() -> Result<i32> {
     let config = load_config()?;
     let parsed = parse_cli_from(std::env::args_os())?;
-    let _ = (config, parsed);
-    bail!("rc clit test was removed; use `orc check_orc_code` and ORC helper commands instead")
+    match parsed {
+        ParsedCommand::ClitTest(input) => {
+            let _ = config;
+            let _ = input;
+            bail!("rc clit test was removed; use `orc check_orc_code` and ORC helper commands instead")
+        }
+        ParsedCommand::RunPlaywrightQa(input) => execute_run_playwright_qa(input),
+        ParsedCommand::CheckFrontUiRules => execute_check_front_ui_rules(),
+    }
 }
 
-fn parse_cli_from<I, T>(args: I) -> Result<ParsedCliInput>
+fn parse_cli_from<I, T>(args: I) -> Result<ParsedCommand>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
@@ -389,10 +422,14 @@ where
     })?;
     match cli.command {
         TopLevelCommand::Clit(command) => match command.command {
-            ClitSubcommand::Test(args) => {
-                validate_test_args(args).map_err(|error| anyhow::anyhow!(error.message))
-            }
+            ClitSubcommand::Test(args) => validate_test_args(args)
+                .map(ParsedCommand::ClitTest)
+                .map_err(|error| anyhow::anyhow!(error.message)),
         },
+        TopLevelCommand::RunPlaywrightQa(args) => validate_run_playwright_qa_args(args)
+            .map(ParsedCommand::RunPlaywrightQa)
+            .map_err(|error| anyhow::anyhow!(error.message)),
+        TopLevelCommand::CheckFrontUiRules => Ok(ParsedCommand::CheckFrontUiRules),
     }
 }
 
@@ -422,6 +459,87 @@ fn validate_test_args(args: TestArgs) -> std::result::Result<ParsedCliInput, Cli
             HeadedArg::Off => HeadMode::Off,
         },
     })
+}
+
+fn validate_run_playwright_qa_args(
+    args: RunPlaywrightQaArgs,
+) -> std::result::Result<ParsedPlaywrightQaInput, CliInputError> {
+    let web_root = args.web_root.canonicalize().map_err(|_| {
+        CliInputError::invalid_input(format!(
+            "invalid argument `--web-root`: path does not exist ({})",
+            args.web_root.display()
+        ))
+    })?;
+    if !web_root.is_dir() {
+        return Err(CliInputError::invalid_input(format!(
+            "invalid argument `--web-root`: not a directory ({})",
+            web_root.display()
+        )));
+    }
+    let mut command = args.command;
+    if matches!(command.first().and_then(|value| value.to_str()), Some("--")) {
+        command.remove(0);
+    }
+    if command.is_empty() {
+        return Err(CliInputError::invalid_input(
+            "run-playwright-qa requires a command after `--`",
+        ));
+    }
+    Ok(ParsedPlaywrightQaInput { web_root, command })
+}
+
+fn execute_run_playwright_qa(input: ParsedPlaywrightQaInput) -> Result<i32> {
+    let helper_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("scripts")
+        .join("playwright_safe_helpers.mjs")
+        .canonicalize()
+        .with_context(|| "failed to resolve playwright helper path")?;
+    let paths = browser::prepare_qa_env_paths(&input.web_root, &helper_path)?;
+    let staged = browser::stage_node_entry_script(&input.command, &input.web_root)?;
+    let mut command = Command::new(
+        staged
+            .command
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("missing QA command"))?,
+    );
+    if staged.command.len() > 1 {
+        command.args(&staged.command[1..]);
+    }
+    command.current_dir(&input.web_root);
+    let mut env = std::env::vars_os().collect::<Vec<_>>();
+    let _ = &mut env;
+    command.env(
+        "NODE_PATH",
+        browser::prepend_env_list(
+            std::env::var_os("NODE_PATH").as_deref(),
+            &paths.node_modules,
+        ),
+    );
+    if paths.bin_dir.exists() {
+        command.env(
+            "PATH",
+            browser::prepend_env_list(std::env::var_os("PATH").as_deref(), &paths.bin_dir),
+        );
+    }
+    command.env("ORC_QA_WEB_ROOT", &input.web_root);
+    command.env("ORC_QA_INSTALLED_WORKSPACE", &input.web_root);
+    command.env("ORC_QA_PLAYWRIGHT_HELPERS", &paths.helper_path);
+    let status = command.status();
+    if let Some(staging_dir) = staged.staging_dir {
+        let _ = fs::remove_dir_all(staging_dir);
+    }
+    let status = status.with_context(|| "failed to execute QA command")?;
+    Ok(status.code().unwrap_or(1))
+}
+
+fn execute_check_front_ui_rules() -> Result<i32> {
+    println!("[ui-rule-check] running mono detail alignment e2e");
+    let check = browser::build_front_ui_rule_check();
+    let status = Command::new(&check.program)
+        .args(&check.args)
+        .status()
+        .with_context(|| "failed to execute front UI rule check")?;
+    Ok(status.code().unwrap_or(1))
 }
 
 fn execute_test(input: ParsedCliInput, config: &Config) -> Result<()> {
@@ -2040,6 +2158,34 @@ mod tests {
         })
         .expect("parse");
         assert_eq!(parsed.mode, "smoke");
+    }
+
+    #[test]
+    fn parses_run_playwright_qa_arguments() {
+        let dir = tempdir().expect("tempdir");
+        let parsed = validate_run_playwright_qa_args(RunPlaywrightQaArgs {
+            web_root: dir.path().to_path_buf(),
+            command: vec![
+                OsString::from("--"),
+                OsString::from("node"),
+                OsString::from("qa-check.mjs"),
+            ],
+        })
+        .expect("parse");
+        assert_eq!(
+            parsed.web_root,
+            dir.path().canonicalize().expect("canonicalize")
+        );
+        assert_eq!(
+            parsed.command,
+            vec![OsString::from("node"), OsString::from("qa-check.mjs")]
+        );
+    }
+
+    #[test]
+    fn parse_cli_supports_check_front_ui_rules_command() {
+        let parsed = parse_cli_from(["rc", "check-front-ui-rules"]).expect("parse");
+        assert_eq!(parsed, ParsedCommand::CheckFrontUiRules);
     }
 
     #[test]

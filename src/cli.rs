@@ -1,4 +1,6 @@
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::{fs, fs::OpenOptions, io::Write};
 
 pub fn program_name(args: &[String]) -> &str {
     args.first()
@@ -49,6 +51,8 @@ pub fn print_usage(program: &str) {
         "worker-send <worker_ref|pane_id> <msg...> [enter|enter-exit|raw|display]",
         "worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]",
         "worker-close <worker_ref|pane_id>",
+        "manager-trace <stage> [detail...]",
+        "check-manager-trace [preflight|impl|check|final]",
         "send-tmux <pane_id> <msg...> [enter|enter-exit|raw|display]",
         "capture-pane <pane_id> [lines]",
         "wait-ready <pane_id> <pattern> [timeout_ms] [lines]",
@@ -81,8 +85,125 @@ fn canonical_command_for_match(command: &str) -> &str {
         "init_code_project" => "init_orc_project",
         "impl_code_draft" | "cli_impl_code_draft" => "impl_orc_code",
         "cli_create_input_md" => "create_input_md",
+        "orc_manager_trace" => "manager-trace",
+        "check_orc_manager_trace" => "check-manager-trace",
         other => other,
     }
+}
+
+const ORC_MANAGER_TRACE_FILE: &str = ".project/orc_manager_trace.log";
+const CHECK_PROCESS_FILE: &str = ".project/check-process.md";
+
+fn supported_manager_trace_stage(stage: &str) -> bool {
+    matches!(
+        stage,
+        "stage_global_override_read"
+            | "stage_job_md_locked"
+            | "stage_plan_done"
+            | "stage_impl_session_started"
+            | "stage_impl_done"
+            | "stage_check_session_started"
+            | "stage_check_done"
+            | "stage_manager_reverified"
+    )
+}
+
+fn read_orc_manager_trace_lines() -> Result<Vec<String>, String> {
+    fs::read_to_string(ORC_MANAGER_TRACE_FILE)
+        .map(|content| content.lines().map(|line| line.to_string()).collect())
+        .map_err(|_| format!("ERROR: orc_manager trace file missing: {ORC_MANAGER_TRACE_FILE}"))
+}
+
+fn find_stage_line(lines: &[String], stage: &str) -> Result<usize, String> {
+    lines.iter()
+        .position(|line| line.contains(stage))
+        .map(|idx| idx + 1)
+        .ok_or_else(|| format!("ERROR: missing required orc_manager trace: {stage}"))
+}
+
+fn assert_trace_lt(lines: &[String], left: &str, right: &str) -> Result<(), String> {
+    let left_line = find_stage_line(lines, left)?;
+    let right_line = find_stage_line(lines, right)?;
+    if left_line >= right_line {
+        return Err(format!(
+            "ERROR: invalid orc_manager trace order: {left} should precede {right}"
+        ));
+    }
+    Ok(())
+}
+
+fn append_orc_manager_trace(stage: &str, detail: &[String]) -> Result<String, String> {
+    if !supported_manager_trace_stage(stage) {
+        return Err(format!("ERROR: unsupported orc_manager stage: {stage}"));
+    }
+    fs::create_dir_all(".project").map_err(|e| e.to_string())?;
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs();
+    let detail_text = detail.join(" ");
+    let mut line = format!("[{ts}] {stage}");
+    if !detail_text.is_empty() {
+        line.push_str(" | ");
+        line.push_str(&detail_text);
+    }
+
+    let mut trace = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(ORC_MANAGER_TRACE_FILE)
+        .map_err(|e| e.to_string())?;
+    writeln!(trace, "{line}").map_err(|e| e.to_string())?;
+
+    let mut check_process = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(CHECK_PROCESS_FILE)
+        .map_err(|e| e.to_string())?;
+    let check_line = if detail_text.is_empty() {
+        format!("- [{ts}] {stage}")
+    } else {
+        format!("- [{ts}] {stage} | {detail_text}")
+    };
+    writeln!(check_process, "{check_line}").map_err(|e| e.to_string())?;
+    Ok(line)
+}
+
+fn check_orc_manager_trace(mode: &str) -> Result<String, String> {
+    let lines = read_orc_manager_trace_lines()?;
+    match mode {
+        "preflight" | "impl" => {
+            find_stage_line(&lines, "stage_global_override_read")?;
+            find_stage_line(&lines, "stage_job_md_locked")?;
+            find_stage_line(&lines, "stage_plan_done")?;
+            assert_trace_lt(&lines, "stage_global_override_read", "stage_job_md_locked")?;
+            assert_trace_lt(&lines, "stage_job_md_locked", "stage_plan_done")?;
+        }
+        "check" => {
+            find_stage_line(&lines, "stage_impl_session_started")?;
+            find_stage_line(&lines, "stage_impl_done")?;
+            assert_trace_lt(&lines, "stage_global_override_read", "stage_job_md_locked")?;
+            assert_trace_lt(&lines, "stage_job_md_locked", "stage_plan_done")?;
+            assert_trace_lt(&lines, "stage_plan_done", "stage_impl_session_started")?;
+            assert_trace_lt(&lines, "stage_impl_session_started", "stage_impl_done")?;
+        }
+        "final" => {
+            find_stage_line(&lines, "stage_impl_session_started")?;
+            find_stage_line(&lines, "stage_impl_done")?;
+            find_stage_line(&lines, "stage_check_session_started")?;
+            find_stage_line(&lines, "stage_check_done")?;
+            find_stage_line(&lines, "stage_manager_reverified")?;
+            assert_trace_lt(&lines, "stage_global_override_read", "stage_job_md_locked")?;
+            assert_trace_lt(&lines, "stage_job_md_locked", "stage_plan_done")?;
+            assert_trace_lt(&lines, "stage_plan_done", "stage_impl_session_started")?;
+            assert_trace_lt(&lines, "stage_impl_session_started", "stage_impl_done")?;
+            assert_trace_lt(&lines, "stage_impl_done", "stage_check_session_started")?;
+            assert_trace_lt(&lines, "stage_check_session_started", "stage_check_done")?;
+            assert_trace_lt(&lines, "stage_check_done", "stage_manager_reverified")?;
+        }
+        _ => return Err(format!("ERROR: unsupported mode: {mode}")),
+    }
+    Ok(format!("PASS: orc_manager trace verified ({mode})"))
 }
 
 fn resolve_default_profile_name() -> String {
@@ -245,6 +366,22 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             let worker = super::tmux::resolve_worker_ref(&tail[0])?;
             super::tmux::worker_close(&worker)?;
             Ok(format!("worker-close done: pane={}", worker.pane_id))
+        }
+        "manager-trace" => {
+            if tail.is_empty() {
+                return Err("manager-trace requires <stage> [detail...]".to_string());
+            }
+            append_orc_manager_trace(&tail[0], &tail[1..])
+        }
+        "check-manager-trace" => {
+            if tail.len() > 1 {
+                return Err(
+                    "check-manager-trace accepts zero args or one of: preflight, impl, check, final"
+                        .to_string(),
+                );
+            }
+            let mode = tail.first().map(String::as_str).unwrap_or("preflight");
+            check_orc_manager_trace(mode)
         }
         "send-tmux" => {
             if tail.len() < 2 {
@@ -435,5 +572,21 @@ mod tests {
     #[test]
     fn canonical_command_keeps_worker_create() {
         assert_eq!(canonical_command_for_match("worker-create"), "worker-create");
+    }
+
+    #[test]
+    fn canonical_command_maps_orc_manager_trace_alias() {
+        assert_eq!(
+            canonical_command_for_match("orc_manager_trace"),
+            "manager-trace"
+        );
+    }
+
+    #[test]
+    fn canonical_command_maps_check_orc_manager_trace_alias() {
+        assert_eq!(
+            canonical_command_for_match("check_orc_manager_trace"),
+            "check-manager-trace"
+        );
     }
 }
