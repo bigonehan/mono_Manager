@@ -3177,3 +3177,7 @@
 - `.../scripts/playwright_safe_helpers.mjs`를 추가해 ad-hoc Playwright node script가 regex literal escape 실수로 깨지지 않도록 공용 regex/testid helper를 체크인함.
 - `.../scripts/run_playwright_qa.py`는 `ORC_QA_PLAYWRIGHT_HELPERS` 절대경로를 제공하고, 기존 `NODE_PATH`/`PATH`를 덮어쓰지 않고 prepend 방식으로 병합하도록 최소 수정함.
 - `.../assets/prompts/check_code.md`에는 `getByTestId` 사용 전 실제 `data-testid` 수집/검증과 공용 helper 재사용 규칙을 추가했고, 검증은 `node --test scripts/playwright_safe_helpers.test.mjs`와 대상 파일 기준 `git diff` 확인으로 수행함.
+## 2026-04-02 - 작업한일
+- `.../src/cli.rs`에 `worker-send --stdin`, `send-tmux --stdin` 경로를 추가해 ORC worker 위임 문자열을 argv 인용 없이 그대로 전달할 수 있게 함.
+- `.../src/tmux/mod.rs`는 tmux 전송을 `send-keys -l` literal mode로 바꿔 here-doc 같은 멀티라인 명령이 key-name 해석 없이 pane에 그대로 들어가게 고정함.
+- `.../README.md` 사용법을 새 경로로 맞췄고, 검증은 `cargo test --quiet cli:: -- --nocapture`, `cargo test --quiet tmux:: -- --nocapture`, `cat <<'EOF' | cargo run --quiet --bin orc -- worker-send <worker> --stdin enter ... EOF` 실제 실행으로 수행함.
