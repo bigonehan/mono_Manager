@@ -51,6 +51,7 @@ pub fn print_usage(program: &str) {
         "worker-send <worker_ref|pane_id> <msg...> [enter|enter-exit|raw|display]",
         "worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]",
         "worker-close <worker_ref|pane_id>",
+        "worker-dev-url <worker_ref|pane_id> [lines]",
         "manager-trace <stage> [detail...]",
         "check-manager-trace [preflight|impl|check|final]",
         "send-tmux <pane_id> <msg...> [enter|enter-exit|raw|display]",
@@ -367,6 +368,20 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             super::tmux::worker_close(&worker)?;
             Ok(format!("worker-close done: pane={}", worker.pane_id))
         }
+        "worker-dev-url" => {
+            if tail.is_empty() || tail.len() > 2 {
+                return Err("worker-dev-url requires <worker_ref|pane_id> [lines]".to_string());
+            }
+            let worker = super::tmux::resolve_worker_ref(&tail[0])?;
+            let lines = if tail.len() == 2 {
+                tail[1]
+                    .parse::<usize>()
+                    .map_err(|_| "worker-dev-url: lines must be a positive integer".to_string())?
+            } else {
+                120
+            };
+            super::tmux::worker_dev_url(&worker, lines)
+        }
         "manager-trace" => {
             if tail.is_empty() {
                 return Err("manager-trace requires <stage> [detail...]".to_string());
@@ -572,6 +587,11 @@ mod tests {
     #[test]
     fn canonical_command_keeps_worker_create() {
         assert_eq!(canonical_command_for_match("worker-create"), "worker-create");
+    }
+
+    #[test]
+    fn canonical_command_keeps_worker_dev_url() {
+        assert_eq!(canonical_command_for_match("worker-dev-url"), "worker-dev-url");
     }
 
     #[test]
