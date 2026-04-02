@@ -369,6 +369,27 @@ pub fn worker_wait(
     wait_for_ready(&worker.pane_id, pattern, timeout_ms, lines)
 }
 
+fn extract_dev_url_from_tail(tail: &str) -> Option<String> {
+    tail.lines().rev().find_map(|line| {
+        let start = line.find("dev=http://").or_else(|| line.find("dev=https://"))?;
+        let rest = &line[(start + 4)..];
+        let end = rest.find(';').unwrap_or(rest.len());
+        let candidate = rest[..end].trim();
+        if candidate.starts_with("http://") || candidate.starts_with("https://") {
+            Some(candidate.to_string())
+        } else {
+            None
+        }
+    })
+}
+
+pub fn worker_dev_url(worker: &WorkerPaneRef, lines: usize) -> Result<String, String> {
+    ensure_worker_target(worker)?;
+    let tail = capture_pane_tail(&worker.pane_id, lines.max(20))?;
+    extract_dev_url_from_tail(&tail)
+        .ok_or_else(|| format!("worker-dev-url not found: pane={}", worker.pane_id))
+}
+
 pub fn kill_worker_pane(worker: &WorkerPaneRef) -> Result<(), String> {
     kill_pane_if_pid_matches(&worker.pane_id, worker.pane_pid.as_deref())
 }
@@ -397,7 +418,7 @@ pub fn tsend(pane_id: &str, msg: &str, option: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{http_healthcheck, resolve_worker_ref, WorkerPaneRef};
+    use super::{extract_dev_url_from_tail, http_healthcheck, resolve_worker_ref, WorkerPaneRef};
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
@@ -464,5 +485,22 @@ mod tests {
         let pane_only = resolve_worker_ref("%17").expect("pane id");
         assert_eq!(pane_only.pane_id, "%17".to_string());
         assert!(!pane_only.worker_id.trim().is_empty());
+    }
+
+    #[test]
+    fn extract_dev_url_from_worker_done_tail_prefers_latest_match() {
+        let tail = "\
+worker:impl-test:done:dev=http://127.0.0.1:4173;report=first\n\
+other log\n\
+worker:impl-test:done:dev=http://127.0.0.1:4174;report=second\n";
+        assert_eq!(
+            extract_dev_url_from_tail(tail).as_deref(),
+            Some("http://127.0.0.1:4174")
+        );
+    }
+
+    #[test]
+    fn extract_dev_url_from_worker_done_tail_returns_none_without_dev_marker() {
+        assert!(extract_dev_url_from_tail("worker:impl:done:report=none").is_none());
     }
 }

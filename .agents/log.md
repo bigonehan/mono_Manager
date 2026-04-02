@@ -1,4 +1,9 @@
 ## 2026-04-02 - 작업한일
+- `.../src/tmux/mod.rs`, `.../src/cli.rs`에 `orc worker-dev-url`을 추가해 worker pane tail에서 최신 `worker:...:done:dev=<url>`을 다시 추출하도록 만들고, manager가 동적 포트 변경 후 실제 dev URL을 재회수할 수 있게 함.
+- `.../orc_manager/SKILL.md`, `.../README.md`를 갱신해 manager가 worker 완료 메시지 직후 `orc worker-dev-url` 결과를 source of truth로 확인한 뒤 QA/check에 넘기도록 고정함.
+- 검증은 `cargo test`, `orc worker-dev-url` 추출 테스트, 포트 충돌 상황 설명용 실제 listener 확인으로 수행함.
+
+## 2026-04-02 - 작업한일
 - `.../src/cli.rs`에 `orc manager-trace`, `orc check-manager-trace` 명령과 구형 alias(`orc_manager_trace`, `check_orc_manager_trace`)를 추가해 `orc_manager` trace 기록/검증을 ORC 내부 함수로 이관함.
 - `.../README.md`, `.../orc_manager/SKILL.md`, `.../codex/AGENTS.override.md`를 새 ORC 명령 기준으로 동기화하고, 레거시 `.../scripts/orc_manager_trace.sh`, `.../scripts/check_orc_manager_trace.sh` 파일과 호출 언급을 제거함.
 - 검증은 `cargo test`, `cargo run --bin orc -- --help`, 임시 작업 디렉터리에서 `orc manager-trace`/`orc check-manager-trace final` 실동작으로 수행함.

@@ -29,6 +29,7 @@
 - `orc worker-send <worker_ref|pane_id> <msg...> [enter|enter-exit|raw|display]`
 - `orc worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]`
 - `orc worker-close <worker_ref|pane_id>`
+- `orc worker-dev-url <worker_ref|pane_id> [lines]`
 - `orc manager-trace <stage> [detail...]`
 - `orc check-manager-trace [preflight|impl|check|final]`
 - `orc capture-pane <pane_id> [lines]`
@@ -58,6 +59,8 @@
   - `orc worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]`
 - Close a worker pane:
   - `orc worker-close <worker_ref|pane_id>`
+- Resolve the latest actual dev URL reported by a worker pane:
+  - `orc worker-dev-url <worker_ref|pane_id> [lines]`
 - Append an `orc_manager` trace stage:
   - `orc manager-trace <stage> [detail...]`
 - Verify `orc_manager` trace order:
