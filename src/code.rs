@@ -34,6 +34,13 @@ pub(crate) struct JobRequirement {
     pub rules: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub(crate) struct JobChecklistSection {
+    pub name: String,
+    #[serde(default)]
+    pub items: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct JobDoc {
     #[serde(default)]
@@ -46,6 +53,10 @@ pub(crate) struct JobDoc {
     pub problems: Vec<String>,
     #[serde(default)]
     pub checklist: Vec<String>,
+    #[serde(default)]
+    pub check_sections: Vec<JobChecklistSection>,
+    #[serde(default)]
+    pub check_evidence: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -829,7 +840,7 @@ pub(crate) async fn impl_orc_code() -> Result<String, String> {
     save_drafts_doc(&drafts)?;
     save_job_doc(&job)?;
 
-    let result = impl_code_draft_parallel(targets).await?;
+    let result = impl_orc_code_parallel(targets).await?;
     (drafts, job) = transition_impl_result(&drafts, &job, &result.succeeded, &result.failed)?;
     save_drafts_doc(&drafts)?;
     save_job_doc(&job)?;
@@ -853,6 +864,20 @@ pub(crate) fn check_orc_code() -> Result<String, String> {
         }
     };
     job.checklist = build_job_checklist(&job, &drafts, architecture_contract.as_ref());
+    let check_evidence = if job.task.check.is_empty() {
+        None
+    } else {
+        Some(parse_check_evidence_lines(&job.check_evidence)?)
+    };
+
+    if let Some(evidence) = check_evidence.as_ref() {
+        for item in &evidence.unresolved {
+            push_unique(
+                &mut job.problems,
+                format!("- job.md check evidence unresolved: {}", item),
+            );
+        }
+    }
 
     let has_unresolved_problems =
         job.problems.iter().any(|item| !item.trim().is_empty()) || !job.task.fail.is_empty();
@@ -866,16 +891,18 @@ pub(crate) fn check_orc_code() -> Result<String, String> {
     let removed = cleanup_drafts_yaml_after_success(Path::new("."))?;
     if removed {
         Ok(format!(
-            "check_orc_code completed: verify={} checklist={} unresolved={} drafts.yaml removed",
-            job.task.check.len(),
+            "check_orc_code completed: verify={} checklist={} execution={} unresolved={} drafts.yaml removed",
+            job.task.completed.len(),
             job.checklist.len(),
+            check_evidence.as_ref().map_or(0, |value| value.checked.len()),
             job.problems.len() + job.task.fail.len()
         ))
     } else {
         Ok(format!(
-            "check_orc_code completed: verify={} checklist={} unresolved={}",
-            job.task.check.len(),
+            "check_orc_code completed: verify={} checklist={} execution={} unresolved={}",
+            job.task.completed.len(),
             job.checklist.len(),
+            check_evidence.as_ref().map_or(0, |value| value.checked.len()),
             job.problems.len() + job.task.fail.len()
         ))
     }
@@ -909,7 +936,12 @@ fn should_cleanup_drafts_yaml(job: &JobDoc, drafts: &CodeDraftsDoc) -> bool {
         return false;
     }
     drafts.draft.iter().all(|item| {
-        normalize_draft_state(item.state.as_str()).map_or(false, |state| state == "complete")
+        normalize_draft_state(item.state.as_str()).map_or(false, |state| {
+            state == "complete"
+                && job.task.completed.iter().any(|name| {
+                    normalize_feature_key(name) == normalize_feature_key(&item.name)
+                })
+        })
     })
 }
 
@@ -974,6 +1006,7 @@ fn parse_job_md(raw: &str) -> Result<JobDoc, String> {
     let mut section = "";
     let mut req = JobRequirement::default();
     let mut task_list = "";
+    let mut checklist_section = String::new();
 
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -996,6 +1029,13 @@ fn parse_job_md(raw: &str) -> Result<JobDoc, String> {
                 req = JobRequirement::default();
             }
             section = "prob";
+            continue;
+        } else if trimmed.starts_with("# check evidence") {
+            if !req.name.is_empty() {
+                doc.requirement.push(req.clone());
+                req = JobRequirement::default();
+            }
+            section = "check_evidence";
             continue;
         } else if trimmed.starts_with("# check") {
             if !req.name.is_empty() {
@@ -1062,8 +1102,38 @@ fn parse_job_md(raw: &str) -> Result<JobDoc, String> {
                 }
             }
             "checklist" => {
-                if trimmed.starts_with("- ") {
-                    doc.checklist.push(trimmed[2..].trim().to_string());
+                if trimmed.starts_with("## ") {
+                    checklist_section = trimmed[3..].trim().to_string();
+                    if !checklist_section.is_empty()
+                        && !doc
+                            .check_sections
+                            .iter()
+                            .any(|entry| entry.name == checklist_section)
+                    {
+                        doc.check_sections.push(JobChecklistSection {
+                            name: checklist_section.clone(),
+                            items: Vec::new(),
+                        });
+                    }
+                } else if trimmed.starts_with("- ") {
+                    let item = trimmed[2..].trim().to_string();
+                    doc.checklist.push(item.clone());
+                    if !checklist_section.is_empty() {
+                        if let Some(entry) = doc
+                            .check_sections
+                            .iter_mut()
+                            .find(|entry| entry.name == checklist_section)
+                        {
+                            entry.items.push(item);
+                        }
+                    }
+                } else if trimmed.starts_with('#') {
+                    checklist_section.clear();
+                }
+            }
+            "check_evidence" => {
+                if trimmed.starts_with("- [") {
+                    doc.check_evidence.push(trimmed.to_string());
                 }
             }
             _ => {}
@@ -1116,8 +1186,31 @@ fn render_job_md(doc: &JobDoc) -> String {
         out.push_str(&format!("{}\n", p));
     }
     out.push_str("\n# check\n");
-    for item in &doc.checklist {
-        out.push_str(&format!("- {}\n", item));
+    if doc.check_sections.is_empty() {
+        for item in &doc.checklist {
+            out.push_str(&format!("- {}\n", item));
+        }
+    } else {
+        let mut remaining = doc.checklist.clone();
+        for section in &doc.check_sections {
+            out.push_str(&format!("## {}\n", section.name));
+            for item in &section.items {
+                out.push_str(&format!("- {}\n", item));
+                if let Some(index) = remaining.iter().position(|entry| entry == item) {
+                    remaining.remove(index);
+                }
+            }
+        }
+        if !remaining.is_empty() {
+            out.push_str("## checklist\n");
+            for item in &remaining {
+                out.push_str(&format!("- {}\n", item));
+            }
+        }
+    }
+    out.push_str("\n# check evidence\n");
+    for item in &doc.check_evidence {
+        out.push_str(&format!("{}\n", item));
     }
     out
 }
@@ -1334,6 +1427,28 @@ fn build_job_checklist(
     }
 
     checklist
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct CheckEvidence {
+    checked: Vec<String>,
+    unresolved: Vec<String>,
+}
+
+fn parse_check_evidence_lines(lines: &[String]) -> Result<CheckEvidence, String> {
+    let mut evidence = CheckEvidence::default();
+    for line in lines {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("- [x]") {
+            evidence.checked.push(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("- [ ]") {
+            evidence.unresolved.push(rest.trim().to_string());
+        }
+    }
+    if evidence.checked.is_empty() && evidence.unresolved.is_empty() {
+        return Err("missing job.md check evidence entries".to_string());
+    }
+    Ok(evidence)
 }
 
 fn append_job_problem(root: &Path, problem: &str) -> Result<(), String> {
@@ -1719,7 +1834,7 @@ fn infer_initial_features(message: Option<&str>) -> Vec<String> {
 
 // --- Parallel Implementation Logic (Simplified/Modernized) ---
 
-async fn impl_code_draft_parallel(items: Vec<DraftItemDoc>) -> Result<ImplRunResult, String> {
+async fn impl_orc_code_parallel(items: Vec<DraftItemDoc>) -> Result<ImplRunResult, String> {
     let mut succeeded = Vec::new();
     let mut failed = Vec::new();
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
@@ -1757,7 +1872,7 @@ fn impl_single_draft_item(item: &DraftItemDoc) -> Result<(), String> {
         "{}\n\n# 입력 task 단일 객체\n```yaml\n{}\n```\n\n# 추가 지시\n- `drafts.yaml`, `job.md`는 절대 직접 수정하지 말고 코드 생성/수정 내용만 출력한다.\n- 상태 전이(work/complete/error, planned/work/check/fail 이동)는 Rust 오케스트레이터가 수행하므로 출력하지 않는다.",
         prompt_base, task_yaml
     );
-    let trace_label = format!("impl_code_draft [{}]", item.name);
+    let trace_label = format!("impl_orc_code [{}]", item.name);
     let raw = crate::chat::run_codex_exec_capture_in_dir_with_progress_watch(
         &cwd,
         &prompt,
@@ -1829,7 +1944,7 @@ fn impl_timeout_watch() -> (u64, u64, u64) {
 
 fn impl_trace_label_draft_name(timeout_label: &str) -> Option<String> {
     timeout_label
-        .strip_prefix("impl_code_draft [")
+        .strip_prefix("impl_orc_code [")
         .and_then(|rest| rest.strip_suffix(']'))
         .map(|name| name.trim().to_string())
         .filter(|name| !name.is_empty())
@@ -1899,7 +2014,7 @@ mod tests {
         parse_outline_requirements_to_job_doc, parse_project_md_meta, read_bootstrap_seed,
         set_draft_item_state, transition_impl_result, transition_impl_start,
         update_impl_draft_progress_from_watch, BootstrapSeed, CodeDraftsDoc, CommonOpts,
-        DraftItemDoc, JobDoc, JobRequirement,
+        DraftItemDoc, JobChecklistSection, JobDoc, JobRequirement,
     };
     use std::env;
     use std::fs;
@@ -1983,7 +2098,7 @@ mod tests {
         let drafts = CodeDraftsDoc {
             draft: vec![
                 DraftItemDoc {
-                    name: "cli_impl_code_draft".to_string(),
+                    name: "cli_impl_orc_code".to_string(),
                     state: "planned".to_string(),
                     ..Default::default()
                 },
@@ -1995,10 +2110,10 @@ mod tests {
             ],
         };
         let mut job = JobDoc::default();
-        job.task.planned.push("cli_impl_code_draft".to_string());
+        job.task.planned.push("cli_impl_orc_code".to_string());
         job.task.planned.push("cli_help".to_string());
         let targets = vec![DraftItemDoc {
-            name: "cli_impl_code_draft".to_string(),
+            name: "cli_impl_orc_code".to_string(),
             ..Default::default()
         }];
 
@@ -2009,7 +2124,7 @@ mod tests {
         assert_eq!(job.task.work.len(), 0);
         assert_eq!(next_drafts.draft[0].state, "work");
         assert_eq!(next_drafts.draft[1].state, "planned");
-        assert_eq!(next_job.task.work, vec!["cli_impl_code_draft".to_string()]);
+        assert_eq!(next_job.task.work, vec!["cli_impl_orc_code".to_string()]);
         assert_eq!(next_job.task.planned, vec!["cli_help".to_string()]);
     }
 
@@ -2018,7 +2133,7 @@ mod tests {
         let drafts = CodeDraftsDoc {
             draft: vec![
                 DraftItemDoc {
-                    name: "cli_impl_code_draft".to_string(),
+                    name: "cli_impl_orc_code".to_string(),
                     state: "work".to_string(),
                     ..Default::default()
                 },
@@ -2030,20 +2145,20 @@ mod tests {
             ],
         };
         let mut job = JobDoc::default();
-        job.task.work.push("cli_impl_code_draft".to_string());
+        job.task.work.push("cli_impl_orc_code".to_string());
         job.task.work.push("cli_help".to_string());
 
         let (next_drafts, next_job) = transition_impl_result(
             &drafts,
             &job,
-            &["cli_impl_code_draft".to_string()],
+            &["cli_impl_orc_code".to_string()],
             &[("cli_help".to_string(), "failed".to_string())],
         )
         .expect("finish transition");
 
         assert_eq!(next_drafts.draft[0].state, "complete");
         assert_eq!(next_drafts.draft[1].state, "error");
-        assert_eq!(next_job.task.check, vec!["cli_impl_code_draft".to_string()]);
+        assert_eq!(next_job.task.check, vec!["cli_impl_orc_code".to_string()]);
         assert_eq!(next_job.task.fail, vec!["cli_help".to_string()]);
         assert_eq!(next_job.problems, vec!["- cli_help : failed".to_string()]);
     }
@@ -2062,11 +2177,17 @@ mod tests {
                 "draft:\n  - name: todo_app\n    state: complete\n    constraints:\n      - \"todo_app -> visible_result : add task renders in UI\"\n    check:\n      - \"todo_app -> persisted : reload keeps todo item\"\n",
             )
             .expect("write drafts");
+            fs::write(
+                "job.md",
+                "# requirement\n## todo_app\n- add task\n1. create task\n\n# task\n## planned\n## work\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n\n# check evidence\n- [x] todo_app -> verified : unit test passed\n- [x] todo_app -> persisted : reload keeps todo item\n",
+            )
+            .expect("rewrite job with check evidence");
 
             let result = check_orc_code().expect("run check");
             let job = super::load_job_doc().expect("load job");
 
             assert!(result.contains("checklist=4"));
+            assert!(result.contains("execution=2"));
             assert!(job.task.check.is_empty());
             assert_eq!(job.task.completed, vec!["todo_app".to_string()]);
             assert_eq!(
@@ -2078,6 +2199,82 @@ mod tests {
                     "todo_app -> verified : add task".to_string()
                 ]
             );
+        });
+    }
+
+    #[test]
+    fn parse_job_md_preserves_check_sections() {
+        let job = super::parse_job_md(
+            "# requirement\n## todo_app\n\n# task\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n\n# check\n## logic_checklist\n- todo_app -> verified : handler updates state\n## ui_checklist\n- todo_app -> rendered : input is visible\n\n# check evidence\n- [x] todo_app -> rendered : browser verified\n",
+        )
+        .expect("parse job");
+
+        assert_eq!(
+            job.check_sections,
+            vec![
+                JobChecklistSection {
+                    name: "logic_checklist".to_string(),
+                    items: vec!["todo_app -> verified : handler updates state".to_string()],
+                },
+                JobChecklistSection {
+                    name: "ui_checklist".to_string(),
+                    items: vec!["todo_app -> rendered : input is visible".to_string()],
+                },
+            ]
+        );
+        assert_eq!(
+            job.checklist,
+            vec![
+                "todo_app -> verified : handler updates state".to_string(),
+                "todo_app -> rendered : input is visible".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn render_job_md_keeps_check_sections_and_plain_items() {
+        let job = JobDoc {
+            check_sections: vec![
+                JobChecklistSection {
+                    name: "logic_checklist".to_string(),
+                    items: vec!["todo_app -> verified : handler updates state".to_string()],
+                },
+                JobChecklistSection {
+                    name: "ui_checklist".to_string(),
+                    items: vec!["todo_app -> rendered : input is visible".to_string()],
+                },
+            ],
+            checklist: vec![
+                "todo_app -> verified : handler updates state".to_string(),
+                "todo_app -> rendered : input is visible".to_string(),
+                "todo_app -> persisted : reload keeps item".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        let rendered = super::render_job_md(&job);
+
+        assert!(rendered.contains("# check\n## logic_checklist\n- todo_app -> verified : handler updates state\n## ui_checklist\n- todo_app -> rendered : input is visible\n## checklist\n- todo_app -> persisted : reload keeps item\n"));
+    }
+
+    #[test]
+    fn check_orc_code_requires_execution_checklist_evidence() {
+        with_locked_workspace("check_code_requires_execution_evidence", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(
+                "job.md",
+                "# requirement\n## todo_app\n- add task\n\n# task\n## planned\n## work\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n",
+            )
+            .expect("write job");
+            fs::write(
+                ".project/drafts.yaml",
+                "draft:\n  - name: todo_app\n    state: complete\n    check:\n      - \"todo_app -> persisted : reload keeps todo item\"\n",
+            )
+            .expect("write drafts");
+
+            let err = check_orc_code().expect_err("missing checklist should fail");
+
+            assert!(err.contains("missing job.md check evidence entries"));
         });
     }
 
@@ -2095,6 +2292,11 @@ mod tests {
                 "draft:\n  - name: todo_app\n    state: complete\n    check:\n      - \"todo_app -> persisted : reload keeps todo item\"\n",
             )
             .expect("write drafts");
+            fs::write(
+                "job.md",
+                "# requirement\n## todo_app\n- add task\n\n# task\n## planned\n## work\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n- todo_app : save fails on reload\n\n# check evidence\n- [x] todo_app -> verified : unit test passed\n",
+            )
+            .expect("rewrite job with check evidence");
 
             check_orc_code().expect("run check");
             let job = super::load_job_doc().expect("load job");
@@ -2105,6 +2307,61 @@ mod tests {
                 .checklist
                 .contains(&"todo_app -> resolved : todo_app : save fails on reload".to_string()));
         });
+    }
+
+    #[test]
+    fn check_orc_code_keeps_verify_when_execution_checklist_has_unresolved_items() {
+        with_locked_workspace("check_code_unresolved_execution_checklist", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(
+                "job.md",
+                "# requirement\n## todo_app\n- add task\n\n# task\n## planned\n## work\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n",
+            )
+            .expect("write job");
+            fs::write(
+                ".project/drafts.yaml",
+                "draft:\n  - name: todo_app\n    state: complete\n    check:\n      - \"todo_app -> persisted : reload keeps todo item\"\n",
+            )
+            .expect("write drafts");
+            fs::write(
+                "job.md",
+                "# requirement\n## todo_app\n- add task\n\n# task\n## planned\n## work\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n\n# check evidence\n- [ ] todo_app -> persisted : reload keeps todo item\n",
+            )
+            .expect("rewrite job with check evidence");
+
+            let result = check_orc_code().expect("run check");
+            let job = super::load_job_doc().expect("load job");
+
+            assert!(result.contains("execution=0"));
+            assert_eq!(job.task.check, vec!["todo_app".to_string()]);
+            assert!(job.task.completed.is_empty());
+            assert!(job
+                .problems
+                .iter()
+                .any(|item| item.contains("job.md check evidence unresolved")));
+        });
+    }
+
+    #[test]
+    fn should_cleanup_drafts_yaml_rejects_unrelated_completed_drafts() {
+        let mut job = JobDoc::default();
+        job.task.completed = vec!["todo_app".to_string()];
+        let drafts = CodeDraftsDoc {
+            draft: vec![
+                DraftItemDoc {
+                    name: "todo_app".to_string(),
+                    state: "complete".to_string(),
+                    ..Default::default()
+                },
+                DraftItemDoc {
+                    name: "other_feature".to_string(),
+                    state: "complete".to_string(),
+                    ..Default::default()
+                },
+            ],
+        };
+
+        assert!(!super::should_cleanup_drafts_yaml(&job, &drafts));
     }
 
     #[test]
@@ -2285,23 +2542,23 @@ mod tests {
     }
 
     #[test]
-    fn add_orc_drafts_keeps_existing_cli_impl_code_draft_and_backfills_planned_task() {
-        with_locked_workspace("cli_impl_backfill_planned", || {
+    fn add_orc_drafts_keeps_existing_cli_impl_orc_code_and_backfills_planned_task() {
+        with_locked_workspace("cli_impl_orc_backfill_planned", || {
             fs::create_dir_all(".project").expect("create .project");
             fs::write(
                 "job.md",
-                "# requirement\n## cli_impl_code_draft\n\n# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n",
+                "# requirement\n## cli_impl_orc_code\n\n# task\n## planned\n## work\n## check\n## completed\n## fail\n\n# problems\n",
             )
             .expect("write job");
             fs::write(
                 ".project/drafts.yaml",
-                "draft:\n  - name: cli_impl_code_draft\n    state: planned\n    type: action\n    domain:\n      - core\n    depends_on: []\n    scope:\n      - feature:cli_impl_code_draft\n    rule: []\n    step:\n      - trigger -> process -> result\n    tasks:\n      - implement cli_impl_code_draft\n    constraints:\n      - \"cli_impl_code_draft -> cli_impl_code_draft : requirement 기반 draft item 생성\"\n    check:\n      - verify cli_impl_code_draft\n",
+                "draft:\n  - name: cli_impl_orc_code\n    state: planned\n    type: action\n    domain:\n      - core\n    depends_on: []\n    scope:\n      - feature:cli_impl_orc_code\n    rule: []\n    step:\n      - trigger -> process -> result\n    tasks:\n      - implement cli_impl_orc_code\n    constraints:\n      - \"cli_impl_orc_code -> cli_impl_orc_code : requirement 기반 draft item 생성\"\n    check:\n      - verify cli_impl_orc_code\n",
             )
             .expect("write drafts");
 
             add_orc_drafts().expect("run add_orc_drafts");
             let job = super::load_job_doc().expect("load job");
-            assert_eq!(job.task.planned, vec!["cli_impl_code_draft".to_string()]);
+            assert_eq!(job.task.planned, vec!["cli_impl_orc_code".to_string()]);
         });
     }
 
@@ -2346,7 +2603,7 @@ mod tests {
 
             update_impl_draft_progress_from_watch(
                 Path::new("."),
-                "impl_code_draft [도메인_패널_정렬_수정]",
+                "impl_orc_code [도메인_패널_정렬_수정]",
                 "slow_progress",
                 360,
                 "implementation still progressing after soft timeout",

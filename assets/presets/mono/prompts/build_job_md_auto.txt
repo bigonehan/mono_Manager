@@ -7,6 +7,7 @@ build_job_md_auto prompt
 - 거부 사유 후보: 불명확한 요구 해석, 과한 추상화, 검증 누락, 회귀 위험, 네이밍 불일치, dead path, 불필요한 복잡도, 범위를 벗어난 수정.
 - 기능/rule/step은 위 거부 사유를 해소하는 방향으로만 구체화하고 unrelated refactor, formatting sweep, speculative abstraction은 금지한다.
 - 요구가 불명확하면 가장 보수적인 해석을 택하고, 규칙/step에 그 가정을 드러내되 범위를 넓히지 않는다.
+- `job.md # check`는 최소 `## logic_checklist`, `## ui_checklist` 두 하위 섹션을 유지한다. UI 항목이 없으면 `## ui_checklist`는 비워둘 수 있지만 제거하지 않는다.
 - 출력 형식은 아래 객체가 여러 개 나열된 Markdown이어야 한다.
 # 기능 이름
 - 기능 규칙 1

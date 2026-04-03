@@ -28887,3 +28887,540 @@ impl_code_draft [playwright_qa_ad_hangover_recovery] | cwd=/home/tree/project/mo
 [1775132066] LLM_WAIT
 [orc-status] impl_code_draft [playwright_qa_ad_hangover_recovery] | elapsed=120s | waiting for llm response
 
+[1775171896] LLM_PROMPT
+build_job_md_auto prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/YAML/Markdown 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- `project.md`와 `job.md`(초기 입력 또는 이전 실행 결과)를 읽고 필요한 기능 리스트를 `job.md` 본문으로 생성한다.
+- `project.md # info.description`은 사용자 원요청으로 간주하고 feature/rule/step 생성의 최우선 근거로 사용한다.
+- 기존 `job.md`의 feature 이름을 기준으로 삼고, framework 이름으로 임의 개명하지 않는다.
+- 사용자 요청 feature가 있으면 bootstrap/framework 보조 작업보다 그 feature를 우선해 입력 객체를 만든다.
+- `project.md`가 bootstrap-only 문구를 포함하더라도 사용자 요청/기존 `job.md` 항목이 더 구체적이면 이를 우선한다.
+- `react`, `vite`, `next` 같은 framework 명만 가진 일반 객체로 축소하지 말고 실제 구현 대상 기능명을 유지한다.
+- 계획 수립과 구현 전, 경험많고 엄격한 시니어 개발자가 코드 리뷰에서 거부할 수 있는 요소를 먼저 식별한다.
+- 거부 사유 후보: 불명확한 요구 해석, 과한 추상화, 검증 누락, 회귀 위험, 네이밍 불일치, dead path, 불필요한 복잡도, 범위를 벗어난 수정.
+- 기능/rule/step은 위 거부 사유를 해소하는 방향으로만 구체화하고 unrelated refactor, formatting sweep, speculative abstraction은 금지한다.
+- 요구가 불명확하면 가장 보수적인 해석을 택하고, 규칙/step에 그 가정을 드러내되 범위를 넓히지 않는다.
+- 출력 형식은 아래 객체가 여러 개 나열된 Markdown이어야 한다.
+# 기능 이름
+- 기능 규칙 1
+- 기능 규칙 2
+> 기능 수행 순서 1
+> 기능 수행 순서 2
+- 설명 문장, 코드블록, YAML, JSON은 출력하지 않는다.
+
+# project.md
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, 피드백 경로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+# job.md
+# plan
+- manager session audits `scripts/` usages tied to rc-compatible behavior and replaces eligible shell/python script paths with rc functions plus rc-based call sites.
+- manager session must only coordinate worker panes through `orc worker-create`, `orc worker-send`, `orc worker-wait`, and `orc worker-close`.
+- impl worker must read `job.md`, identify script-backed flows that belong inside `rc`, implement rc functions/subcommands, and switch callers to rc entrypoints.
+- qa/check workers must verify both the new rc command paths and the affected tests/documented workflows.
+- improve worker must inspect for leftover script-backed rc-capable paths outside the planned set.
+
+# requirement
+## rc_internalize_scripts_usage
+- move rc-capable logic out of `scripts/` files into `src/bin/rc.rs` and related rc modules where practical
+- keep only minimal wrappers or remove direct script calls when rc command paths can replace them safely
+- update call sites, docs, prompts, and tests so rc-capable flows invoke rc instead of raw script bodies
+- keep changes minimal and limited to script-backed rc-compatible behavior
+
+# task
+## planned
+## work
+- rc_internalize_scripts_usage
+## verify
+## complete
+- rc_internalize_scripts_usage
+## fail
+
+# problems
+- none
+
+# check
+- impl worker -> `src/bin/rc.rs` and `src/bin/rc/browser.rs` now own `run-playwright-qa` and `check-front-ui-rules`, while `scripts/run_playwright_qa.py` and `scripts/check_front_ui_rules.sh` remain thin wrappers
+- qa worker -> `cargo run --quiet --bin rc -- run-playwright-qa --web-root assets/web -- node /tmp/rc-qa-recheck.mjs` succeeded against the live UI and produced `/tmp/rc-qa-recheck.png`
+- check worker -> `cargo test --bin rc`, `python3 -m unittest scripts.run_playwright_qa_test`, and `node --test scripts/playwright_safe_helpers.test.mjs` all passed
+- check worker -> direct `cargo run --quiet --bin rc -- check-front-ui-rules` and wrapper `bash scripts/check_front_ui_rules.sh` both hit the same existing Playwright design-rules failure, so the wrapper parity is preserved for this scope
+- improve worker -> re-read `job.md`, searched remaining direct references to `scripts/run_playwright_qa.py` and `scripts/check_front_ui_rules.sh`, and reported `NO_IMPROVEMENT`
+
+
+[1775171896] LLM_START
+/home/tree/ai/codex/codexo exec [build_job_md_auto prompt] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=120s
+
+[1775171896] LLM_RETRY
+attempt 1/2 failed: 
+
+[1775171896] LLM_START
+/home/tree/ai/codex/codexo exec [build_job_md_auto prompt] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=120s
+
+[1775171896] LLM_RETRY
+attempt 2/2 failed: 
+
+[1775171896] LLM_ERROR
+
+
+[1775171920] LLM_PROMPT
+build_job_md_auto prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/YAML/Markdown 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- `project.md`와 `job.md`(초기 입력 또는 이전 실행 결과)를 읽고 필요한 기능 리스트를 `job.md` 본문으로 생성한다.
+- `project.md # info.description`은 사용자 원요청으로 간주하고 feature/rule/step 생성의 최우선 근거로 사용한다.
+- 기존 `job.md`의 feature 이름을 기준으로 삼고, framework 이름으로 임의 개명하지 않는다.
+- 사용자 요청 feature가 있으면 bootstrap/framework 보조 작업보다 그 feature를 우선해 입력 객체를 만든다.
+- `project.md`가 bootstrap-only 문구를 포함하더라도 사용자 요청/기존 `job.md` 항목이 더 구체적이면 이를 우선한다.
+- `react`, `vite`, `next` 같은 framework 명만 가진 일반 객체로 축소하지 말고 실제 구현 대상 기능명을 유지한다.
+- 계획 수립과 구현 전, 경험많고 엄격한 시니어 개발자가 코드 리뷰에서 거부할 수 있는 요소를 먼저 식별한다.
+- 거부 사유 후보: 불명확한 요구 해석, 과한 추상화, 검증 누락, 회귀 위험, 네이밍 불일치, dead path, 불필요한 복잡도, 범위를 벗어난 수정.
+- 기능/rule/step은 위 거부 사유를 해소하는 방향으로만 구체화하고 unrelated refactor, formatting sweep, speculative abstraction은 금지한다.
+- 요구가 불명확하면 가장 보수적인 해석을 택하고, 규칙/step에 그 가정을 드러내되 범위를 넓히지 않는다.
+- 출력 형식은 아래 객체가 여러 개 나열된 Markdown이어야 한다.
+# 기능 이름
+- 기능 규칙 1
+- 기능 규칙 2
+> 기능 수행 순서 1
+> 기능 수행 순서 2
+- 설명 문장, 코드블록, YAML, JSON은 출력하지 않는다.
+
+# project.md
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, 피드백 경로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+# job.md
+# plan
+- manager session audits `scripts/` usages tied to rc-compatible behavior and replaces eligible shell/python script paths with rc functions plus rc-based call sites.
+- manager session must only coordinate worker panes through `orc worker-create`, `orc worker-send`, `orc worker-wait`, and `orc worker-close`.
+- impl worker must read `job.md`, identify script-backed flows that belong inside `rc`, implement rc functions/subcommands, and switch callers to rc entrypoints.
+- qa/check workers must verify both the new rc command paths and the affected tests/documented workflows.
+- improve worker must inspect for leftover script-backed rc-capable paths outside the planned set.
+
+# requirement
+## rc_internalize_scripts_usage
+- move rc-capable logic out of `scripts/` files into `src/bin/rc.rs` and related rc modules where practical
+- keep only minimal wrappers or remove direct script calls when rc command paths can replace them safely
+- update call sites, docs, prompts, and tests so rc-capable flows invoke rc instead of raw script bodies
+- keep changes minimal and limited to script-backed rc-compatible behavior
+
+# task
+## planned
+- rc_internalize_scripts_usage
+## work
+- rc_internalize_scripts_usage
+## verify
+## complete
+- rc_internalize_scripts_usage
+## fail
+
+# problems
+- none
+
+# check
+- impl worker -> `src/bin/rc.rs` and `src/bin/rc/browser.rs` now own `run-playwright-qa` and `check-front-ui-rules`, while `scripts/run_playwright_qa.py` and `scripts/check_front_ui_rules.sh` remain thin wrappers
+- qa worker -> `cargo run --quiet --bin rc -- run-playwright-qa --web-root assets/web -- node /tmp/rc-qa-recheck.mjs` succeeded against the live UI and produced `/tmp/rc-qa-recheck.png`
+- check worker -> `cargo test --bin rc`, `python3 -m unittest scripts.run_playwright_qa_test`, and `node --test scripts/playwright_safe_helpers.test.mjs` all passed
+- check worker -> direct `cargo run --quiet --bin rc -- check-front-ui-rules` and wrapper `bash scripts/check_front_ui_rules.sh` both hit the same existing Playwright design-rules failure, so the wrapper parity is preserved for this scope
+- improve worker -> re-read `job.md`, searched remaining direct references to `scripts/run_playwright_qa.py` and `scripts/check_front_ui_rules.sh`, and reported `NO_IMPROVEMENT`
+- [1775171896] LLM_START | /home/tree/ai/codex/codexo exec [build_job_md_auto prompt] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=120s
+- [1775171896] LLM_START | /home/tree/ai/codex/codexo exec [build_job_md_auto prompt] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=120s
+
+
+[1775171920] LLM_START
+/home/tree/ai/codex/codexo exec [build_job_md_auto prompt] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=120s
+
+[1775171920] LLM_RETRY
+attempt 1/2 failed: 
+
+[1775171920] LLM_START
+/home/tree/ai/codex/codexo exec [build_job_md_auto prompt] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=120s
+
+[1775171920] LLM_RETRY
+attempt 2/2 failed: 
+
+[1775171920] LLM_ERROR
+
+
+[1775197736] LLM_PROMPT
+build_job_md_auto prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/YAML/Markdown 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- `project.md`와 `job.md`(초기 입력 또는 이전 실행 결과)를 읽고 필요한 기능 리스트를 `job.md` 본문으로 생성한다.
+- `project.md # info.description`은 사용자 원요청으로 간주하고 feature/rule/step 생성의 최우선 근거로 사용한다.
+- 기존 `job.md`의 feature 이름을 기준으로 삼고, framework 이름으로 임의 개명하지 않는다.
+- 사용자 요청 feature가 있으면 bootstrap/framework 보조 작업보다 그 feature를 우선해 입력 객체를 만든다.
+- `project.md`가 bootstrap-only 문구를 포함하더라도 사용자 요청/기존 `job.md` 항목이 더 구체적이면 이를 우선한다.
+- `react`, `vite`, `next` 같은 framework 명만 가진 일반 객체로 축소하지 말고 실제 구현 대상 기능명을 유지한다.
+- 계획 수립과 구현 전, 경험많고 엄격한 시니어 개발자가 코드 리뷰에서 거부할 수 있는 요소를 먼저 식별한다.
+- 거부 사유 후보: 불명확한 요구 해석, 과한 추상화, 검증 누락, 회귀 위험, 네이밍 불일치, dead path, 불필요한 복잡도, 범위를 벗어난 수정.
+- 기능/rule/step은 위 거부 사유를 해소하는 방향으로만 구체화하고 unrelated refactor, formatting sweep, speculative abstraction은 금지한다.
+- 요구가 불명확하면 가장 보수적인 해석을 택하고, 규칙/step에 그 가정을 드러내되 범위를 넓히지 않는다.
+- 출력 형식은 아래 객체가 여러 개 나열된 Markdown이어야 한다.
+# 기능 이름
+- 기능 규칙 1
+- 기능 규칙 2
+> 기능 수행 순서 1
+> 기능 수행 순서 2
+- 설명 문장, 코드블록, YAML, JSON은 출력하지 않는다.
+
+# project.md
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, 피드백 경로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+# job.md
+# plan
+- ORC 세션이 `plan -> job.md -> drafts.yaml -> 병렬 draft_item -> check` 체인을 건너뛰고 유닛테스트만으로 검증 완료 처리하는 원인을 고정한다.
+- `check_orc_code`가 실행 증거 없이 verify를 complete로 옮기지 못하게 막는다.
+- 구현/검증 프롬프트와 문서에서 `유닛테스트 pass = 완료`로 읽히는 흐름을 제거한다.
+- ORC 체인을 다시 실행해 `job.md`, `drafts.yaml`, 병렬 구현, 검증 결과를 남긴다.
+
+# requirement
+## orc_check_requires_execution_evidence
+- `check_orc_code`는 `.project/check_list.md` 실행 근거가 없으면 성공 완료를 만들지 않는다.
+- `.project/check_list.md`에 `[ ]` 항목이 있으면 `job.md#problems`에 남기고 verify 상태를 유지한다.
+> verify 단계는 실행 증거를 먼저 읽고 unresolved를 문제로 승격한다.
+> unresolved가 없을 때만 verify를 complete로 이동한다.
+
+## orc_prompt_rejects_unit_test_only_completion
+- 구현 프롬프트와 검증 프롬프트는 유닛테스트 통과만으로 완료라고 쓰지 않는다.
+- README에도 실행 증거 기반 완료 규칙을 반영한다.
+> build/check 안내 문구를 실행 근거 중심으로 교체한다.
+> 문서와 프롬프트를 같은 기준으로 맞춘다.
+
+# task
+## planned
+- orc_check_requires_execution_evidence
+- orc_prompt_rejects_unit_test_only_completion
+## work
+## verify
+## complete
+## fail
+
+# problems
+
+# check
+
+
+[1775197736] LLM_START
+/home/tree/ai/codex/codexo exec [build_job_md_auto prompt] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=120s
+
+[1775197736] LLM_RETRY
+attempt 1/2 failed: 
+
+[1775197736] LLM_START
+/home/tree/ai/codex/codexo exec [build_job_md_auto prompt] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=120s
+
+[1775197736] LLM_RETRY
+attempt 2/2 failed: 
+
+[1775197736] LLM_ERROR
+
+
+[1775197748] LLM_PROMPT
+build_job_md_auto prompt
+- 반드시 언급된 코드/문서 형식을 정확히 지킨다.
+- 반드시 코드/YAML/Markdown 형식을 정확히 지킨다.
+- 템플릿의 설명용 예시값/주석/placeholder는 최종 출력물에 포함하지 않는다.
+- `project.md`와 `job.md`(초기 입력 또는 이전 실행 결과)를 읽고 필요한 기능 리스트를 `job.md` 본문으로 생성한다.
+- `project.md # info.description`은 사용자 원요청으로 간주하고 feature/rule/step 생성의 최우선 근거로 사용한다.
+- 기존 `job.md`의 feature 이름을 기준으로 삼고, framework 이름으로 임의 개명하지 않는다.
+- 사용자 요청 feature가 있으면 bootstrap/framework 보조 작업보다 그 feature를 우선해 입력 객체를 만든다.
+- `project.md`가 bootstrap-only 문구를 포함하더라도 사용자 요청/기존 `job.md` 항목이 더 구체적이면 이를 우선한다.
+- `react`, `vite`, `next` 같은 framework 명만 가진 일반 객체로 축소하지 말고 실제 구현 대상 기능명을 유지한다.
+- 계획 수립과 구현 전, 경험많고 엄격한 시니어 개발자가 코드 리뷰에서 거부할 수 있는 요소를 먼저 식별한다.
+- 거부 사유 후보: 불명확한 요구 해석, 과한 추상화, 검증 누락, 회귀 위험, 네이밍 불일치, dead path, 불필요한 복잡도, 범위를 벗어난 수정.
+- 기능/rule/step은 위 거부 사유를 해소하는 방향으로만 구체화하고 unrelated refactor, formatting sweep, speculative abstraction은 금지한다.
+- 요구가 불명확하면 가장 보수적인 해석을 택하고, 규칙/step에 그 가정을 드러내되 범위를 넓히지 않는다.
+- 출력 형식은 아래 객체가 여러 개 나열된 Markdown이어야 한다.
+# 기능 이름
+- 기능 규칙 1
+- 기능 규칙 2
+> 기능 수행 순서 1
+> 기능 수행 순서 2
+- 설명 문장, 코드블록, YAML, JSON은 출력하지 않는다.
+
+# project.md
+# info
+name : reset-task-feedback
+description : orc 작업 시작 시 check-process/feedback/screenshot 초기화, 피드백 경로 단일화, web check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+spec : astro, react, typescript, zustand
+path : /home/tree/project/rust-orc
+
+# features
+- rust_cli_workspace
+- project_documentation
+- cli_rust_orchestra
+- cli_help
+- cli_create_input_md
+- cli_create_code_draft
+- cli_impl_code_draft
+- cli_test
+- cli_check_task
+- cli_check_draft
+- cli_code
+- cli_init_code_project
+- cli_add_code_draft
+- cli_add_code_draft_item
+- cli_check_code_draft
+- cli_open_ui
+- cli_serve_web_api
+- cli_auto
+- cli_auto_add_function
+- cli_send_tmux
+- cli_enter
+- cli_chat
+- cli_chat_wait
+- cli_clit
+- cli_report_long_running_status
+- cli_track_check_process
+- web_detail_check_pane
+- web_manual_rc_check
+- web_screenshot_feedback
+- web_voice_input_fields
+- cli_reset_task_artifacts
+- web_project_feedback_path
+- web_rc_binary_resolver
+- web_test_voice_helper
+# rules
+- 프로젝트 내부의 공통 규칙
+
+# constraints
+- 프로젝트 내부의 공통 제약
+
+# domains
+## name
+### states
+- 가능한 상태
+### action
+- 가능한 동작
+### rules
+- 프로젝트 내부의 규칙 `##도메인 이름` 아래에 `-` 리스트 형식으로
+  표현
+### constraints
+- 도메인이 지켜야 하는 제약
+
+# job.md
+# plan
+- ORC 세션이 `plan -> job.md -> drafts.yaml -> 병렬 draft_item -> check` 체인을 건너뛰고 유닛테스트만으로 검증 완료 처리하는 원인을 고정한다.
+- `check_orc_code`가 실행 증거 없이 verify를 complete로 옮기지 못하게 막는다.
+- 구현/검증 프롬프트와 문서에서 `유닛테스트 pass = 완료`로 읽히는 흐름을 제거한다.
+- ORC 체인을 다시 실행해 `job.md`, `drafts.yaml`, 병렬 구현, 검증 결과를 남긴다.
+
+# requirement
+## orc_check_requires_execution_evidence
+- `check_orc_code`는 `.project/check_list.md` 실행 근거가 없으면 성공 완료를 만들지 않는다.
+- `.project/check_list.md`에 `[ ]` 항목이 있으면 `job.md#problems`에 남기고 verify 상태를 유지한다.
+> verify 단계는 실행 증거를 먼저 읽고 unresolved를 문제로 승격한다.
+> unresolved가 없을 때만 verify를 complete로 이동한다.
+
+## orc_prompt_rejects_unit_test_only_completion
+- 구현 프롬프트와 검증 프롬프트는 유닛테스트 통과만으로 완료라고 쓰지 않는다.
+- README에도 실행 증거 기반 완료 규칙을 반영한다.
+> build/check 안내 문구를 실행 근거 중심으로 교체한다.
+> 문서와 프롬프트를 같은 기준으로 맞춘다.
+
+# task
+## planned
+- orc_check_requires_execution_evidence
+- orc_prompt_rejects_unit_test_only_completion
+## work
+## verify
+## complete
+## fail
+
+# problems
+
+# check
+
+## status
+- [1775197736] LLM_START | /home/tree/ai/codex/codexo exec [build_job_md_auto prompt] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=120s
+- [1775197736] LLM_START | /home/tree/ai/codex/codexo exec [build_job_md_auto prompt] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=120s
+
+
+[1775197748] LLM_START
+/home/tree/ai/codex/codexo exec [build_job_md_auto prompt] attempt 1/2 | cwd=/home/tree/project/mono_Manager | timeout=120s
+
+[1775197748] LLM_RETRY
+attempt 1/2 failed: 
+
+[1775197748] LLM_START
+/home/tree/ai/codex/codexo exec [build_job_md_auto prompt] attempt 2/2 | cwd=/home/tree/project/mono_Manager | timeout=120s
+
+[1775197749] LLM_RETRY
+attempt 2/2 failed: 
+
+[1775197749] LLM_ERROR
+
+

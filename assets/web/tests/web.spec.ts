@@ -104,6 +104,80 @@ test("web ui: load and create/select project", async ({ page, request }) => {
   expect(raw).toContain("project_type: code");
 });
 
+test("web ui: bulk delete removes two selected projects in one action", async ({ page, request }) => {
+  const uniqueA = `pw-bulk-a-${Date.now()}`;
+  const uniqueB = `pw-bulk-b-${Date.now()}`;
+  const tmpPathA = `/tmp/${uniqueA}`;
+  const tmpPathB = `/tmp/${uniqueB}`;
+  for (const targetPath of [tmpPathA, tmpPathB]) {
+    trackPathForCleanup(targetPath);
+    fs.rmSync(targetPath, { recursive: true, force: true });
+    fs.mkdirSync(targetPath, { recursive: true });
+  }
+
+  const createdA = await createProjectForTest(request, {
+    name: uniqueA,
+    description: "bulk delete project A",
+    path: tmpPathA,
+    spec: "react, delete",
+    project_type: "code"
+  });
+  const createdB = await createProjectForTest(request, {
+    name: uniqueB,
+    description: "bulk delete project B",
+    path: tmpPathB,
+    spec: "react, delete",
+    project_type: "code"
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Code" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Code" })).toBeVisible();
+  await expect(page.locator(`[data-testid^="project-item-"]`, { hasText: uniqueA }).first()).toBeVisible();
+  await expect(page.locator(`[data-testid^="project-item-"]`, { hasText: uniqueB }).first()).toBeVisible();
+  await page.getByRole("button", { name: "project-bulk-delete-mode" }).click();
+
+  const cardA = page.locator(`[data-testid^="project-item-"]`, { hasText: uniqueA }).first();
+  const cardB = page.locator(`[data-testid^="project-item-"]`, { hasText: uniqueB }).first();
+  await expect(cardA).toBeVisible();
+  await expect(cardB).toBeVisible();
+
+  await cardA.click();
+  await cardB.click();
+
+  const deleteButton = page.getByRole("button", { name: "delete-selected-projects" });
+  await expect(deleteButton).toBeVisible();
+  await expect(deleteButton).toContainText("삭제하기 (2)");
+  await deleteButton.click();
+
+  await expect
+    .poll(async () => await page.locator(`[data-testid^="project-item-"]`, { hasText: uniqueA }).count(), {
+      timeout: 10_000
+    })
+    .toBe(0);
+  await expect
+    .poll(async () => await page.locator(`[data-testid^="project-item-"]`, { hasText: uniqueB }).count(), {
+      timeout: 10_000
+    })
+    .toBe(0);
+  await expect
+    .poll(() => fs.existsSync(tmpPathA), {
+      timeout: 10_000
+    })
+    .toBeFalsy();
+  await expect
+    .poll(() => fs.existsSync(tmpPathB), {
+      timeout: 10_000
+    })
+    .toBeFalsy();
+
+  if (createdA.projectId) trackedProjectIds.delete(createdA.projectId);
+  if (createdB.projectId) trackedProjectIds.delete(createdB.projectId);
+  trackedPaths.delete(tmpPathA);
+  trackedPaths.delete(tmpPathB);
+});
+
 test("web ui: domain badge click refreshes source-derived feature list", async ({ page, request }) => {
   const unique = `pw-domain-${Date.now()}`;
   const tmpPath = `/tmp/${unique}`;

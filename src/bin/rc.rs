@@ -5,7 +5,7 @@ mod config;
 
 use anyhow::{bail, Context, Result};
 use browser::HeadMode;
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use config::{debug_enabled, load_config, Config};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
@@ -28,6 +28,8 @@ const PROJECT_LOG_FILE: &str = ".project/log.md";
 const SCREENSHOT_DIR: &str = ".project/screenshot";
 const STEP_HEARTBEAT_SEC: u64 = 15;
 const CODEXO_BIN_PATH: &str = "/home/tree/ai/codex/codexo";
+const RC_SHELL: &str = "fish";
+const RC_SHELL_EXEC_FLAG: &str = "-ic";
 
 #[derive(Debug, Parser)]
 #[command(name = "rc")]
@@ -39,43 +41,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum TopLevelCommand {
-    Clit(ClitCommand),
     RunPlaywrightQa(RunPlaywrightQaArgs),
     CheckFrontUiRules,
-}
-
-#[derive(Debug, Args)]
-struct ClitCommand {
-    #[command(subcommand)]
-    command: ClitSubcommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum ClitSubcommand {
-    Test(TestArgs),
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum HeadedArg {
-    On,
-    Off,
-}
-
-#[derive(Debug, Args)]
-struct TestArgs {
-    #[arg(short = 'p', long = "path")]
-    path: PathBuf,
-    #[arg(short = 'm', long = "mode")]
-    mode: String,
-    #[arg(long = "headed", value_enum, default_value = "off")]
-    headed: HeadedArg,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ParsedCliInput {
-    target_path: PathBuf,
-    mode: String,
-    headed: HeadMode,
 }
 
 #[derive(Debug, Args, Clone)]
@@ -94,7 +61,6 @@ struct ParsedPlaywrightQaInput {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ParsedCommand {
-    ClitTest(ParsedCliInput),
     RunPlaywrightQa(ParsedPlaywrightQaInput),
     CheckFrontUiRules,
 }
@@ -395,14 +361,9 @@ fn main() {
 }
 
 fn run() -> Result<i32> {
-    let config = load_config()?;
+    let _config = load_config()?;
     let parsed = parse_cli_from(std::env::args_os())?;
     match parsed {
-        ParsedCommand::ClitTest(input) => {
-            let _ = config;
-            let _ = input;
-            bail!("rc clit test was removed; use `orc check_orc_code` and ORC helper commands instead")
-        }
         ParsedCommand::RunPlaywrightQa(input) => execute_run_playwright_qa(input),
         ParsedCommand::CheckFrontUiRules => execute_check_front_ui_rules(),
     }
@@ -422,44 +383,11 @@ where
         )
     })?;
     match cli.command {
-        TopLevelCommand::Clit(command) => match command.command {
-            ClitSubcommand::Test(args) => validate_test_args(args)
-                .map(ParsedCommand::ClitTest)
-                .map_err(|error| anyhow::anyhow!(error.message)),
-        },
         TopLevelCommand::RunPlaywrightQa(args) => validate_run_playwright_qa_args(args)
             .map(ParsedCommand::RunPlaywrightQa)
             .map_err(|error| anyhow::anyhow!(error.message)),
         TopLevelCommand::CheckFrontUiRules => Ok(ParsedCommand::CheckFrontUiRules),
     }
-}
-
-fn validate_test_args(args: TestArgs) -> std::result::Result<ParsedCliInput, CliInputError> {
-    if args.mode.trim().is_empty() {
-        return Err(CliInputError::invalid_input(
-            "invalid argument `-m <mode>`: mode must not be empty",
-        ));
-    }
-    let target_path = args.path.canonicalize().map_err(|_| {
-        CliInputError::invalid_input(format!(
-            "invalid argument `-p <path>`: path does not exist ({})",
-            args.path.display()
-        ))
-    })?;
-    if !target_path.is_dir() {
-        return Err(CliInputError::invalid_input(format!(
-            "invalid argument `-p <path>`: not a directory ({})",
-            target_path.display()
-        )));
-    }
-    Ok(ParsedCliInput {
-        target_path,
-        mode: args.mode,
-        headed: match args.headed {
-            HeadedArg::On => HeadMode::On,
-            HeadedArg::Off => HeadMode::Off,
-        },
-    })
 }
 
 fn validate_run_playwright_qa_args(
@@ -541,93 +469,6 @@ fn execute_check_front_ui_rules() -> Result<i32> {
         .status()
         .with_context(|| "failed to execute front UI rule check")?;
     Ok(status.code().unwrap_or(1))
-}
-
-fn execute_test(input: ParsedCliInput, config: &Config) -> Result<()> {
-    let workdir = std::env::current_dir()?;
-    let _run_lock = acquire_run_lock(&workdir)?;
-    fs::create_dir_all(workdir.join(PROJECT_DIR))
-        .with_context(|| format!("failed to create {}", PROJECT_DIR))?;
-    fs::create_dir_all(workdir.join(SCREENSHOT_DIR))
-        .with_context(|| format!("failed to create {}", SCREENSHOT_DIR))?;
-    cleanup_legacy_rc_artifacts(&workdir)?;
-    fs::create_dir_all(input.target_path.join(SCREENSHOT_DIR))
-        .with_context(|| format!("failed to create {}", SCREENSHOT_DIR))?;
-    let runner = detect_runner(&input.target_path)?;
-    let plan_body = build_plan(
-        &input.target_path,
-        &input.mode,
-        &runner,
-        input.headed,
-        config,
-    )?;
-    append_to_job_md(&workdir.join(JOB_FILE), &format!("{}\n", plan_body))?;
-    let drafts = build_drafts(
-        &input.target_path,
-        &input.mode,
-        &runner,
-        input.headed,
-        config,
-    )?;
-    fs::write(workdir.join(DRAFTS_FILE), serde_yaml::to_string(&drafts)?)
-        .with_context(|| format!("failed to write {}", DRAFTS_FILE))?;
-    let steps = drafts
-        .procedures
-        .iter()
-        .flat_map(|procedure| procedure.steps.clone())
-        .collect::<Vec<_>>();
-    let cache = SessionCache {
-        target_path: input.target_path.clone(),
-        mission: input.mode.clone(),
-        runner: runner.clone(),
-        steps: steps.clone(),
-    };
-    write_session_cache(&cache)?;
-    let mut log = SessionLog {
-        mission: input.mode.clone(),
-        runner: runner.clone(),
-        detected_command: if runner == RunnerKind::Web {
-            detect_web_server_command(&input.target_path)
-        } else {
-            runner.default_run_command()
-        },
-        steps,
-        output_log: Vec::new(),
-        errors: Vec::new(),
-        captures: Vec::new(),
-    };
-    let mut recorder = ExecutionRecorder::new(&workdir);
-    recorder.record(
-        "plan",
-        "generated",
-        "job.md plan appended".to_string(),
-        true,
-    );
-    let check_result = run_check(&input.target_path, &drafts, &mut log, config, &mut recorder);
-    match get_current_state(&input.target_path, &runner, config) {
-        Ok(state) => log.output_log.push(format!("current-state:\n{state}")),
-        Err(error) => log
-            .errors
-            .push(format!("get_current_state failed: {error:#}")),
-    }
-    collect_captures(&mut log)?;
-    if check_result.is_ok() {
-        cleanup_successful_screenshots(&workdir, &input.target_path, &mut log)?;
-    }
-    write_feedback(&workdir, &log)?;
-    recorder.record("feedback", "saved", "feedback saved".to_string(), true);
-    if should_spawn_codex_worker() {
-        if let Err(error) = maybe_spawn_codex_worker(&workdir) {
-            recorder.record(
-                "error",
-                "worker_spawn_failed",
-                format!("worker spawn failed: {error:#}"),
-                true,
-            );
-        }
-    }
-    recorder.close();
-    check_result
 }
 
 fn detect_runner(target_path: &Path) -> Result<RunnerKind> {
@@ -739,9 +580,9 @@ fn run_codex_plan_prompt(prompt: &str) -> Result<String> {
     } else {
         " --dangerously-bypass-approvals-and-sandbox"
     };
-    let mut command = Command::new("bash");
+    let mut command = Command::new(RC_SHELL);
     command.args([
-        "-lc",
+        RC_SHELL_EXEC_FLAG,
         &format!(
             "timeout 20 {} exec{} {}",
             shell_quote(codex_exec_bin()),
@@ -1479,8 +1320,8 @@ fn get_current_state(target_path: &Path, runner: &RunnerKind, config: &Config) -
 
 fn get_web_current_state(target_path: &Path, agent_browser_command: &str) -> Result<String> {
     let cmd = browser::snapshot_command(agent_browser_command);
-    let output = Command::new("bash")
-        .args(["-lc", &cmd])
+    let output = Command::new(RC_SHELL)
+        .args([RC_SHELL_EXEC_FLAG, &cmd])
         .current_dir(target_path)
         .output()
         .with_context(|| "failed to collect web current state via agent-browser snapshot")?;
@@ -1539,8 +1380,8 @@ fn now_unix_ts() -> u64 {
 }
 
 fn run_step(target_path: &Path, procedure_name: &str, step: &Step) -> Result<StepOutcome> {
-    let mut command = Command::new("bash");
-    command.args(["-lc", &step.command_template]);
+    let mut command = Command::new(RC_SHELL);
+    command.args([RC_SHELL_EXEC_FLAG, &step.command_template]);
     command.current_dir(target_path);
     let output = run_command_capture_with_heartbeat(command, "step", |elapsed_sec| {
         format_step_heartbeat(procedure_name, &step.command_template, elapsed_sec)
@@ -1699,11 +1540,11 @@ fn write_feedback(workdir: &Path, log: &SessionLog) -> Result<()> {
                 .to_string()
         }
     } else {
-        "- clit 결과를 기준으로 plan/drafts 절차를 갱신해야 한다. render-only 검증과 상태 변화 검증을 구분하라."
+        "- check 결과를 기준으로 plan/drafts 절차를 갱신해야 한다. render-only 검증과 상태 변화 검증을 구분하라."
             .to_string()
     };
     let result = format!(
-        "\n# clit feedback\n\n## 결과\n- runner: {:?}\n- detected command: {}\n- verification: {}\n- steps: {}\n- captures: {}\n\n### 체크리스트\n{}\n\n### 미해결\n{}\n\n### 보완\n{}\n",
+        "\n# check feedback\n\n## 결과\n- runner: {:?}\n- detected command: {}\n- verification: {}\n- steps: {}\n- captures: {}\n\n### 체크리스트\n{}\n\n### 미해결\n{}\n\n### 보완\n{}\n",
         log.runner,
         log.detected_command,
         if requires_state_check {
@@ -1739,7 +1580,7 @@ fn write_feedback(workdir: &Path, log: &SessionLog) -> Result<()> {
     if !job_body.ends_with('\n') {
         job_body.push('\n');
     }
-    if !job_body.contains("# clit feedback") {
+    if !job_body.contains("# check feedback") {
         job_body.push_str(&result);
     } else {
         job_body.push_str(&result);
@@ -1759,6 +1600,46 @@ fn append_to_job_md(job_path: &Path, addition: &str) -> Result<()> {
     }
     body.push_str(addition);
     fs::write(job_path, body).with_context(|| format!("failed to write {}", job_path.display()))
+}
+
+fn sync_check_evidence_to_job_md(workdir: &Path, body: &str) -> Result<()> {
+    let job_path = workdir.join(JOB_FILE);
+    let current = fs::read_to_string(&job_path).unwrap_or_default();
+    let mut out = Vec::new();
+    let mut in_section = false;
+    let mut replaced = false;
+    for line in current.lines() {
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case("# check evidence") {
+            in_section = true;
+            replaced = true;
+            out.push("# check evidence".to_string());
+            for item in body.lines().map(str::trim).filter(|line| !line.is_empty()) {
+                out.push(item.to_string());
+            }
+            continue;
+        }
+        if in_section && trimmed.starts_with('#') {
+            in_section = false;
+        }
+        if !in_section {
+            out.push(line.to_string());
+        }
+    }
+    if !replaced {
+        if !out.last().is_some_and(|line| line.is_empty()) {
+            out.push(String::new());
+        }
+        out.push("# check evidence".to_string());
+        for item in body.lines().map(str::trim).filter(|line| !line.is_empty()) {
+            out.push(item.to_string());
+        }
+    }
+    let mut next = out.join("\n");
+    if !next.ends_with('\n') {
+        next.push('\n');
+    }
+    fs::write(&job_path, next).with_context(|| format!("failed to write {}", job_path.display()))
 }
 
 fn cleanup_legacy_rc_artifacts(workdir: &Path) -> Result<()> {
@@ -1801,23 +1682,16 @@ fn evaluate_checklist(
     log: &SessionLog,
     effective_errors: &[String],
 ) -> Result<ChecklistEvaluation> {
-    let checklist_path = workdir.join(PROJECT_DIR).join("check_list.md");
     if cfg!(test) {
         let body = fallback_checklist(log, effective_errors);
-        if let Some(parent) = checklist_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&checklist_path, &body)?;
+        sync_check_evidence_to_job_md(workdir, &body)?;
         return Ok(parse_checklist(&body));
     }
 
     let prompt = build_checklist_prompt(log, effective_errors);
     let body = run_codex_checklist_prompt(&prompt)
         .unwrap_or_else(|_| fallback_checklist(log, effective_errors));
-    if let Some(parent) = checklist_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&checklist_path, &body)?;
+    sync_check_evidence_to_job_md(workdir, &body)?;
     Ok(parse_checklist(&body))
 }
 
@@ -1844,7 +1718,7 @@ fn build_checklist_prompt(log: &SessionLog, effective_errors: &[String]) -> Stri
         ""
     };
     format!(
-        "{}\n다음 실행 로그를 보고 check_list.md 형식만 출력해라.\n형식: - [x| ] {{입력}} -> {{출력}} : 기능설명\n규칙: 현재 결과가 충족되면 [x], 미충족이면 [ ].\nweb인 경우 e2e 스크린샷 검증과 성공 후 스크린샷 삭제 여부를 체크리스트에 포함한다.\n\nmission: {}\nrunner: {:?}\nsteps:\n{}\n\nrecent_output:\n{}\n\neffective_errors:\n{}{}\n",
+        "{}\n다음 실행 로그를 보고 job.md `# check evidence` 섹션 본문 형식만 출력해라.\n형식: - [x| ] {{입력}} -> {{출력}} : 기능설명\n규칙: 현재 결과가 충족되면 [x], 미충족이면 [ ].\nweb인 경우 e2e 스크린샷 검증과 성공 후 스크린샷 삭제 여부를 체크리스트에 포함한다.\n\nmission: {}\nrunner: {:?}\nsteps:\n{}\n\nrecent_output:\n{}\n\neffective_errors:\n{}{}\n",
         llm_role_instruction(),
         log.mission,
         log.runner,
@@ -1865,9 +1739,9 @@ fn run_codex_checklist_prompt(prompt: &str) -> Result<String> {
     } else {
         " --dangerously-bypass-approvals-and-sandbox"
     };
-    let mut command = Command::new("bash");
+    let mut command = Command::new(RC_SHELL);
     command.args([
-        "-lc",
+        RC_SHELL_EXEC_FLAG,
         &format!(
             "timeout 20 {} exec{} {}",
             shell_quote(codex_exec_bin()),
@@ -2010,24 +1884,34 @@ fn maybe_spawn_codex_worker(workdir: &Path) -> Result<()> {
     let message = format!(
         "{}\njob.md를 읽고 해결할 수 있는 문제와 개선점을 찾아서 개선하라",
         llm_role_instruction()
-    )
-    .replace('"', "\\\"");
+    );
     let danger_flag = if std::env::var("CODEX_DANGEROUSLY_BYPASS_APPROVALS_AND_SANDBOX").is_ok() {
         ""
     } else {
         " --dangerously-bypass-approvals-and-sandbox"
     };
     let command = format!(
-        "cd {} && {} exec{} \"{}\"",
+        "cd {} && {} exec{} {}",
         shell_quote(&workdir.display().to_string()),
         shell_quote(codex_exec_bin()),
         danger_flag,
-        message
+        shell_quote(&message)
     );
-    let status = Command::new("orc")
-        .args(["worker-send", &worker_ref, &command, "enter"])
-        .status()
+    let mut worker_send = Command::new("orc");
+    worker_send
+        .args(["worker-send", &worker_ref, "--stdin", "enter"])
+        .stdin(Stdio::piped());
+    let mut child = worker_send
+        .spawn()
         .with_context(|| "failed to start codex in tmux pane")?;
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(command.as_bytes())
+            .with_context(|| "failed to write worker command to stdin")?;
+    }
+    let status = child
+        .wait()
+        .with_context(|| "failed to wait worker-send status")?;
     if !status.success() {
         return Ok(());
     }
@@ -2160,19 +2044,6 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn parses_fixed_cli_arguments() {
-        let dir = tempdir().expect("tempdir");
-        let path = dir.path().display().to_string();
-        let parsed = validate_test_args(TestArgs {
-            path: PathBuf::from(path),
-            mode: "smoke".to_string(),
-            headed: HeadedArg::Off,
-        })
-        .expect("parse");
-        assert_eq!(parsed.mode, "smoke");
-    }
-
-    #[test]
     fn parses_run_playwright_qa_arguments() {
         let dir = tempdir().expect("tempdir");
         let parsed = validate_run_playwright_qa_args(RunPlaywrightQaArgs {
@@ -2244,8 +2115,8 @@ mod tests {
         )
         .expect("drafts");
         assert!(drafts.procedures[0].steps.iter().any(|step| {
-            step.command_template.contains("python3 - \"")
-                && step.command_template.contains("<<'PY'")
+            step.command_template.contains("python3 -c ")
+                && step.command_template.contains("urllib.request")
         }));
         assert!(drafts.procedures[0].steps.iter().any(|step| {
             step.command_template

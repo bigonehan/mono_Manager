@@ -1,3 +1,15 @@
+## 2026-04-03 - 작업한일
+- `.../orc_manager/SKILL.md`, `.../orc-cli-workflow/SKILL.md`, `.../AGENTS.md`의 improve 규칙을 무한 탐색 루프에서 `단일 improve 패스 + blocking 재진입 1회` 구조로 바꿈.
+- improve 결과를 `blocking`과 `non_blocking`으로만 분류하도록 고정하고, `non_blocking`은 backlog 기록만 허용하며 같은 턴 재구현 루프 재개를 금지함.
+- 재진입 후에도 다시 `blocking`이 나오면 자동 반복 대신 실패 종료하도록 종료 조건과 하드게이트를 동기화함.
+- 검증은 관련 규칙 문구 검색과 수정 후 문맥 재확인으로 수행함.
+
+## 2026-04-03 - 작업한일
+- `.../src/tmux/mod.rs`의 `worker_wait`를 worker 전용 결과 줄 판정으로 분리해, 입력 echo에 포함된 `worker:` 또는 `__ORC_DONE__` 문자열 때문에 거짓 성공이 나지 않도록 수정함.
+- `.../src/tmux/mod.rs`의 dev URL 추출을 실제 worker 완료 줄에서만 허용하도록 유지하고, echoed shell command/실제 완료 줄 케이스를 각각 막는 회귀 테스트를 추가함.
+- `.../README.md`, `.../AGENTS.md`, `.../orc_manager/SKILL.md`, `.../orc-cli-workflow/SKILL.md`를 sentinel 기반 완료 메시지, `worker-send --stdin`, runtime preflight 규칙으로 동기화함.
+- 검증은 `cargo test --quiet tmux:: -- --nocapture`, `cargo test --quiet cli:: -- --nocapture`, 설치 바이너리 help 확인으로 수행함.
+
 ## 2026-04-02 - 작업한일
 - `.../src/tmux/mod.rs`, `.../src/cli.rs`에 `orc worker-dev-url`을 추가해 worker pane tail에서 최신 `worker:...:done:dev=<url>`을 다시 추출하도록 만들고, manager가 동적 포트 변경 후 실제 dev URL을 재회수할 수 있게 함.
 - `.../orc_manager/SKILL.md`, `.../README.md`를 갱신해 manager가 worker 완료 메시지 직후 `orc worker-dev-url` 결과를 source of truth로 확인한 뒤 QA/check에 넘기도록 고정함.
@@ -186,6 +198,16 @@
 - 상단 `Current Pane` 헤더에서 `Pane:` 접두어를 제거하고 `Project | Detail`만 표시되도록 수정함.
 
 - `Current Pane` 헤더를 좌/우 영역으로 분리해 우측에 `switch : tab` 안내를 추가함.
+
+## 2026-04-03 - 작업한일
+- `.../assets/web/src/components/WebApp.tsx`의 project page 상단 툴바에 filter/list 아이콘 오른쪽 휴지통 아이콘을 추가하고, 휴지통 클릭 시 list 기반 다중 삭제 모드와 item 왼쪽 checkbox 선택 흐름으로 진입하도록 수정함.
+- `.../assets/web/src/components/WebApp.tsx`의 삭제 액션을 화면 하단 fixed bar로 고정하고, 선택된 프로젝트 수를 표시한 뒤 한 번의 삭제 버튼으로 선택 항목 전체를 제거하도록 연결함.
+- `.../assets/web/tests/web.spec.ts`에 임시 프로젝트 2개를 생성한 뒤 delete flow로 함께 선택하고 한 번에 삭제되는지 확인하는 Playwright e2e를 추가했으며, 검증은 `npm run test:unit`, `npm run build`, `npm run test:e2e -- --grep "bulk delete removes two selected projects in one action"`로 수행함.
+
+## 2026-04-03 - 작업한일
+- `.../AGENTS.override.md`, `.../orc-cli-workflow/SKILL.md`, `.../manager/SKILL.md`, `.../AGENTS.md`, `.../README.md`의 ORC 운영 체인을 `create_job_md -> add_orc_drafts -> impl_orc_code -> check_orc_code`로 통일하고 구체인 문구를 제거함.
+- `.../src/cli.rs`, `.../src/ui/mod.rs`, `.../src/code.rs`, `.../src/bin/rc.rs`, `.../assets/web/src/server/orc.ts`, `.../assets/web/src/pages/api/tui-map.ts`, `.../assets/layouts/code.yaml`에서 legacy alias와 사용자 노출 문자열(`clit`, `create_code_draft`, `add_code_draft`, `impl_code_draft`, `init_code_project`)을 제거하고 새 명령명으로 교체함.
+- `.../assets/presets/{code,mono}/prompts/*`의 prompt 헤더 문자열까지 새 명령명 기준으로 정리했고, 검증은 전수 `rg` 0건, `cargo test`, `cargo run --quiet --bin orc -- cli_help`, `npm run build`로 수행함.
 - 하단 도움말에서 `tab/1/2 tabs` 표기를 제거하고 `j/k next project`로 문구를 변경함.
 
 - `Project Select` 카드의 `path` 텍스트 색상을 `description`보다 더 흐리게 보이도록 `RGB(70,70,70) + dim` 스타일로 조정함.
@@ -3181,3 +3203,42 @@
 - `.../src/cli.rs`에 `worker-send --stdin`, `send-tmux --stdin` 경로를 추가해 ORC worker 위임 문자열을 argv 인용 없이 그대로 전달할 수 있게 함.
 - `.../src/tmux/mod.rs`는 tmux 전송을 `send-keys -l` literal mode로 바꿔 here-doc 같은 멀티라인 명령이 key-name 해석 없이 pane에 그대로 들어가게 고정함.
 - `.../README.md` 사용법을 새 경로로 맞췄고, 검증은 `cargo test --quiet cli:: -- --nocapture`, `cargo test --quiet tmux:: -- --nocapture`, `cat <<'EOF' | cargo run --quiet --bin orc -- worker-send <worker> --stdin enter ... EOF` 실제 실행으로 수행함.
+## 2026-04-02 - 작업한일
+- `.../src/tmux/mod.rs`의 worker backend를 pane split 방식에서 독립 tmux session 생성 방식으로 바꾸고, worker ref에 `session_name`을 포함시켜 stale session name 충돌을 막음.
+- `.../src/cli.rs`, `.../README.md`, `.../AGENTS.md`를 새 `worker-create [name]` 및 worker session semantics에 맞게 동기화함.
+- 검증은 `cargo test --quiet tmux:: -- --nocapture`, `cargo test --quiet cli:: -- --nocapture`, `cargo test --quiet resolve_llm_bin_path_prefers_codexo_absolute_path -- --nocapture`, 실제 `orc worker-create verify-session-...` 생성 후 manager session pane 수 유지와 `worker-close` 뒤 session 소멸 확인으로 수행함.
+## 2026-04-03 - 작업한일
+- `.../src/code.rs`의 `check_orc_code`에 `job.md#check evidence` 실행 증거 게이트를 추가해, 실행 근거가 없거나 `[ ]` 미해결 항목이 남아 있으면 verify를 complete로 올리지 못하게 막음.
+- `.../src/code.rs`의 `should_cleanup_drafts_yaml` 조건을 좁혀 현재 job에 없는 draft가 남아 있으면 `.project/drafts.yaml`을 지우지 않도록 보강함.
+- `.../src/bin/rc.rs`, `.../assets/prompts/build_parallel.md`, `.../assets/prompts/check_code.md`, `.../README.md`, `.../AGENTS.md`를 갱신해 검증 기록을 새 문서로 분리하지 않고 `job.md` 내부 섹션만 사용하도록 동기화함.
+- 검증은 `cargo test`, `cargo run --bin orc -- add_orc_drafts`, worker 병렬 실행 2건, `cargo run --bin orc -- check_orc_code`, `orc check-manager-trace final`, `orc clit test -p . -m "orc process regression"` deprecation 확인으로 수행함.
+## 2026-04-03 - 작업한일
+- `.../src/bin/rc/browser.rs`의 URL 대기 명령을 `python3 <<'PY'` here-doc에서 `python3 -c ...` 형식으로 바꿔 fish worker에서도 그대로 실행되게 수정함.
+- `.../src/bin/rc.rs`의 `Command::new("bash")` 호출 4곳을 `fish -ic`로 교체해 rc 내부 실행기와 worker 기본 셸을 일치시킴.
+- 관련 테스트 문자열을 새 fish 호환 명령 형식에 맞춰 갱신했고, 저장소와 skill 경로에서 here-doc 잔존 검색을 다시 수행함.
+- 검증은 `rg -n -F "<<'" src ...` 0건, `rg -n 'Command::new\\("bash"\\)|bash -lc|bash -ic' src` 0건, `cargo test --bin rc`, `cargo test --bin orc` 통과로 수행함.
+## 2026-04-03 - 작업한일
+- `.../assets/web/src/server/orc.ts`에 manager preflight trace helper를 추가해 `stage_global_override_read`부터 `stage_success_locked`까지 잠금 stage를 실제 web manager 경로에서 순서대로 기록하게 함.
+- 같은 파일의 `runOrcAction`, `runJobMdSyncWorkflow`, `startAutoFromMessage`, `startParallelBuild`, `runManualRcCheck`에 preflight/impl/check trace 기록을 연결해 `check-manager-trace`가 요구하는 stage 누락이 반복되지 않게 함.
+- 원인 확인으로 현재 CLI는 stage 이름을 이미 지원하지만 manager 경로가 trace를 남기지 않았음을 재현했고, 그 불일치를 실행 경로에서 해소함.
+- 검증은 `orc manager-trace stage_input_locked probe`, `orc manager-trace stage_restart_path_verified probe`, `cargo test --bin orc`, `npm --prefix assets/web run test:unit`, `npm exec tsc -- --noEmit -p tsconfig.json`으로 수행함. `npm --prefix assets/web run check`는 `@astrojs/check` 미설치로 설치 프롬프트에서 중단됨.
+## 2026-04-03 - 작업한일
+- `.../src/cli.rs`의 `check_orc_manager_trace`를 최신 `stage_global_override_read` 이후 구간만 검사하도록 바꿔, 누적 trace에서 오래된 stage hit가 final gate 순서를 오염시키지 않게 수정함.
+- 같은 파일의 final gate 순서를 `stage_check_done < stage_manager_reverified`와 `stage_restart_path_verified < stage_negative_check_passed < stage_manager_reverified`로 재정의해, skill이 요구한 실제 종료 조건과 동일하게 맞춤.
+- `.../src/cli.rs` 테스트를 추가해 다중 런 trace 무시와 restart/negative stage의 유연한 final ordering을 회귀 검증했고, 검증은 `cargo test --bin orc`로 수행함.
+## 2026-04-03 - 작업한일
+- `/home/tree/ai/skills/orc_manager/SKILL.md`에 사용자 원문 `입력/출력/유지/추가/금지` 잠금 후 `input_output_checklist`, `keep_checklist`, `add_checklist`, `forbid_checklist`를 `job.md#check`에 먼저 만들도록 하드게이트를 추가함.
+- 같은 skill에서 QA/check/manager 회수 보고가 `input`, `expected output`, `keep`, `add`, `forbid` 대응 결과를 모두 포함해야만 성공으로 인정되도록 강화함.
+- `.../AGENTS.md`에도 동일한 `orc_manager` 사용자 의도 잠금 가드를 추가해 저장소 규칙과 skill이 어긋나지 않게 맞췄고, 검증은 관련 문자열 검색과 `cargo test --bin orc`로 수행함.
+## 2026-04-03 - 작업한일
+- `.../src/bin/rc.rs`의 worker 위임 경로를 `orc worker-send <worker_ref> <command>` argv 방식에서 `orc worker-send <worker_ref> --stdin enter`로 바꿔, 줄바꿈/인용부호/`bash -lc` 본문이 fish worker에 들어가기 전에 깨지지 않게 수정함.
+- `/home/tree/ai/skills/orc_manager/SKILL.md`와 `/home/tree/.codex/skills/manager/SKILL.md`를 갱신해 긴 명령, here-doc, `bash -lc`, 긴 프롬프트 본문은 반드시 `--stdin`으로 보내도록 표준 절차를 고정함.
+- 검증은 `cargo test --bin rc` 통과와 관련 문자열 검색으로 수행함.
+## 2026-04-03 - 작업한일
+- `/home/tree/ai/skills/orc_manager/SKILL.md`와 `.../AGENTS.md`에 `orc_manager` preflight trace의 고정 순서를 명시해 `stage_plan_done`가 잠금 stage 뒤로 밀리는 잘못된 절차를 금지함.
+- 같은 규칙에 최신 런이 잘못 기록된 경우 `stage_global_override_read`부터 새 런으로 10단계를 다시 찍어야 한다는 복구 절차도 추가함.
+- 검증은 관련 문자열 검색과 `cargo test --bin orc`로 수행함.
+## 2026-04-03 - 작업한일
+- `.../src/tmux/mod.rs`에서 구식 3-part worker ref decode 호환 경로를 제거하고, 현재 표준인 `worker_id::session_name::pane_id::pane_pid` 4-part 형식만 허용하도록 정리함.
+- 같은 파일 테스트를 `legacy format reject` 회귀 검증으로 바꿔 구식 ref가 더 이상 조용히 통과하지 않게 고정함.
+- 검증은 `cargo test --bin orc`와 관련 문자열 검색으로 수행함.

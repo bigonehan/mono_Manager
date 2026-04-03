@@ -180,6 +180,52 @@ function buildTaskCommandEnv(taskKey: string, extra: Record<string, string> = {}
   };
 }
 
+const MANAGER_PREFLIGHT_STAGE_SEQUENCE = [
+  "stage_global_override_read",
+  "stage_job_md_locked",
+  "stage_plan_done",
+  "stage_input_locked",
+  "stage_output_locked",
+  "stage_keep_locked",
+  "stage_add_locked",
+  "stage_forbid_locked",
+  "stage_symptom_locked",
+  "stage_success_locked"
+] as const;
+
+function runOrcManagerTraceStage(projectPath: string, taskKey: string, stage: string, detail: string): void {
+  const command = resolveOrcCommandArgs(["manager-trace", stage, detail]);
+  const result = spawnSync(command.bin, command.args, {
+    cwd: projectPath,
+    encoding: "utf8",
+    env: buildTaskCommandEnv(taskKey)
+  });
+  if (result.status !== 0) {
+    const stderr = (result.stderr || "").trim();
+    throw new Error(stderr || `manager-trace failed: ${stage}`);
+  }
+}
+
+function runOrcCheckManagerTrace(projectPath: string, taskKey: string, mode: "preflight" | "impl" | "check" | "final"): void {
+  const command = resolveOrcCommandArgs(["check-manager-trace", mode]);
+  const result = spawnSync(command.bin, command.args, {
+    cwd: projectPath,
+    encoding: "utf8",
+    env: buildTaskCommandEnv(taskKey)
+  });
+  if (result.status !== 0) {
+    const stderr = (result.stderr || "").trim();
+    throw new Error(stderr || `check-manager-trace failed: ${mode}`);
+  }
+}
+
+function ensureManagerPreflightTrace(projectPath: string, taskKey: string, label: string): void {
+  for (const stage of MANAGER_PREFLIGHT_STAGE_SEQUENCE) {
+    runOrcManagerTraceStage(projectPath, taskKey, stage, `${label}:${stage}`);
+  }
+  runOrcCheckManagerTrace(projectPath, taskKey, "preflight");
+}
+
 function monorepoRoot(): string {
   const envRoot = (process.env.ORC_MONOREPO_ROOT ?? "").trim();
   const home = process.env.HOME ?? "/home/tree";
@@ -1290,7 +1336,7 @@ function ensureFeedbackFile(projectPath: string): string {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   if (!fs.existsSync(file)) {
     const fallback =
-      "# plan\n\n# requirement\n\n# task\n## planned\n## work\n## verify\n## complete\n## failed\n\n# problems\n\n# check\n";
+      "# plan\n\n# requirement\n\n# task\n## planned\n## work\n## verify\n## complete\n## failed\n\n# problems\n\n# check\n## logic_checklist\n## ui_checklist\n";
     fs.writeFileSync(file, fallback, "utf8");
     return file;
   }
@@ -1569,7 +1615,7 @@ function extractJobManagedSection(raw: string): string {
     }
   }
   if (start < 0) {
-    return "# task\n## planned\n## work\n## verify\n## complete\n## fail\n\n# problems\n\n# check\n";
+    return "# task\n## planned\n## work\n## verify\n## complete\n## fail\n\n# problems\n\n# check\n## logic_checklist\n## ui_checklist\n";
   }
   return `${lines.slice(start).join("\n").trimEnd()}\n`;
 }
@@ -1691,7 +1737,7 @@ function readJobMd(projectPath: string): { raw: string; editableRaw: string } {
   if (!fs.existsSync(jobPath)) {
     const editableRaw = "# plan\n\n# requirement\n";
     return {
-      raw: `${editableRaw}\n# task\n## planned\n## work\n## verify\n## complete\n## fail\n\n# problems\n\n# check\n`,
+      raw: `${editableRaw}\n# task\n## planned\n## work\n## verify\n## complete\n## fail\n\n# problems\n\n# check\n## logic_checklist\n## ui_checklist\n`,
       editableRaw
     };
   }
@@ -2243,7 +2289,7 @@ function retryIncompleteDrafts(id: string): string {
   saveDraftsDoc(detail.path, drafts);
 
   const taskKey = createTaskSessionKey("retry-incomplete");
-  const command = resolveOrcCommandArgs(["impl_code_draft"]);
+  const command = resolveOrcCommandArgs(["impl_orc_code"]);
   const result = spawnSync(command.bin, command.args, {
     cwd: detail.path,
     encoding: "utf8",
@@ -2304,9 +2350,9 @@ export function runOrcAction(id: string, action: string, payload?: string): stri
     throw new Error("create_draft blocked: job.md not found");
   }
   const argsMap: Record<string, string[]> = {
-    create_draft: ["create_code_draft"],
-    add_draft: payload?.trim().length ? ["add_code_draft", "-m", payload] : ["add_code_draft", "-a"],
-    impl_draft: ["impl_code_draft"],
+    create_draft: ["add_orc_drafts"],
+    add_draft: ["add_orc_drafts"],
+    impl_draft: ["impl_orc_code"],
     check_code: ["check_orc_code"]
   };
   if (action === "retry_incomplete") {
@@ -2321,12 +2367,38 @@ export function runOrcAction(id: string, action: string, payload?: string): stri
   }
 
   const taskKey = createTaskSessionKey(action);
+  if (action === "create_draft" || action === "add_draft" || action === "impl_draft" || action === "check_code") {
+    ensureManagerPreflightTrace(detail.path, taskKey, `${action}:${detail.name}`);
+  }
+  if (action === "impl_draft") {
+    runOrcCheckManagerTrace(detail.path, taskKey, "impl");
+    runOrcManagerTraceStage(detail.path, taskKey, "stage_impl_session_started", `${action}:${detail.name}`);
+  }
+  if (action === "check_code") {
+    runOrcManagerTraceStage(detail.path, taskKey, "stage_check_session_started", `${action}:${detail.name}`);
+  }
   const command = resolveOrcCommandArgs(args);
   const result = spawnSync(command.bin, command.args, {
     cwd: detail.path,
     encoding: "utf8",
     env: buildTaskCommandEnv(taskKey)
   });
+  if (action === "impl_draft") {
+    runOrcManagerTraceStage(
+      detail.path,
+      taskKey,
+      "stage_impl_done",
+      `${action}:${detail.name}:status=${String(result.status ?? 1)}`
+    );
+  }
+  if (action === "check_code") {
+    runOrcManagerTraceStage(
+      detail.path,
+      taskKey,
+      "stage_check_done",
+      `${action}:${detail.name}:status=${String(result.status ?? 1)}`
+    );
+  }
 
   if (result.status !== 0) {
     const stderr = (result.stderr || "").trim();
@@ -2558,6 +2630,9 @@ export function startAutoFromMessage(id: string, message: string): { detail: Pro
   }
   const command = resolveOrcCommandArgs(["auto_add_function", prompt]);
   const taskKey = createTaskSessionKey("auto");
+  ensureManagerPreflightTrace(detail.path, taskKey, `auto:${detail.name}`);
+  runOrcCheckManagerTrace(detail.path, taskKey, "impl");
+  runOrcManagerTraceStage(detail.path, taskKey, "stage_impl_session_started", `auto:${detail.name}`);
   appendRuntimeLog(id, `[auto] start: ${detail.name}`);
   const proc = spawn(command.bin, command.args, {
     cwd: detail.path,
@@ -2583,6 +2658,16 @@ export function startAutoFromMessage(id: string, message: string): { detail: Pro
     for (const line of lines) updateJob(line);
   });
   proc.on("close", (code, signal) => {
+    try {
+      runOrcManagerTraceStage(
+        detail.path,
+        taskKey,
+        "stage_impl_done",
+        `auto:${detail.name}:code=${code === null ? "null" : String(code)}:signal=${signal ?? "none"}`
+      );
+    } catch (error) {
+      appendRuntimeLog(id, `[auto] trace failed: ${String(error)}`);
+    }
     autoProcessesByProject.delete(id);
     autoCurrentJobByProject.delete(id);
     const message =
@@ -2596,6 +2681,11 @@ export function startAutoFromMessage(id: string, message: string): { detail: Pro
     }
   });
   proc.on("error", (error) => {
+    try {
+      runOrcManagerTraceStage(detail.path, taskKey, "stage_impl_done", `auto:${detail.name}:error`);
+    } catch (traceError) {
+      appendRuntimeLog(id, `[auto] trace failed: ${String(traceError)}`);
+    }
     autoProcessesByProject.delete(id);
     autoCurrentJobByProject.delete(id);
     const message = `[auto] error: ${String(error)}`;
@@ -2634,6 +2724,7 @@ function setProjectState(id: string, nextState: ProjectState): void {
 
 async function runJobMdSyncWorkflow(id: string, projectPath: string): Promise<string[]> {
   const taskKey = createTaskSessionKey("form-add-input");
+  ensureManagerPreflightTrace(projectPath, taskKey, `form_add_input:${id}`);
   const stages: Array<{ label: string; args: string[] }> = [
     { label: "job.md", args: ["init_orc_job"] },
     { label: "drafts.yaml", args: ["add_orc_drafts"] }
@@ -2703,8 +2794,11 @@ export function startParallelBuild(id: string): { output: string } {
   if (buildProcessesByProject.has(id)) {
     return { output: `build already running: ${detail.name}` };
   }
-  const command = resolveOrcCommandArgs(["impl_code_draft"]);
+  const command = resolveOrcCommandArgs(["impl_orc_code"]);
   const taskKey = createTaskSessionKey("build");
+  ensureManagerPreflightTrace(detail.path, taskKey, `build:${detail.name}`);
+  runOrcCheckManagerTrace(detail.path, taskKey, "impl");
+  runOrcManagerTraceStage(detail.path, taskKey, "stage_impl_session_started", `build:${detail.name}`);
   const proc = spawn(command.bin, command.args, {
     cwd: detail.path,
     stdio: ["ignore", "pipe", "pipe"],
@@ -2732,10 +2826,20 @@ export function startParallelBuild(id: string): { output: string } {
     for (const line of lines) updateJob(line);
   });
   proc.on("close", (code, signal) => {
+    try {
+      runOrcManagerTraceStage(
+        detail.path,
+        taskKey,
+        "stage_impl_done",
+        `build:${detail.name}:code=${code === null ? "null" : String(code)}:signal=${signal ?? "none"}`
+      );
+    } catch (error) {
+      appendRuntimeLog(id, `[build] trace failed: ${String(error)}`);
+    }
     reconcileDraftCompletionFromProjectFeatures(detail.path);
     const message =
       code === 0
-        ? "[build] finished: manual rc check pending"
+        ? "[build] finished: manual orc check pending"
         : `[build] finished: code=${code === null ? "null" : String(code)} signal=${signal ?? "none"}`;
     appendRuntimeLog(id, message);
     buildCompletionByProject.set(id, message);
@@ -2743,6 +2847,11 @@ export function startParallelBuild(id: string): { output: string } {
     buildCurrentJobByProject.delete(id);
   });
   proc.on("error", (error) => {
+    try {
+      runOrcManagerTraceStage(detail.path, taskKey, "stage_impl_done", `build:${detail.name}:error`);
+    } catch (traceError) {
+      appendRuntimeLog(id, `[build] trace failed: ${String(traceError)}`);
+    }
     reconcileDraftCompletionFromProjectFeatures(detail.path);
     const message = `[build] error: ${String(error)}`;
     appendRuntimeLog(id, message);
@@ -2805,12 +2914,16 @@ export function getBuildStatus(id: string): {
 export function runManualRcCheck(id: string): { detail: ProjectDetail; output: string } {
   const detail = loadProjectDetail(id);
   const subject = detail.checkSubject.trim() || detail.name;
-  const mission = `manual rc check | ${subject}`;
-  appendRuntimeLog(id, `[check] rc start: ${mission}`);
-  const command = resolveRcCommandArgs(["clit", "test", "-p", ".", "-m", mission]);
+  const mission = `manual orc check | ${subject}`;
+  const taskKey = createTaskSessionKey("manual-check");
+  ensureManagerPreflightTrace(detail.path, taskKey, `check:${detail.name}`);
+  runOrcManagerTraceStage(detail.path, taskKey, "stage_check_session_started", `check:${detail.name}`);
+  appendRuntimeLog(id, `[check] orc start: ${mission}`);
+  const command = resolveOrcCommandArgs(["check_orc_code"]);
   const result = spawnSync(command.bin, command.args, {
     cwd: detail.path,
-    encoding: "utf8"
+    encoding: "utf8",
+    env: buildTaskCommandEnv(taskKey)
   });
   const stdout = (result.stdout || "").trim();
   const stderr = (result.stderr || "").trim();
@@ -2819,10 +2932,17 @@ export function runManualRcCheck(id: string): { detail: ProjectDetail; output: s
     appendRuntimeLog(id, `[check] screenshot saved: ${screenshotPath}`);
   }
   if (result.status !== 0) {
-    const reason = stderr || stdout || `rc check failed: status=${String(result.status)}`;
+    runOrcManagerTraceStage(
+      detail.path,
+      taskKey,
+      "stage_check_done",
+      `check:${detail.name}:status=${String(result.status ?? 1)}`
+    );
+    const reason = stderr || stdout || `orc check failed: status=${String(result.status)}`;
     appendRuntimeLog(id, `[check] failed: ${reason}`);
     throw new Error(reason);
   }
+  runOrcManagerTraceStage(detail.path, taskKey, "stage_check_done", `check:${detail.name}:status=0`);
   appendRuntimeLog(id, `[check] completed: ${stdout || mission}`);
   return {
     detail: loadProjectDetail(id),

@@ -10,14 +10,10 @@
 - `orc help`
 - `orc cli_help`
 - `orc init_orc_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-m <message>] [-a]`
-- `orc init_code_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-m <message>] [-a]` (alias)
 - `orc create_job_md`
-- `orc create_code_draft`
-- `orc add_code_draft_item [-f] [-m <message>]`
-- `orc impl_code_draft`
+- `orc add_orc_drafts`
+- `orc impl_orc_code`
 - `orc check_orc_code`
-- `orc check_task`
-- `orc check_draft`
 - `orc cli_rust_orchestra`
 - `orc chat -n <name>`
 - `orc chat -n <name> --background`
@@ -25,7 +21,7 @@
 - `orc chat-wait -n <name> -a <true|false> [-c <count>]`
 - `orc open-ui [-w|--web|-b|--build]`
 - `orc serve-web-api [--addr <host:port>]`
-- `orc worker-create`
+- `orc worker-create [name]`
 - `orc worker-send <worker_ref|pane_id> <msg...>|--stdin [enter|enter-exit|raw|display]`
 - `orc worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]`
 - `orc worker-close <worker_ref|pane_id>`
@@ -37,6 +33,21 @@
 - `orc http-healthcheck <url> [timeout_ms]`
 - `orc auto <message>`
 - `orc auto -f` (auto-generate `job.md` from project metadata, then continue to implementation)
+
+## Standard ORC Chain
+- Default implementation chain:
+  - `orc create_job_md`
+  - `orc add_orc_drafts`
+  - `orc impl_orc_code`
+  - `orc check_orc_code`
+- Add helper verification only when needed:
+- `orc capture-pane`
+- `orc wait-ready`
+- `orc http-healthcheck`
+- browser e2e / screenshot validation
+- `check_orc_code`는 `job.md`의 `# check evidence` 실행 증거가 없으면 성공으로 끝나면 안 된다.
+- 유닛 테스트 통과는 보조 신호다. 상태 변화 기능은 재진입/reload 검증, UI 기능은 실제 렌더 근거까지 포함해야 한다.
+- Removed legacy commands are not supported and must not appear in docs or workflow guidance.
 
 ## UI Mode
 - Enter UI mode:
@@ -51,15 +62,15 @@
   - `PUBLIC_ORC_API_BASE=http://127.0.0.1:7788 npm --prefix assets/web run dev`
 
 ## tmux Worker
-- Create a worker pane and get a reusable worker ref:
-  - `orc worker-create`
-- Send text to a worker pane:
+- Create a worker tmux session and get a reusable worker ref:
+  - `orc worker-create [name]`
+- Send text to a worker session pane:
   - `orc worker-send <worker_ref|pane_id> <msg...>|--stdin [enter|enter-exit|raw|display]`
 - Wait until worker output contains a pattern:
   - `orc worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]`
-- Close a worker pane:
+- Close a worker tmux session:
   - `orc worker-close <worker_ref|pane_id>`
-- Resolve the latest actual dev URL reported by a worker pane:
+- Resolve the latest actual dev URL reported by a worker session pane:
   - `orc worker-dev-url <worker_ref|pane_id> [lines]`
 - Append an `orc_manager` trace stage:
   - `orc manager-trace <stage> [detail...]`
@@ -74,6 +85,11 @@
 - Check whether a dev server URL is responding:
   - `orc http-healthcheck <url> [timeout_ms]`
 - `orc send-tmux`는 일반 tmux 브리지로 유지되지만 worker orchestration 표준으로는 사용하지 않는다.
+- worker 완료는 `worker:` 문자열 자체를 기다리지 말고 동적으로 만든 sentinel을 사용한다.
+  - 권장: `marker=$(printf '__ORC_%s__' DONE)` 후 `echo "$marker worker:<session_name>:done:dev=${url};report=${report}"`
+  - manager 대기는 `orc worker-wait <worker_ref> "$marker"` 형식으로 수행한다.
+- `worker-dev-url`는 실제 완료 줄에서만 URL을 회수한다. 입력 명령줄에 `dev=http://...` literal을 직접 넣지 말고 shell 변수에서 최종 `echo`에만 출력한다.
+- worker 시작 전에는 `orc cli_help`가 `worker-create [name]`와 `worker-send ...|--stdin`를 보여 주는지 확인하고, 다르면 `cargo install --path /home/tree/project/mono_Manager --bin orc --force`로 설치 바이너리를 먼저 갱신한다.
 
 ## Notes
 - `cargo run --bin rc -- run-playwright-qa --web-root assets/web -- <command...>` runs Playwright/Node QA commands from the installed web workspace with `NODE_PATH`, `.bin`, and helper env wired by `rc`.

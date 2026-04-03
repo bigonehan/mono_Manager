@@ -593,3 +593,11 @@ projects:
     updated_at: "1774846187"
     selected: false
     project_type: code
+  - id: XmGu
+    name: web/blog-personal
+    path: /home/tree/oneMono/template/web/blog-personal
+    description: monorepo template package
+    created_at: "1775171730"
+    updated_at: "1775171730"
+    selected: false
+    project_type: mono
