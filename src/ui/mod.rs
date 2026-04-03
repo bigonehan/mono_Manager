@@ -882,7 +882,7 @@ fn default_detail_layout() -> DetailLayoutPreset {
                 name: "Drafts".to_string(),
                 panel_type: "runtime".to_string(),
                 selected_view: "parallel_status".to_string(),
-                shortcut: "b: create_code_draft/enter-parallel".to_string(),
+                shortcut: "b: add_orc_drafts/enter-parallel".to_string(),
                 cell_start: 8,
                 cell_end: 100,
             },
@@ -1076,7 +1076,7 @@ fn run_create_project_in_project_dir(
     let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
     let output = Command::new(exe)
         .current_dir(project_dir)
-        .arg("init_code_project")
+        .arg("init_orc_project")
         .arg("-n")
         .arg(name)
         .arg("-p")
@@ -1086,7 +1086,7 @@ fn run_create_project_in_project_dir(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .map_err(|e| format!("failed to run init_code_project: {}", e))?;
+        .map_err(|e| format!("failed to run init_orc_project: {}", e))?;
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Ok(stdout)
@@ -1094,7 +1094,7 @@ fn run_create_project_in_project_dir(
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Err(format!(
-            "init_code_project failed (code={:?}) stderr=`{}` stdout=`{}`",
+            "init_orc_project failed (code={:?}) stderr=`{}` stdout=`{}`",
             output.status.code(),
             stderr,
             stdout
@@ -1208,15 +1208,15 @@ fn apply_draft_create_via_cli(
     let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
     let output = Command::new(exe)
         .current_dir(&project.path)
-        .arg("create_code_draft")
+        .arg("add_orc_drafts")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .map_err(|e| format!("failed to run create_code_draft: {}", e))?;
+        .map_err(|e| format!("failed to run add_orc_drafts: {}", e))?;
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         app.status_line = if stdout.is_empty() {
-            "draft create requested (create_code_draft)".to_string()
+            "draft generation requested (add_orc_drafts)".to_string()
         } else {
             stdout
         };
@@ -1224,7 +1224,7 @@ fn apply_draft_create_via_cli(
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         Err(format!(
-            "create_code_draft failed (code={:?}) {}",
+            "add_orc_drafts failed (code={:?}) {}",
             output.status.code(),
             stderr
         ))
@@ -1242,15 +1242,15 @@ fn apply_build_parallel_via_cli(
     let exe = env::current_exe().map_err(|e| format!("failed to resolve current exe: {}", e))?;
     let output = Command::new(exe)
         .current_dir(&project.path)
-        .arg("impl_code_draft")
+        .arg("impl_orc_code")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .map_err(|e| format!("failed to run impl_code_draft: {}", e))?;
+        .map_err(|e| format!("failed to run impl_orc_code: {}", e))?;
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         app.status_line = if stdout.is_empty() {
-            "impl_code_draft done".to_string()
+            "impl_orc_code done".to_string()
         } else {
             stdout
         };
@@ -1258,7 +1258,7 @@ fn apply_build_parallel_via_cli(
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         Err(format!(
-            "impl_code_draft failed (code={:?}) {}",
+            "impl_orc_code failed (code={:?}) {}",
             output.status.code(),
             stderr
         ))
@@ -1282,7 +1282,7 @@ fn start_build_parallel_via_cli_async(
     thread::spawn(move || {
         let output = Command::new(exe)
             .current_dir(&project_dir)
-            .arg("impl_code_draft")
+            .arg("impl_orc_code")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output();
@@ -1290,7 +1290,7 @@ fn start_build_parallel_via_cli_async(
             Ok(out) if out.status.success() => {
                 let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 if stdout.is_empty() {
-                    Ok("impl_code_draft done".to_string())
+                    Ok("impl_orc_code done".to_string())
                 } else {
                     Ok(stdout)
                 }
@@ -1298,12 +1298,12 @@ fn start_build_parallel_via_cli_async(
             Ok(out) => {
                 let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
                 Err(format!(
-                    "impl_code_draft failed (code={:?}) {}",
+                    "impl_orc_code failed (code={:?}) {}",
                     out.status.code(),
                     stderr
                 ))
             }
-            Err(e) => Err(format!("failed to run impl_code_draft: {}", e)),
+            Err(e) => Err(format!("failed to run impl_orc_code: {}", e)),
         };
         let _ = tx.send(result);
     });
@@ -1428,24 +1428,24 @@ fn apply_draft_bulk_add_via_cli(
     for (feature_name, request) in requests {
         let output = Command::new(&exe)
             .current_dir(&project.path)
-            .arg("add_code_draft")
+            .arg("add_orc_drafts")
             .arg("-m")
             .arg(format!("{}: {}", feature_name, request))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
-            .map_err(|e| format!("failed to run add_code_draft: {}", e))?;
+            .map_err(|e| format!("failed to run add_orc_drafts: {}", e))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             return Err(format!(
-                "add_code_draft failed (code={:?}) {}",
+                "add_orc_drafts failed (code={:?}) {}",
                 output.status.code(),
                 stderr
             ));
         }
         applied += 1;
     }
-    app.status_line = format!("draft add requested via add_code_draft ({})", applied);
+    app.status_line = format!("draft refresh requested via add_orc_drafts ({})", applied);
     Ok(())
 }
 
@@ -4415,7 +4415,7 @@ goal : 100번 점프 달성 시 승리
                     name: "Drafts".to_string(),
                     panel_type: "runtime".to_string(),
                     selected_view: "parallel_status".to_string(),
-                    shortcut: "b: create_code_draft/enter-parallel".to_string(),
+                    shortcut: "b: add_orc_drafts/enter-parallel".to_string(),
                     cell_start: 2,
                     cell_end: 2,
                 },
@@ -4428,7 +4428,7 @@ goal : 100번 점프 달성 시 승리
         );
         assert_eq!(
             selected_pane_shortcut(&layout, 1, 5),
-            "b: create_code_draft/enter-parallel".to_string()
+            "b: add_orc_drafts/enter-parallel".to_string()
         );
     }
 }
@@ -5128,7 +5128,7 @@ fn render_draft_create_confirm_modal(
 ) {
     let lines = vec![
         Line::from("Drafts pane selected."),
-        Line::from("Run `create_code_draft` now?"),
+        Line::from("Run `add_orc_drafts` now?"),
         Line::from("This triggers plan-drafts-code from current project."),
     ];
     component::render_confirm_cancel_wrapper(
@@ -5395,7 +5395,7 @@ pub fn run_ui(
                 )
             } else if app.menu_active && app.tab_index == 1 && app.pane_focus == 4 {
                 format!(
-                    "{} | plan: b create_code_draft{} | status: {} ({})",
+                    "{} | plan: b add_orc_drafts{} | status: {} ({})",
                     shared_help, pane_shortcut_text, app.status_line, running
                 )
             } else if app.menu_active && app.tab_index == 1 && app.pane_focus == 5 {
@@ -5406,7 +5406,7 @@ pub fn run_ui(
                 let draft_help = if can_add_draft {
                     "drafts(stage_draft): a add_draft, b enter_parallel"
                 } else {
-                    "drafts(stage_draft): b enter_parallel(빈 draft면 create_code_draft 선실행)"
+                    "drafts(stage_draft): b enter_parallel(빈 draft면 add_orc_drafts 선실행)"
                 };
                 format!(
                     "{} | {}{} | status: {} ({})",
@@ -6201,7 +6201,7 @@ pub fn run_ui(
                                         project_index: app.project_index,
                                     });
                                     app.busy_message = Some(
-                                        "enter_draft 실행: create_code_draft 요청 중".to_string(),
+                                        "enter_draft 실행: add_orc_drafts 요청 중".to_string(),
                                     );
                                 } else if !planned.is_empty()
                                     && !all_planned_task_files_exist(project, &planned)
@@ -6210,7 +6210,7 @@ pub fn run_ui(
                                         project_index: app.project_index,
                                     });
                                     app.busy_message = Some(
-                                        "planned 항목 파일 누락 감지: create_code_draft 보정 실행 중".to_string(),
+                                        "planned 항목 파일 누락 감지: add_orc_drafts 보정 실행 중".to_string(),
                                     );
                                 } else {
                                     let project_index = app.project_index;
@@ -6283,7 +6283,7 @@ pub fn run_ui(
                                     project_index: app.project_index,
                                 });
                                 app.busy_message =
-                                    Some("enter_draft 실행: create_code_draft 요청 중".to_string());
+                                    Some("enter_draft 실행: add_orc_drafts 요청 중".to_string());
                             } else if !planned.is_empty()
                                 && !all_planned_task_files_exist(project, &planned)
                             {
@@ -6291,7 +6291,7 @@ pub fn run_ui(
                                     project_index: app.project_index,
                                 });
                                 app.busy_message = Some(
-                                    "planned 항목 파일 누락 감지: create_code_draft 보정 실행 중"
+                                    "planned 항목 파일 누락 감지: add_orc_drafts 보정 실행 중"
                                         .to_string(),
                                 );
                             } else {

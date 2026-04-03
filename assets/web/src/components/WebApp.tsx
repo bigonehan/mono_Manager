@@ -10,9 +10,9 @@ import {
   FlaskConical,
   FolderOpen,
   GraduationCap,
+  ListFilter,
   Menu,
   LayoutGrid,
-  List,
   Pencil,
   Plus,
   RefreshCw,
@@ -104,6 +104,10 @@ function compactPath(path: string): string {
   if (parts.length === 0) return "/";
   if (parts.length <= 2) return `/${parts.join("/")}`;
   return `/${parts.slice(-2).join("/")}`;
+}
+
+function toggleIdInList(values: string[], id: string): string[] {
+  return values.includes(id) ? values.filter((value) => value !== id) : [...values, id];
 }
 
 function classifyMonorepoKind(projectPath: string, root: string): "app" | "feature" | "template" | "other" {
@@ -505,6 +509,7 @@ export default function WebApp() {
 
   function renderProjectContainerItem(p: Project) {
     const visualState = visualProjectState(p);
+    const checked = bulkDeleteIds.includes(p.id);
     return (
       <div
         key={p.id}
@@ -535,17 +540,35 @@ export default function WebApp() {
           setDragOverProjectId("");
         }}
         onClick={() => {
+          if (bulkDeleteMode) {
+            setBulkDeleteIds((prev) => toggleIdInList(prev, p.id));
+            return;
+          }
           void markSelected(p.id);
         }}
         onDoubleClick={() => {
+          if (bulkDeleteMode) return;
           void markSelected(p.id);
           setTab("detail");
         }}
       >
-        <div className="mb-1 flex items-center gap-2 pr-16">
+        <div className="mb-1 flex items-start gap-2 pr-16">
+          {bulkDeleteMode && (
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => {
+                setBulkDeleteIds((prev) => toggleIdInList(prev, p.id));
+              }}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`bulk-delete-checkbox-${p.id}`}
+              data-testid={`bulk-delete-checkbox-${p.id}`}
+              className="mt-0.5 h-4 w-4 shrink-0"
+            />
+          )}
           <div className="truncate text-base font-extrabold leading-tight">{p.name}</div>
         </div>
-        {selectedProject?.id === p.id && (
+        {selectedProject?.id === p.id && !bulkDeleteMode && (
           <div className="absolute right-2 top-2 flex items-center gap-1">
             <button
               data-testid="project-item-edit"
@@ -627,7 +650,7 @@ export default function WebApp() {
         }}
         onClick={() => {
           if (bulkDeleteMode) {
-            setBulkDeleteIds((prev) => (prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id]));
+            setBulkDeleteIds((prev) => toggleIdInList(prev, p.id));
             return;
           }
           void markSelected(p.id);
@@ -644,9 +667,11 @@ export default function WebApp() {
               type="checkbox"
               checked={checked}
               onChange={() => {
-                setBulkDeleteIds((prev) => (prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id]));
+                setBulkDeleteIds((prev) => toggleIdInList(prev, p.id));
               }}
               onClick={(e) => e.stopPropagation()}
+              aria-label={`bulk-delete-checkbox-${p.id}`}
+              data-testid={`bulk-delete-checkbox-${p.id}`}
               className="h-4 w-4"
             />
           )}
@@ -687,6 +712,11 @@ export default function WebApp() {
 
   const projectItemsContainerClass =
     projectItemViewMode === "minimal" ? "space-y-2" : "grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5";
+
+  function openBulkDeleteMode() {
+    setBulkDeleteMode(true);
+    setBulkDeleteIds([]);
+  }
 
   async function loadDetail(id: string) {
     const res = await fetch(apiUrl(`/api/project-detail?id=${encodeURIComponent(id)}`));
@@ -2126,11 +2156,18 @@ export default function WebApp() {
             <Button
               size="sm"
               variant={projectItemViewMode === "minimal" ? "default" : "outline"}
-              aria-label="project-item-view-minimal"
+              aria-label="project-item-view-filter"
               onClick={() => setProjectItemViewMode("minimal")}
             >
-              <List className="h-4 w-4" />
-              <span className="ml-2">list</span>
+              <ListFilter className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant={bulkDeleteMode ? "destructive" : "outline"}
+              aria-label="project-bulk-delete-mode"
+              onClick={openBulkDeleteMode}
+            >
+              <Trash2 className="h-4 w-4" />
             </Button>
           </div>
           <div className={projectItemViewMode === "minimal" ? "grid grid-cols-1 gap-4 xl:grid-cols-4" : "space-y-4"}>
@@ -2160,19 +2197,6 @@ export default function WebApp() {
                 <Button variant="outline" size="sm" onClick={() => void loadProjects()} aria-label="refresh-projects">
                   <RefreshCw className="h-4 w-4" />
                 </Button>
-                {projectItemViewMode === "minimal" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setBulkDeleteMode((prev) => !prev);
-                      setBulkDeleteIds([]);
-                    }}
-                    aria-label="toggle-delete-mode-code"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -2200,19 +2224,6 @@ export default function WebApp() {
                 <Button variant="outline" size="sm" onClick={() => void openTemplateAssetsModal("mono")} aria-label="open-mono-template-assets">
                   <Settings className="h-4 w-4" />
                 </Button>
-                {projectItemViewMode === "minimal" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setBulkDeleteMode((prev) => !prev);
-                      setBulkDeleteIds([]);
-                    }}
-                    aria-label="toggle-delete-mode-monorepo"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -2252,16 +2263,20 @@ export default function WebApp() {
           </Card>
           </div>
           </div>
-          {projectItemViewMode === "minimal" && bulkDeleteMode && (
-            <div className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2">
-              <Button
-                variant="destructive"
-                onClick={() => void removeSelectedProjects()}
-                disabled={bulkDeleteIds.length === 0}
-                aria-label="delete-selected-projects"
-              >
-                삭제하기 ({bulkDeleteIds.length})
-              </Button>
+          {bulkDeleteMode && (
+            <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur">
+              <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-3 px-4 py-3">
+                <div className="text-sm font-semibold text-muted-foreground">{bulkDeleteIds.length}개 선택됨</div>
+                <Button
+                  variant="destructive"
+                  onClick={() => void removeSelectedProjects()}
+                  disabled={bulkDeleteIds.length === 0}
+                  aria-label="delete-selected-projects"
+                  className="min-w-[180px]"
+                >
+                  삭제하기 ({bulkDeleteIds.length})
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -3208,7 +3223,7 @@ export default function WebApp() {
                 <>
                   {draftFormFields.length === 0 ? (
                     <>
-                      <Label>add_code_draft payload (optional)</Label>
+                      <Label>add_orc_drafts payload (optional)</Label>
                       <Input
                         value={addDraftPayload}
                         onChange={(e) => setAddDraftPayload(e.target.value)}

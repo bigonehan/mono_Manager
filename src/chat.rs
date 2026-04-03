@@ -438,7 +438,7 @@ fn run_llm_via_tmux(
     let code_path = runtime.join(format!("tmux-llm-{}.code", token));
     fs::write(&prompt_path, prompt.as_str())
         .map_err(|e| format!("failed to write {}: {}", prompt_path.display(), e))?;
-    let worker = crate::tmux::worker_create()
+    let worker = crate::tmux::worker_create(None)
         .map_err(|e| format!("{} (worker-create failed: {})", timeout_label, e))?;
     let _ = crate::tmux::rename_pane(&worker.pane_id, &format!("llm-{}", worker.short_id()));
     let worker_command = build_tmux_llm_exec_command(

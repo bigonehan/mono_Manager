@@ -7,7 +7,7 @@ const features = [
   "Detail fields (name/description/spec/goal)",
   "Rules/Constraints/Features list editing",
   "Plan/Drafts panels (planned/generated)",
-  "create_code_draft, add_code_draft, impl_code_draft",
+  "add_orc_drafts, impl_orc_code",
   "check_orc_code"
 ];
 

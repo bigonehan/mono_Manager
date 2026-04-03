@@ -34,29 +34,31 @@ pub fn open_command(agent_browser_command: &str, url: &str, head_mode: HeadMode)
 }
 
 pub fn wait_for_url_command(url: &str) -> String {
+    let url_escaped = url.replace('\\', "\\\\").replace('"', "\\\"");
+    let script = [
+        "import sys",
+        "import time",
+        "import urllib.request",
+        "url = sys.argv[1]",
+        "last = None",
+        "for _ in range(30):",
+        "    try:",
+        "        with urllib.request.urlopen(url, timeout=2) as response:",
+        "            if response.status < 500:",
+        "                raise SystemExit(0)",
+        "    except Exception as exc:",
+        "        last = exc",
+        "        time.sleep(1)",
+        "print(\"server not ready: \" + url + \": \" + str(last), file=sys.stderr)",
+        "raise SystemExit(1)",
+    ]
+    .join("\\n")
+    .replace('\\', "\\\\")
+    .replace('"', "\\\"");
     format!(
-        concat!(
-            "python3 - \"{url}\" <<'PY'\n",
-            "import sys\n",
-            "import time\n",
-            "import urllib.request\n",
-            "\n",
-            "url = sys.argv[1]\n",
-            "last = None\n",
-            "for _ in range(30):\n",
-            "    try:\n",
-            "        with urllib.request.urlopen(url, timeout=2) as response:\n",
-            "            if response.status < 500:\n",
-            "                raise SystemExit(0)\n",
-            "    except Exception as exc:\n",
-            "        last = exc\n",
-            "        time.sleep(1)\n",
-            "\n",
-            "print(\"server not ready: \" + url + \": \" + str(last), file=sys.stderr)\n",
-            "raise SystemExit(1)\n",
-            "PY"
-        ),
-        url = url
+        "python3 -c \"{script}\" \"{url}\"",
+        script = script,
+        url = url_escaped
     )
 }
 
@@ -295,7 +297,7 @@ mod tests {
                 .contains("/tmp/rc-web.png")
         );
         assert!(wait_for_url_command("http://127.0.0.1:3000")
-            .contains("python3 - \"http://127.0.0.1:3000\" <<'PY'"));
+            .contains("python3 -c "));
     }
 
     #[test]

@@ -1,1 +1,0 @@
-- [x] echo unsupported project type -> unsupported project type : clit normalization check 출력 일치

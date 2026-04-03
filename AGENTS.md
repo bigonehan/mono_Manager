@@ -68,10 +68,22 @@
 - After updating `job.md` verification sections, apply a concrete fix and rerun the same execution path.
 - Continue this loop until the target path no longer reports the same blocking failure.
 
-## Clit Test Hard Gate
-- `clit test`는 제거되었다. 점검은 `check_orc_code`와 `check-code` skill 기준으로만 진행한다.
+## ORC Check Hard Gate
+- 점검은 `check_orc_code`와 `check-code` skill 기준으로만 진행한다.
 - web runner 검사는 `check_orc_code`가 선택한 브라우저 e2e 절차로 실제 스크린샷 또는 snapshot 근거를 남겨야 한다.
 - web 검증이 성공하면 검증에 사용한 임시 스크린샷 파일은 완료 전에 정리한다.
+- 검증 결과 기록은 새 보조 문서로 분리하지 말고 항상 `job.md` 내부 섹션에 누적한다. 기본 위치는 `# check`, `# check evidence`, `# check feedback`만 허용한다.
+
+## ORC Manager User-Intent Lock Gate
+- `orc_manager`를 쓰는 턴은 사용자 원문을 먼저 `입력`, `출력`, `유지`, `추가`, `금지` 5줄로 분해하고 `job.md#input/#output/#keep/#add/#forbid`에 잠근 뒤에만 다음 단계로 갈 수 있다.
+- 위 5줄은 구현 친화 요약으로 축소하지 말고, 사용자 요구 문장을 잃지 않는 수준으로 직접 적어야 한다.
+- `job.md#check`에는 최소 `input_output_checklist`, `keep_checklist`, `add_checklist`, `forbid_checklist` 네 묶음이 있어야 한다.
+- 각 checklist 줄은 사용자 원문 항목과 1:1로 대응되어야 하며, 함수명/내부구현/추상화된 개발자 용어만 있고 사용자 요구가 빠져 있으면 실패다.
+- QA/check 보고에는 `input`, `expected output`, `keep`, `add`, `forbid` 대응 결과가 모두 들어 있어야 한다.
+- 위 대응 없이 `유닛테스트 통과`, `브라우저 열림`, `함수 실행됨`만 보고하면 완료 처리하면 안 된다.
+- `orc_manager` preflight trace 순서는 반드시 `stage_global_override_read -> stage_job_md_locked -> stage_plan_done -> stage_input_locked -> stage_output_locked -> stage_keep_locked -> stage_add_locked -> stage_forbid_locked -> stage_symptom_locked -> stage_success_locked`다.
+- `stage_plan_done`를 잠금 stage들 뒤에 찍으면 실패다.
+- 최신 런의 preflight trace가 틀렸으면 worker를 열지 말고 최신 `stage_global_override_read`부터 위 순서로 새 런을 다시 기록해야 한다.
 
 ## YAML/MD Format Enforcement Rule
 - Any function that generates YAML/Markdown via LLM prompt must include explicit output format/schema constraints in the prompt.
@@ -197,9 +209,14 @@
 - Do not stop at intermediate logs only; continue until pass or max retry reached.
 
 ## ORC Tmux Worker Loop Hard Gate
-- 사용자가 구현 실행을 요구하고 ORC/tmux 흐름이 열려 있으면, `/plan` 종료 후 구현은 현재 pane에서 직접 수행하지 않고 반드시 worker pane으로 위임한다.
-- worker pane 생성/전달/대기/종료는 `orc worker-create`, `orc worker-send`, `orc worker-wait`, `orc worker-close`만 사용한다.
-- worker는 구현 종료 시 `worker:<pane_id>:done:<report_path>` 또는 `worker:<pane_id>:fail:<reason>` 형식으로 manager pane에 회수해야 한다.
+- 사용자가 구현 실행을 요구하고 ORC/tmux 흐름이 열려 있으면, `/plan` 종료 후 구현은 현재 pane에서 직접 수행하지 않고 반드시 worker tmux session으로 위임한다.
+- worker session 생성/전달/대기/종료는 `orc worker-create`, `orc worker-send`, `orc worker-wait`, `orc worker-close`만 사용한다.
+- worker는 구현 종료 시 동적으로 만든 sentinel을 포함한 완료 줄만 source of truth로 사용한다.
+- 권장 형식:
+  - 성공: `__ORC_DONE__ worker:<session_name>:done:dev=${url};report=${report}`
+  - 실패: `__ORC_FAIL__ worker:<session_name>:fail:${reason}`
+- manager는 `worker:` 일반 문자열이 아니라 위 sentinel 값으로 `orc worker-wait`를 수행해야 한다.
+- worker 명령 본문에 `dev=http://...` literal을 직접 박지 말고 shell 변수에서 최종 `echo`에만 출력해야 한다.
 - manager pane은 worker의 `done` 메시지를 받아도 구현 완료로 간주하면 안 되고, 즉시 `job.md`를 다시 읽은 뒤 검증 단계로 들어가야 한다.
 - 이 하드게이트를 건너뛰고 현재 pane에서 직접 구현/완료 보고를 하면 규칙 위반이다.
 
@@ -211,7 +228,7 @@
 
 ## Failed Manager Review Hard Gate
 - worker가 완료를 보고했더라도 manager의 `job.md` 재검토, e2e, 스크린샷 확인 중 하나라도 실패하면 그 결과는 실패로 처리한다.
-- 이 경우 manager는 기존 `job.md`를 현재 실패 상태 기준으로 갱신한 뒤에만 새 worker pane을 열 수 있다.
+- 이 경우 manager는 기존 `job.md`를 현재 실패 상태 기준으로 갱신한 뒤에만 새 worker session을 열 수 있다.
 - 실패 시 새 `job.md`는 최소 다음 정보를 포함해야 한다:
   - worker가 완료했다고 보고한 작업 요약
   - manager 재검증에서 실패한 단계
@@ -220,6 +237,14 @@
   - 다음 worker가 즉시 수행해야 할 수정 작업
   - 재검증 기준
 - 위 정보 없이 재시도 pane을 다시 여는 것을 금지한다.
+
+## Improve Loop Hard Gate
+- improve는 `check` 성공 뒤 1회만 실행한다.
+- improve 결과는 반드시 `blocking` 또는 `non_blocking`으로만 분류한다.
+- `non_blocking` 결과는 backlog 또는 메모로만 남기고 구현/QA/check 루프를 다시 열면 안 된다.
+- `blocking` 결과가 있으면 manager는 `job.md`의 `# problems`, `# check`, `## verify`를 갱신한 뒤 `impl -> qa -> check`로 1회만 재진입할 수 있다.
+- improve 재진입은 최대 1회다. 재진입 뒤에도 다시 `blocking`이 나오면 자동 반복을 금지하고 실패로 종료해야 한다.
+- 종료 조건은 `개선점을 더 못 찾음`이 아니라 `blocking issue 없음 + improve 재진입 한도 내 처리 완료`다.
 
 ## Rule-First Enforcement (Highest Priority)
 - On any new user behavioral instruction, update `/home/tree/ai/codex/AGENTS.override.md` first before running commands or editing source.
@@ -268,8 +293,8 @@
 - 최종 산출물(`.project/drafts.yaml` item)에는 템플릿 주석/예시/placeholder를 포함하지 않는다.
 - `draft_item` 관련 프롬프트는 "주석 읽기 -> 값 채우기 -> 주석 제거" 순서를 명시해야 한다.
 - 2026-03-05: `if)` 가상 시나리오 출력은 줄 단위 `a -> b` 포맷만 사용한다. 각 단계는 반드시 다음 줄에 분리해서 작성한다.
-- 2026-03-05: 사용자가 `~~~을 만들어줘` 형태로 요청하면 매니저 pane이 `orc worker-create -> worker-send -> worker-wait -> worker-close` 표준으로 `auto -> plan -> drafts -> impl -> check_orc_code`를 순차 위임/완료 회수/재시도 판단하는 흐름을 우선 적용한다.
-- 2026-03-05: 트리거 문구는 `~~~을 만들어줘`, `~~~을 추가해줘`, `~을 읽고 처리해줘` 3가지를 동일 계열로 인식한다. 단, `읽고 처리해줘`는 기존 `job.md`를 읽는 명령 경로(`create_job_md`, `add_code_draft -f`)를 사용한다.
+- 2026-03-05: 사용자가 `~~~을 만들어줘` 형태로 요청하면 매니저 pane이 `orc worker-create -> worker-send -> worker-wait -> worker-close` 표준으로 독립 worker session에 `auto -> plan -> drafts -> impl -> check_orc_code`를 순차 위임/완료 회수/재시도 판단하는 흐름을 우선 적용한다.
+- 2026-03-05: 트리거 문구는 `~~~을 만들어줘`, `~~~을 추가해줘`, `~을 읽고 처리해줘` 3가지를 동일 계열로 인식한다. 단, `읽고 처리해줘`는 기존 `job.md`를 읽는 명령 경로(`create_job_md`, `add_orc_drafts`)를 사용한다.
 - 2026-03-08: draft 타입 스키마 변경 시 web UI `edit_{type}_drafts` 모달(`edit_code_drafts`, `edit_mono_drafts`, `edit_video_drafts`, `edit_write_drafts`)을 동일 변경에서 함께 갱신한다.
 - 2026-03-06: profile 레이어 리팩토링 작업 시 별도 브랜치에서 진행한다.
 - 2026-03-06: profile 종속 범위는 prompt/template 로딩(project.md, drafts.yaml, parallel run) 및 해당 호출 프롬프트로 한정한다.
@@ -286,7 +311,7 @@
 - 2026-03-07: `current.png` 요청은 검색 없이 `/mnt/c/Users/tende/Pictures/Screenshots/current.png`를 먼저 연다. 해당 경로 미존재 시 그 경로 부재만 즉시 보고하고 대체 경로를 요청한다.
 - 2026-03-07: 사용자가 개선사항에 `전부`, `모두`, `전체`를 명시하면 부분 개선 보고를 금지하고, 경고/실패가 남지 않을 때까지 연속으로 수정-검증을 반복한 뒤 최종 결과만 보고한다.
 - 2026-03-08: templates asset 모달은 좌측 `PROMPTS/TEMPLATES` 폴더 섹션(접기/펼치기) + 우측 파일 내용 패널 구조를 유지하고, 파일 저장 시 `{수정 파일 경로} 수정 반영 후 관련 항목 전체 갱신` LLM 요청을 자동 실행한다.
-- 2026-03-08: detail pane의 add/build 흐름은 `form_add_input` 모달 기반으로 유지한다. add 확인 시 `orc create_job_md` 후 `orc add_code_draft_item/add_code_draft`를 실행해 `drafts.yaml`를 갱신하며, build는 `orc impl_code_draft -> orc check_orc_code` 결과와 `current_job`을 project 카드에 반영한다.
+- 2026-03-08: detail pane의 add/build 흐름은 `form_add_input` 모달 기반으로 유지한다. add 확인 시 `orc create_job_md` 후 `orc add_orc_drafts`를 실행해 `drafts.yaml`를 갱신하며, build는 `orc impl_orc_code -> orc check_orc_code` 결과와 `current_job`을 project 카드에 반영한다.
 - 2026-03-09: tmux pane 명령 전송은 기본 셸을 `fish -ic`로 고정하고 `bash -lc`/`bash -ic` 래퍼 생성을 금지한다(사용자가 bash를 명시한 경우만 예외).
 - 2026-03-10: repo 루트의 규칙 파일은 `AGENTS.md` 하나로 유지한다. `/home/tree/project/rust-orc` 아래에 `AGENTS.override` 또는 `AGENTS.override.md`를 새로 만들거나 심볼릭 링크로 생성하지 않는다.
 - 2026-03-10: repo 전용 규칙 추가는 `AGENTS.md`에 직접 병합하고, 전역 사용자 동작 규칙만 `/home/tree/ai/codex/AGENTS.override.md`에 기록한다.

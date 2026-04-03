@@ -14,6 +14,7 @@ pub enum SendOption {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkerPaneRef {
     pub worker_id: String,
+    pub session_name: Option<String>,
     pub pane_id: String,
     pub pane_pid: Option<String>,
 }
@@ -28,8 +29,9 @@ impl WorkerPaneRef {
 
     pub fn encode(&self) -> String {
         format!(
-            "{}::{}::{}",
+            "{}::{}::{}::{}",
             self.worker_id,
+            self.session_name.clone().unwrap_or_default(),
             self.pane_id,
             self.pane_pid.clone().unwrap_or_default()
         )
@@ -37,15 +39,27 @@ impl WorkerPaneRef {
 
     pub fn decode(raw: &str) -> Result<Self, String> {
         let trimmed = raw.trim();
-        let mut parts = trimmed.splitn(3, "::");
-        let worker_id = parts.next().unwrap_or_default().trim();
-        let pane_id = parts.next().unwrap_or_default().trim();
-        let pane_pid = parts.next().unwrap_or_default().trim();
+        let parts: Vec<&str> = trimmed.split("::").collect();
+        if parts.len() != 4 {
+            return Err(format!(
+                "invalid worker ref (expected worker_id::session_name::pane_id::pane_pid): {}",
+                trimmed
+            ));
+        }
+        let worker_id = parts[0].trim();
+        let session_name = parts[1].trim();
+        let pane_id = parts[2].trim();
+        let pane_pid = parts[3].trim();
         if worker_id.is_empty() || pane_id.is_empty() {
             return Err(format!("invalid worker ref: {}", trimmed));
         }
         Ok(Self {
             worker_id: worker_id.to_string(),
+            session_name: if session_name.is_empty() {
+                None
+            } else {
+                Some(session_name.to_string())
+            },
             pane_id: pane_id.to_string(),
             pane_pid: if pane_pid.is_empty() {
                 None
@@ -79,7 +93,10 @@ fn run_tmux_optional(args: &[&str]) -> Result<Option<String>, String> {
         ));
     }
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if stderr.contains("can't find pane") || stderr.contains("can't find window") {
+    if stderr.contains("can't find pane")
+        || stderr.contains("can't find window")
+        || stderr.contains("can't find session")
+    {
         return Ok(None);
     }
     Err(stderr)
@@ -88,31 +105,75 @@ fn run_tmux_optional(args: &[&str]) -> Result<Option<String>, String> {
 const TMUX_SHELL: &str = "fish";
 const TMUX_EXEC_FLAG: &str = "-ic";
 
-pub fn split_window_pane() -> Result<String, String> {
-    if let Ok(target) = current_pane_id() {
-        return run_tmux(&[
-            "split-window",
-            "-h",
-            "-t",
-            target.as_str(),
-            "-c",
-            "#{pane_current_path}",
-            "-P",
-            "-F",
-            "#{pane_id}",
-            TMUX_SHELL,
-            "-i",
-        ]);
+fn sanitize_session_name(name: &str) -> String {
+    let sanitized = name
+        .chars()
+        .map(|ch| match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => ch,
+            _ => '-',
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    if sanitized.is_empty() {
+        format!("worker-{}", Uuid::new_v4().simple())
+    } else {
+        sanitized
     }
-    run_tmux(&[
-        "split-window",
-        "-h",
+}
+
+fn current_pane_path() -> Result<String, String> {
+    run_tmux(&["display-message", "-p", "#{pane_current_path}"])
+}
+
+fn pane_session_name(pane_id: &str) -> Result<String, String> {
+    run_tmux(&["display-message", "-p", "-t", pane_id, "#{session_name}"])
+}
+
+fn session_exists(session_name: &str) -> Result<bool, String> {
+    match run_tmux_optional(&["display-message", "-p", "-t", session_name, "#{session_name}"])? {
+        Some(_) => Ok(true),
+        None => Ok(false),
+    }
+}
+
+fn kill_session(session_name: &str) -> Result<(), String> {
+    if session_name.trim().is_empty() {
+        return Ok(());
+    }
+    if !session_exists(session_name)? {
+        return Ok(());
+    }
+    run_tmux(&["kill-session", "-t", session_name])?;
+    Ok(())
+}
+
+fn new_worker_session(name: Option<&str>) -> Result<(String, String), String> {
+    let session_name = sanitize_session_name(
+        name.filter(|value| !value.trim().is_empty())
+            .unwrap_or(&format!("worker-{}", Uuid::new_v4().simple())),
+    );
+    let start_path = current_pane_path().unwrap_or_else(|_| ".".to_string());
+    let output = run_tmux(&[
+        "new-session",
+        "-d",
+        "-s",
+        session_name.as_str(),
+        "-c",
+        start_path.as_str(),
         "-P",
         "-F",
-        "#{pane_id}",
+        "#{session_name}::#{pane_id}",
         TMUX_SHELL,
         "-i",
-    ])
+    ])?;
+    let mut parts = output.splitn(2, "::");
+    let created_session = parts.next().unwrap_or_default().trim().to_string();
+    let pane_id = parts.next().unwrap_or_default().trim().to_string();
+    if created_session.is_empty() || pane_id.is_empty() {
+        return Err(format!("invalid new-session output: {}", output));
+    }
+    Ok((created_session, pane_id))
 }
 
 pub fn split_window_run(command: &str) -> Result<String, String> {
@@ -266,6 +327,14 @@ pub fn wait_for_ready(
     }
 }
 
+fn tail_has_worker_pattern(tail: &str, patterns: &[&str]) -> bool {
+    tail.lines().any(|line| {
+        let trimmed = line.trim_start();
+        (trimmed.starts_with("__ORC_") || is_worker_result_line(line))
+            && patterns.iter().any(|candidate| trimmed.contains(candidate))
+    })
+}
+
 pub fn http_healthcheck(url: &str, timeout_ms: u64) -> Result<String, String> {
     let timeout_secs = format!("{:.3}", (timeout_ms.max(1) as f64) / 1000.0);
     let output = Command::new("curl")
@@ -322,10 +391,12 @@ pub fn kill_pane_if_pid_matches(pane_id: &str, expected_pid: Option<&str>) -> Re
     Ok(())
 }
 
-pub fn register_worker_pane(pane_id: &str) -> WorkerPaneRef {
+pub fn register_worker_pane(session_name: Option<String>, pane_id: &str) -> WorkerPaneRef {
     let pid = pane_pid(pane_id).ok().filter(|v| !v.trim().is_empty());
+    let session_name = session_name.or_else(|| pane_session_name(pane_id).ok());
     WorkerPaneRef {
         worker_id: Uuid::new_v4().to_string(),
+        session_name,
         pane_id: pane_id.to_string(),
         pane_pid: pid,
     }
@@ -339,7 +410,7 @@ pub fn resolve_worker_ref(raw: &str) -> Result<WorkerPaneRef, String> {
     if trimmed.contains("::") {
         return WorkerPaneRef::decode(trimmed);
     }
-    Ok(register_worker_pane(trimmed))
+    Ok(register_worker_pane(None, trimmed))
 }
 
 fn ensure_worker_target(worker: &WorkerPaneRef) -> Result<(), String> {
@@ -359,9 +430,9 @@ fn ensure_worker_target(worker: &WorkerPaneRef) -> Result<(), String> {
     Ok(())
 }
 
-pub fn worker_create() -> Result<WorkerPaneRef, String> {
-    let pane_id = split_window_pane()?;
-    Ok(register_worker_pane(&pane_id))
+pub fn worker_create(name: Option<&str>) -> Result<WorkerPaneRef, String> {
+    let (session_name, pane_id) = new_worker_session(name)?;
+    Ok(register_worker_pane(Some(session_name), &pane_id))
 }
 
 pub fn worker_send(worker: &WorkerPaneRef, msg: &str, option: SendOption) -> Result<(), String> {
@@ -376,11 +447,56 @@ pub fn worker_wait(
     lines: usize,
 ) -> Result<String, String> {
     ensure_worker_target(worker)?;
-    wait_for_ready(&worker.pane_id, pattern, timeout_ms, lines)
+    if pattern.trim().is_empty() {
+        return Err("wait_for_ready requires non-empty pattern".to_string());
+    }
+    let patterns: Vec<&str> = pattern
+        .split('|')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .collect();
+    if patterns.is_empty() {
+        return Err("wait_for_ready requires non-empty pattern".to_string());
+    }
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms.max(1));
+    let capture_lines = lines.max(20);
+    loop {
+        let tail = capture_pane_tail(&worker.pane_id, capture_lines)?;
+        if tail_has_worker_pattern(&tail, &patterns) {
+            return Ok(format!(
+                "wait-ready matched: pane={} pattern={}",
+                worker.pane_id, pattern
+            ));
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "wait-ready timeout: pane={} pattern={} tail={}",
+                worker.pane_id,
+                pattern,
+                tail.lines()
+                    .rev()
+                    .take(10)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<Vec<_>>()
+                    .join("\\n")
+            ));
+        }
+        sleep(Duration::from_millis(250));
+    }
+}
+
+fn is_worker_result_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("worker:") || trimmed.starts_with("__ORC_DONE__ worker:")
 }
 
 fn extract_dev_url_from_tail(tail: &str) -> Option<String> {
     tail.lines().rev().find_map(|line| {
+        if !is_worker_result_line(line) {
+            return None;
+        }
         let start = line.find("dev=http://").or_else(|| line.find("dev=https://"))?;
         let rest = &line[(start + 4)..];
         let end = rest.find(';').unwrap_or(rest.len());
@@ -401,6 +517,18 @@ pub fn worker_dev_url(worker: &WorkerPaneRef, lines: usize) -> Result<String, St
 }
 
 pub fn kill_worker_pane(worker: &WorkerPaneRef) -> Result<(), String> {
+    if let Some(session_name) = worker.session_name.as_deref() {
+        if let Some(expected) = worker.pane_pid.as_deref() {
+            let current = match pane_pid_optional(&worker.pane_id)? {
+                Some(pid) => pid,
+                None => return Ok(()),
+            };
+            if current.trim() != expected.trim() {
+                return Ok(());
+            }
+        }
+        return kill_session(session_name);
+    }
     kill_pane_if_pid_matches(&worker.pane_id, worker.pane_pid.as_deref())
 }
 
@@ -428,7 +556,10 @@ pub fn tsend(pane_id: &str, msg: &str, option: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_dev_url_from_tail, http_healthcheck, resolve_worker_ref, WorkerPaneRef};
+    use super::{
+        extract_dev_url_from_tail, http_healthcheck, is_worker_result_line, resolve_worker_ref,
+        tail_has_worker_pattern, WorkerPaneRef,
+    };
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
@@ -473,6 +604,7 @@ mod tests {
     fn worker_ref_round_trip_preserves_fields() {
         let worker = WorkerPaneRef {
             worker_id: "worker-123".to_string(),
+            session_name: Some("impl-task".to_string()),
             pane_id: "%42".to_string(),
             pane_pid: Some("1000".to_string()),
         };
@@ -485,6 +617,7 @@ mod tests {
     fn resolve_worker_ref_accepts_encoded_and_pane_id() {
         let worker = WorkerPaneRef {
             worker_id: "worker-123".to_string(),
+            session_name: Some("impl-task".to_string()),
             pane_id: "%42".to_string(),
             pane_pid: Some("1000".to_string()),
         };
@@ -495,6 +628,12 @@ mod tests {
         let pane_only = resolve_worker_ref("%17").expect("pane id");
         assert_eq!(pane_only.pane_id, "%17".to_string());
         assert!(!pane_only.worker_id.trim().is_empty());
+    }
+
+    #[test]
+    fn worker_ref_decode_rejects_legacy_three_part_format() {
+        let err = WorkerPaneRef::decode("worker-123::%42::1000").expect_err("legacy format rejected");
+        assert!(err.contains("expected worker_id::session_name::pane_id::pane_pid"));
     }
 
     #[test]
@@ -512,5 +651,49 @@ worker:impl-test:done:dev=http://127.0.0.1:4174;report=second\n";
     #[test]
     fn extract_dev_url_from_worker_done_tail_returns_none_without_dev_marker() {
         assert!(extract_dev_url_from_tail("worker:impl:done:report=none").is_none());
+    }
+
+    #[test]
+    fn extract_dev_url_ignores_echoed_shell_command_lines() {
+        let tail = "\
+tree ➜ echo worker:impl-test:done:dev=http://127.0.0.1:4174;report=echoed\n\
+worker:impl-test:done:dev=http://127.0.0.1:4180;report=real\n";
+        assert_eq!(
+            extract_dev_url_from_tail(tail).as_deref(),
+            Some("http://127.0.0.1:4180")
+        );
+    }
+
+    #[test]
+    fn worker_result_line_accepts_worker_and_sentinel_prefix() {
+        assert!(is_worker_result_line("worker:impl:done:report=ok"));
+        assert!(is_worker_result_line(
+            "__ORC_DONE__ worker:impl:done:dev=http://127.0.0.1:4173;report=ok"
+        ));
+        assert!(!is_worker_result_line(
+            "tree ➜ echo worker:impl:done:dev=http://127.0.0.1:4173;report=ok"
+        ));
+    }
+
+    #[test]
+    fn worker_wait_matcher_ignores_echoed_shell_command_lines() {
+        let tail = "\
+tree ➜ echo __ORC_DONE__ worker:impl-test:done:dev=http://127.0.0.1:4174;report=echoed\n\
+tree ➜ \n";
+        assert!(!tail_has_worker_pattern(
+            tail,
+            &["__ORC_DONE__", "worker:impl-test:done"]
+        ));
+    }
+
+    #[test]
+    fn worker_wait_matcher_accepts_actual_worker_result_lines() {
+        let tail = "\
+tree ➜ echo marker\n\
+__ORC_DONE__ worker:impl-test:done:dev=http://127.0.0.1:4180;report=real\n";
+        assert!(tail_has_worker_pattern(
+            tail,
+            &["__ORC_DONE__", "worker:impl-test:done"]
+        ));
     }
 }

@@ -38,8 +38,7 @@ pub fn print_usage(program: &str) {
     println!("  {program} [profile] <command> [args...]");
     let mut commands = [
         "help | cli_help | -h | --help",
-        "clit <args...>  (deprecated; use check_orc_code and helper commands directly)",
-        "init_orc_project|init_code_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-m <message>] [-a]",
+        "init_orc_project [-n <name>] [-p <path>] [-s <spec>] [-d <description>] [-m <message>] [-a]",
         "build_orc_domains",
         "auto_add_function <message>",
         "init_orc_job",
@@ -47,11 +46,11 @@ pub fn print_usage(program: &str) {
         "create_job_md",
         "create_input_md",
         "cli_rust_orchestra",
-        "impl_code_draft | cli_impl_code_draft",
+        "impl_orc_code",
         "check_orc_code",
         "open-ui [-w|--web|-b|--build]",
         "serve-web-api [--addr <host:port>]",
-        "worker-create",
+        "worker-create [name]",
         "worker-send <worker_ref|pane_id> <msg...>|--stdin [enter|enter-exit|raw|display]",
         "worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]",
         "worker-close <worker_ref|pane_id>",
@@ -70,19 +69,6 @@ pub fn print_usage(program: &str) {
     for command in commands {
         println!("  {program} {command}");
     }
-}
-
-fn normalize_clit_args(args: &[String]) -> Vec<String> {
-    if args.is_empty() {
-        return Vec::new();
-    }
-    if matches!(args.first().map(String::as_str), Some("clit")) {
-        return args.to_vec();
-    }
-    let mut normalized = Vec::with_capacity(args.len() + 1);
-    normalized.push("clit".to_string());
-    normalized.extend(args.iter().cloned());
-    normalized
 }
 
 fn normalize_stdin_send_message(command_name: &str, mut buffer: String) -> Result<String, String> {
@@ -111,8 +97,6 @@ fn read_send_message_from_stdin(command_name: &str) -> Result<String, String> {
 
 fn canonical_command_for_match(command: &str) -> &str {
     match command {
-        "init_code_project" => "init_orc_project",
-        "impl_code_draft" | "cli_impl_code_draft" => "impl_orc_code",
         "cli_create_input_md" => "create_input_md",
         "orc_manager_trace" => "manager-trace",
         "check_orc_manager_trace" => "check-manager-trace",
@@ -129,10 +113,19 @@ fn supported_manager_trace_stage(stage: &str) -> bool {
         "stage_global_override_read"
             | "stage_job_md_locked"
             | "stage_plan_done"
+            | "stage_input_locked"
+            | "stage_output_locked"
+            | "stage_keep_locked"
+            | "stage_add_locked"
+            | "stage_forbid_locked"
+            | "stage_symptom_locked"
+            | "stage_success_locked"
             | "stage_impl_session_started"
             | "stage_impl_done"
             | "stage_check_session_started"
             | "stage_check_done"
+            | "stage_restart_path_verified"
+            | "stage_negative_check_passed"
             | "stage_manager_reverified"
     )
 }
@@ -141,6 +134,14 @@ fn read_orc_manager_trace_lines() -> Result<Vec<String>, String> {
     fs::read_to_string(ORC_MANAGER_TRACE_FILE)
         .map(|content| content.lines().map(|line| line.to_string()).collect())
         .map_err(|_| format!("ERROR: orc_manager trace file missing: {ORC_MANAGER_TRACE_FILE}"))
+}
+
+fn latest_trace_run<'a>(lines: &'a [String]) -> &'a [String] {
+    let start = lines
+        .iter()
+        .rposition(|line| line.contains("stage_global_override_read"))
+        .unwrap_or(0);
+    &lines[start..]
 }
 
 fn find_stage_line(lines: &[String], stage: &str) -> Result<usize, String> {
@@ -200,35 +201,58 @@ fn append_orc_manager_trace(stage: &str, detail: &[String]) -> Result<String, St
 
 fn check_orc_manager_trace(mode: &str) -> Result<String, String> {
     let lines = read_orc_manager_trace_lines()?;
+    let run_lines = latest_trace_run(&lines);
     match mode {
         "preflight" | "impl" => {
-            find_stage_line(&lines, "stage_global_override_read")?;
-            find_stage_line(&lines, "stage_job_md_locked")?;
-            find_stage_line(&lines, "stage_plan_done")?;
-            assert_trace_lt(&lines, "stage_global_override_read", "stage_job_md_locked")?;
-            assert_trace_lt(&lines, "stage_job_md_locked", "stage_plan_done")?;
+            find_stage_line(run_lines, "stage_global_override_read")?;
+            find_stage_line(run_lines, "stage_job_md_locked")?;
+            find_stage_line(run_lines, "stage_plan_done")?;
+            find_stage_line(run_lines, "stage_input_locked")?;
+            find_stage_line(run_lines, "stage_output_locked")?;
+            find_stage_line(run_lines, "stage_keep_locked")?;
+            find_stage_line(run_lines, "stage_add_locked")?;
+            find_stage_line(run_lines, "stage_forbid_locked")?;
+            find_stage_line(run_lines, "stage_symptom_locked")?;
+            find_stage_line(run_lines, "stage_success_locked")?;
+            assert_trace_lt(run_lines, "stage_global_override_read", "stage_job_md_locked")?;
+            assert_trace_lt(run_lines, "stage_job_md_locked", "stage_plan_done")?;
+            assert_trace_lt(run_lines, "stage_plan_done", "stage_input_locked")?;
+            assert_trace_lt(run_lines, "stage_input_locked", "stage_output_locked")?;
+            assert_trace_lt(run_lines, "stage_output_locked", "stage_keep_locked")?;
+            assert_trace_lt(run_lines, "stage_keep_locked", "stage_add_locked")?;
+            assert_trace_lt(run_lines, "stage_add_locked", "stage_forbid_locked")?;
+            assert_trace_lt(run_lines, "stage_forbid_locked", "stage_symptom_locked")?;
+            assert_trace_lt(run_lines, "stage_symptom_locked", "stage_success_locked")?;
         }
         "check" => {
-            find_stage_line(&lines, "stage_impl_session_started")?;
-            find_stage_line(&lines, "stage_impl_done")?;
-            assert_trace_lt(&lines, "stage_global_override_read", "stage_job_md_locked")?;
-            assert_trace_lt(&lines, "stage_job_md_locked", "stage_plan_done")?;
-            assert_trace_lt(&lines, "stage_plan_done", "stage_impl_session_started")?;
-            assert_trace_lt(&lines, "stage_impl_session_started", "stage_impl_done")?;
+            find_stage_line(run_lines, "stage_impl_session_started")?;
+            find_stage_line(run_lines, "stage_impl_done")?;
+            assert_trace_lt(run_lines, "stage_global_override_read", "stage_job_md_locked")?;
+            assert_trace_lt(run_lines, "stage_job_md_locked", "stage_plan_done")?;
+            assert_trace_lt(run_lines, "stage_plan_done", "stage_impl_session_started")?;
+            assert_trace_lt(run_lines, "stage_impl_session_started", "stage_impl_done")?;
         }
         "final" => {
-            find_stage_line(&lines, "stage_impl_session_started")?;
-            find_stage_line(&lines, "stage_impl_done")?;
-            find_stage_line(&lines, "stage_check_session_started")?;
-            find_stage_line(&lines, "stage_check_done")?;
-            find_stage_line(&lines, "stage_manager_reverified")?;
-            assert_trace_lt(&lines, "stage_global_override_read", "stage_job_md_locked")?;
-            assert_trace_lt(&lines, "stage_job_md_locked", "stage_plan_done")?;
-            assert_trace_lt(&lines, "stage_plan_done", "stage_impl_session_started")?;
-            assert_trace_lt(&lines, "stage_impl_session_started", "stage_impl_done")?;
-            assert_trace_lt(&lines, "stage_impl_done", "stage_check_session_started")?;
-            assert_trace_lt(&lines, "stage_check_session_started", "stage_check_done")?;
-            assert_trace_lt(&lines, "stage_check_done", "stage_manager_reverified")?;
+            find_stage_line(run_lines, "stage_impl_session_started")?;
+            find_stage_line(run_lines, "stage_impl_done")?;
+            find_stage_line(run_lines, "stage_check_session_started")?;
+            find_stage_line(run_lines, "stage_check_done")?;
+            find_stage_line(run_lines, "stage_restart_path_verified")?;
+            find_stage_line(run_lines, "stage_negative_check_passed")?;
+            find_stage_line(run_lines, "stage_manager_reverified")?;
+            assert_trace_lt(run_lines, "stage_global_override_read", "stage_job_md_locked")?;
+            assert_trace_lt(run_lines, "stage_job_md_locked", "stage_plan_done")?;
+            assert_trace_lt(run_lines, "stage_plan_done", "stage_impl_session_started")?;
+            assert_trace_lt(run_lines, "stage_impl_session_started", "stage_impl_done")?;
+            assert_trace_lt(run_lines, "stage_impl_done", "stage_check_session_started")?;
+            assert_trace_lt(run_lines, "stage_check_session_started", "stage_check_done")?;
+            assert_trace_lt(run_lines, "stage_check_done", "stage_manager_reverified")?;
+            assert_trace_lt(
+                run_lines,
+                "stage_restart_path_verified",
+                "stage_negative_check_passed",
+            )?;
+            assert_trace_lt(run_lines, "stage_negative_check_passed", "stage_manager_reverified")?;
         }
         _ => return Err(format!("ERROR: unsupported mode: {mode}")),
     }
@@ -325,10 +349,10 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             super::web_api::serve_web_api(&addr).await
         }
         "worker-create" => {
-            if !tail.is_empty() {
-                return Err(format!("{raw_command} does not accept arguments"));
+            if tail.len() > 1 {
+                return Err(format!("{raw_command} accepts at most one optional [name]"));
             }
-            super::tmux::worker_create().map(|worker| worker.encode())
+            super::tmux::worker_create(tail.first().map(String::as_str)).map(|worker| worker.encode())
         }
         "worker-send" => {
             if tail.len() < 2 {
@@ -542,47 +566,13 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             }
             crate::chat_wait_command(tail).await
         }
-        "clit" => {
-            if tail.is_empty() {
-                return Err(
-                    "clit is deprecated; use check_orc_code and helper commands directly"
-                        .to_string(),
-                );
-            }
-            let _normalized = normalize_clit_args(tail);
-            Err("clit test was removed; use check_orc_code plus capture-pane/wait-ready/http-healthcheck helpers".to_string())
-        }
         _ => Err(format!("unknown command: {}", command)),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_command_for_match, is_help_command, normalize_clit_args};
-
-    #[test]
-    fn canonical_command_maps_impl_code_draft_alias() {
-        assert_eq!(
-            canonical_command_for_match("impl_code_draft"),
-            "impl_orc_code"
-        );
-    }
-
-    #[test]
-    fn canonical_command_maps_init_code_project_alias() {
-        assert_eq!(
-            canonical_command_for_match("init_code_project"),
-            "init_orc_project"
-        );
-    }
-
-    #[test]
-    fn canonical_command_maps_cli_impl_code_draft_alias() {
-        assert_eq!(
-            canonical_command_for_match("cli_impl_code_draft"),
-            "impl_orc_code"
-        );
-    }
+    use super::{assert_trace_lt, canonical_command_for_match, is_help_command, latest_trace_run};
 
     #[test]
     fn canonical_command_keeps_other_commands() {
@@ -617,26 +607,6 @@ mod tests {
     fn is_help_command_accepts_cli_help_alias() {
         let args = vec!["orc".to_string(), "cli_help".to_string()];
         assert!(is_help_command(&args));
-    }
-
-    #[test]
-    fn normalize_clit_args_inserts_rc_subcommand_when_omitted() {
-        let args = vec!["test".to_string(), "-p".to_string(), ".".to_string()];
-        assert_eq!(
-            normalize_clit_args(&args),
-            vec![
-                "clit".to_string(),
-                "test".to_string(),
-                "-p".to_string(),
-                ".".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn normalize_clit_args_keeps_existing_clit_prefix() {
-        let args = vec!["clit".to_string(), "test".to_string()];
-        assert_eq!(normalize_clit_args(&args), args);
     }
 
     #[test]
@@ -677,5 +647,46 @@ mod tests {
     #[test]
     fn normalize_stdin_send_message_rejects_empty_body() {
         assert!(super::normalize_stdin_send_message("worker-send", "\n".to_string()).is_err());
+    }
+
+    #[test]
+    fn latest_trace_run_ignores_older_trace_blocks() {
+        let lines = vec![
+            "[1] stage_global_override_read | old".to_string(),
+            "[1] stage_job_md_locked | old".to_string(),
+            "[1] stage_plan_done | old".to_string(),
+            "[1] stage_impl_session_started | old".to_string(),
+            "[1] stage_impl_done | old".to_string(),
+            "[2] stage_global_override_read | new".to_string(),
+            "[2] stage_job_md_locked | new".to_string(),
+            "[2] stage_plan_done | new".to_string(),
+        ];
+
+        let run = latest_trace_run(&lines);
+
+        assert_eq!(run.len(), 3);
+        assert!(run[0].contains("stage_global_override_read | new"));
+    }
+
+    #[test]
+    fn final_trace_allows_restart_checks_before_check_done() {
+        let lines = vec![
+            "[1] stage_global_override_read".to_string(),
+            "[1] stage_job_md_locked".to_string(),
+            "[1] stage_plan_done".to_string(),
+            "[1] stage_impl_session_started".to_string(),
+            "[1] stage_impl_done".to_string(),
+            "[1] stage_check_session_started".to_string(),
+            "[1] stage_restart_path_verified".to_string(),
+            "[1] stage_negative_check_passed".to_string(),
+            "[1] stage_check_done".to_string(),
+            "[1] stage_manager_reverified".to_string(),
+        ];
+
+        let run = latest_trace_run(&lines);
+
+        assert!(assert_trace_lt(run, "stage_check_done", "stage_manager_reverified").is_ok());
+        assert!(assert_trace_lt(run, "stage_restart_path_verified", "stage_negative_check_passed").is_ok());
+        assert!(assert_trace_lt(run, "stage_negative_check_passed", "stage_manager_reverified").is_ok());
     }
 }
