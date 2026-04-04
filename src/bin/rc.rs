@@ -1789,31 +1789,49 @@ fn fallback_checklist(log: &SessionLog, effective_errors: &[String]) -> String {
     } else {
         "기본 점검 실패"
     };
+    let base_data_source = if effective_errors.is_empty() { "real" } else { "mock" };
     let mut body = format!(
-        "- [{}] {} -> {} : mode 기반 기본 체크리스트\n- [x] step 실행 -> output_log 기록 : 실행 로그 수집\n",
-        status, log.mission, output
+        "- [{}] {} -> {} : mode 기반 기본 체크리스트 | data_source={} | execution=integration | artifact=none\n- [x] step 실행 -> output_log 기록 : 실행 로그 수집 | data_source=real | execution=cli | artifact=none\n",
+        status, log.mission, output, base_data_source
     );
     if log.runner == RunnerKind::Web {
+        let screenshot_artifact = log
+            .output_log
+            .iter()
+            .find_map(|line| line.split_once("validated web e2e screenshot before cleanup: "))
+            .map(|(_, value)| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         let screenshot_checked = log
             .output_log
             .iter()
-            .any(|line| line.contains("validated web e2e screenshot"));
+            .any(|line| line.contains("validated web e2e screenshot"))
+            && screenshot_artifact.is_some();
+        let screenshot_cleanup_artifact = log
+            .output_log
+            .iter()
+            .find_map(|line| line.split_once("cleaned screenshot after successful test: "))
+            .map(|(_, value)| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         let screenshot_cleaned = log
             .output_log
             .iter()
-            .any(|line| line.contains("cleaned screenshot"));
+            .any(|line| line.contains("cleaned screenshot"))
+            && screenshot_cleanup_artifact.is_some();
         body.push_str(&format!(
-            "- [{}] web e2e screenshot -> 렌더 확인 : 브라우저 스크린샷 검증\n",
-            if screenshot_checked { "x" } else { " " }
+            "- [{}] web e2e screenshot -> 렌더 확인 : 브라우저 스크린샷 검증 | data_source=real | execution=browser | artifact={}\n",
+            if screenshot_checked { "x" } else { " " },
+            screenshot_artifact.as_deref().unwrap_or("missing")
         ));
         body.push_str(&format!(
-            "- [{}] successful screenshot cleanup -> png removed : 성공 후 스크린샷 정리\n",
-            if screenshot_cleaned { "x" } else { " " }
+            "- [{}] successful screenshot cleanup -> png removed : 성공 후 스크린샷 정리 | data_source=real | execution=cli | artifact={}\n",
+            if screenshot_cleaned { "x" } else { " " },
+            screenshot_cleanup_artifact.as_deref().unwrap_or("missing")
         ));
         if requires_state_check {
             body.push_str(&format!(
-                "- [{}] mutation flow -> reload/assert after save/delete/create : 상태 변화 영속성 검증\n",
-                if persistence_checked { "x" } else { " " }
+                "- [{}] mutation flow -> reload/assert after save/delete/create : 상태 변화 영속성 검증 | data_source=real-equivalent | execution=browser | artifact={}\n",
+                if persistence_checked && screenshot_artifact.is_some() { "x" } else { " " },
+                screenshot_artifact.as_deref().unwrap_or("missing")
             ));
         }
     }
@@ -2366,6 +2384,48 @@ mod tests {
         assert!(prompt.contains("경험많고 완벽주의적인 시니어 개발자"));
         assert!(prompt.contains("e2e 스크린샷"));
         assert!(prompt.contains("성공 후 스크린샷 삭제"));
+    }
+
+    #[test]
+    fn fallback_checklist_keeps_web_ui_unresolved_without_artifact_path() {
+        let log = SessionLog {
+            mission: r##"save and reload"##.to_string(),
+            runner: RunnerKind::Web,
+            detected_command: "npm run dev".to_string(),
+            steps: vec![],
+            output_log: vec!["validated web e2e screenshot".to_string()],
+            errors: vec![],
+            captures: vec![],
+        };
+
+        let body = fallback_checklist(&log, &[]);
+
+        assert!(body.contains("- [ ] web e2e screenshot -> 렌더 확인"));
+        assert!(body.contains("artifact=missing"));
+        assert!(body.contains("- [ ] mutation flow -> reload/assert after save/delete/create"));
+    }
+
+    #[test]
+    fn fallback_checklist_marks_web_ui_checked_with_artifact_path() {
+        let log = SessionLog {
+            mission: r##"url \"http://localhost:5173\" click-selector \"#save\" reload assert \".saved-item\""##.to_string(),
+            runner: RunnerKind::Web,
+            detected_command: "npm run dev".to_string(),
+            steps: vec![],
+            output_log: vec![
+                "validated web e2e screenshot before cleanup: .project/screenshot/rc-web.png".to_string(),
+                "cleaned screenshot after successful test: .project/screenshot/rc-web.png".to_string(),
+            ],
+            errors: vec![],
+            captures: vec![],
+        };
+
+        let body = fallback_checklist(&log, &[]);
+
+        assert!(body.contains("- [x] web e2e screenshot -> 렌더 확인"));
+        assert!(body.contains("data_source=real | execution=browser | artifact=.project/screenshot/rc-web.png"));
+        assert!(body.contains("- [x] successful screenshot cleanup -> png removed"));
+        assert!(body.contains("- [x] mutation flow -> reload/assert after save/delete/create"));
     }
 
     #[test]

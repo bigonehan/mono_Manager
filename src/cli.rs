@@ -57,6 +57,7 @@ pub fn print_usage(program: &str) {
         "worker-dev-url <worker_ref|pane_id> [lines]",
         "manager-trace <stage> [detail...]",
         "check-manager-trace [preflight|impl|check|final]",
+        "check-manager-completion [job.md]",
         "send-tmux <pane_id> <msg...>|--stdin [enter|enter-exit|raw|display]",
         "capture-pane <pane_id> [lines]",
         "wait-ready <pane_id> <pattern> [timeout_ms] [lines]",
@@ -93,6 +94,18 @@ fn read_send_message_from_stdin(command_name: &str) -> Result<String, String> {
         .read_to_string(&mut buffer)
         .map_err(|e| format!("{command_name} failed to read stdin: {e}"))?;
     normalize_stdin_send_message(command_name, buffer)
+}
+
+fn resolve_worker_for_send(target: &str) -> Result<super::tmux::WorkerPaneRef, String> {
+    match super::tmux::resolve_worker_ref(target) {
+        Ok(worker) => Ok(worker),
+        Err(err) => {
+            let Some(pane_id) = super::tmux::legacy_worker_ref_pane_id(target) else {
+                return Err(err);
+            };
+            Ok(super::tmux::register_worker_pane(None, pane_id))
+        }
+    }
 }
 
 fn canonical_command_for_match(command: &str) -> &str {
@@ -259,6 +272,78 @@ fn check_orc_manager_trace(mode: &str) -> Result<String, String> {
     Ok(format!("PASS: orc_manager trace verified ({mode})"))
 }
 
+fn collect_bullet_lines_in_section(raw: &str, header: &str) -> Vec<String> {
+    let mut in_section = false;
+    let mut items = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case(header) {
+            in_section = true;
+            continue;
+        }
+        if in_section && trimmed.starts_with('#') {
+            break;
+        }
+        if in_section && trimmed.starts_with("- ") {
+            items.push(trimmed.to_string());
+        }
+    }
+    items
+}
+
+fn collect_unchecked_verify_lines(raw: &str) -> Vec<String> {
+    let mut in_section = false;
+    let mut items = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case("## verify") {
+            in_section = true;
+            continue;
+        }
+        if in_section && trimmed.starts_with("## ") {
+            break;
+        }
+        if in_section && trimmed.starts_with('#') && !trimmed.starts_with("## ") {
+            break;
+        }
+        if in_section && trimmed.starts_with("- [ ]") {
+            items.push(trimmed.to_string());
+        }
+    }
+    items
+}
+
+fn check_manager_completion_from_raw(raw: &str) -> Result<String, String> {
+    let top_level_problems = collect_bullet_lines_in_section(raw, "# problems");
+    if !top_level_problems.is_empty() {
+        return Err(format!(
+            "ERROR: unresolved blocking items remain in # problems\n{}",
+            top_level_problems.join("\n")
+        ));
+    }
+    let nested_problems = collect_bullet_lines_in_section(raw, "## problems");
+    if !nested_problems.is_empty() {
+        return Err(format!(
+            "ERROR: unresolved blocking items remain in ## problems\n{}",
+            nested_problems.join("\n")
+        ));
+    }
+    let unchecked_verify = collect_unchecked_verify_lines(raw);
+    if !unchecked_verify.is_empty() {
+        return Err(format!(
+            "ERROR: unchecked verify items remain in ## verify\n{}",
+            unchecked_verify.join("\n")
+        ));
+    }
+    Ok("PASS: orc manager completion guard verified".to_string())
+}
+
+fn check_manager_completion(job_file: &str) -> Result<String, String> {
+    let raw = fs::read_to_string(job_file)
+        .map_err(|_| format!("ERROR: job file not found: {}", job_file))?;
+    check_manager_completion_from_raw(&raw)
+}
+
 fn resolve_default_profile_name() -> String {
     super::load_app_config()
         .as_ref()
@@ -361,7 +446,6 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                         .to_string(),
                 );
             }
-            let worker = super::tmux::resolve_worker_ref(&tail[0])?;
             let (msg, option) = if tail[1] == "--stdin" {
                 let option = match tail.get(2).map(String::as_str) {
                     Some("enter" | "enter-exit" | "raw" | "display") => tail[2].as_str(),
@@ -385,6 +469,7 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                 }
                 (msg_slice.join(" "), option)
             };
+            let worker = resolve_worker_for_send(&tail[0])?;
             super::tmux::worker_send(
                 &worker,
                 &msg,
@@ -396,10 +481,10 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
                 },
             )?;
             Ok(format!(
-                "worker-send done: pane={} option={} msg={}",
+                "worker-send done: pane={} option={} msg_len={}",
                 worker.pane_id,
                 option,
-                msg
+                msg.len()
             ))
         }
         "worker-wait" => {
@@ -463,6 +548,13 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             }
             let mode = tail.first().map(String::as_str).unwrap_or("preflight");
             check_orc_manager_trace(mode)
+        }
+        "check-manager-completion" => {
+            if tail.len() > 1 {
+                return Err("check-manager-completion accepts zero args or one optional [job.md]".to_string());
+            }
+            let job_file = tail.first().map(String::as_str).unwrap_or("job.md");
+            check_manager_completion(job_file)
         }
         "send-tmux" => {
             if tail.len() < 2 {
@@ -647,6 +739,28 @@ mod tests {
     #[test]
     fn normalize_stdin_send_message_rejects_empty_body() {
         assert!(super::normalize_stdin_send_message("worker-send", "\n".to_string()).is_err());
+    }
+
+    #[test]
+    fn worker_send_legacy_ref_extracts_same_pane_for_retry() {
+        let pane_id = "%17";
+        let legacy_ref = format!("worker-123::{}::1000", pane_id);
+        let worker = super::resolve_worker_for_send(&legacy_ref).expect("legacy worker retry");
+        assert_eq!(worker.pane_id, pane_id);
+    }
+
+    #[test]
+    fn check_manager_completion_rejects_problem_and_verify_remnants() {
+        let raw = "# problems\n- blocker\n\n## verify\n- [ ] unresolved\n";
+        let err = super::check_manager_completion_from_raw(raw).expect_err("must fail");
+        assert!(err.contains("# problems"));
+    }
+
+    #[test]
+    fn check_manager_completion_accepts_clean_job_md() {
+        let raw = "# problems\n\n## verify\n- [x] done\n";
+        let result = super::check_manager_completion_from_raw(raw).expect("must pass");
+        assert!(result.contains("PASS"));
     }
 
     #[test]

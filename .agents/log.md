@@ -3242,3 +3242,7 @@
 - `.../src/tmux/mod.rs`에서 구식 3-part worker ref decode 호환 경로를 제거하고, 현재 표준인 `worker_id::session_name::pane_id::pane_pid` 4-part 형식만 허용하도록 정리함.
 - 같은 파일 테스트를 `legacy format reject` 회귀 검증으로 바꿔 구식 ref가 더 이상 조용히 통과하지 않게 고정함.
 - 검증은 `cargo test --bin orc`와 관련 문자열 검색으로 수행함.
+## 2026-04-04 - 작업한일
+- `.../src/cli.rs`에 `orc check-manager-completion [job.md]` 내장 명령을 추가해 ORC manager completion guard를 shell script 없이 ORC 함수로 직접 실행하도록 변경함.
+- `.../README.md`와 `/home/tree/ai/skills/orc_manager/SKILL.md`를 함께 갱신해 completion gate의 canonical 경로를 `orc check-manager-trace final`과 `orc check-manager-completion [job.md]` 조합으로 고정함.
+- 검증은 `cargo test`와 `cargo install --path /home/tree/project/mono_Manager --bin orc --force`로 수행함.

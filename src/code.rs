@@ -103,6 +103,16 @@ struct ArchitectureContract {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct CheckCodeSkillSpec {
+    skill_path: PathBuf,
+    uses_logic: bool,
+    uses_ui: bool,
+    uses_persistence: bool,
+    uses_reentry: bool,
+    uses_negative: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct WorkflowEvidenceSnapshot {
     pub job_exists: bool,
     pub job_planned_len: usize,
@@ -257,6 +267,130 @@ fn load_drafts_doc_from(root: &Path) -> Result<CodeDraftsDoc, String> {
     serde_yaml::from_str(&raw).map_err(|e| format!("failed to parse drafts.yaml: {}", e))
 }
 
+fn backup_dir_from(root: &Path) -> PathBuf {
+    root.join(".project").join("runtime").join("backups")
+}
+
+fn backup_file_with_label(root: &Path, source: &Path, label: &str) -> Result<PathBuf, String> {
+    let dir = backup_dir_from(root);
+    fs::create_dir_all(&dir).map_err(|e| format!("failed to create backup dir: {}", e))?;
+    let file_name = source
+        .file_name()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| "artifact".to_string());
+    let target = dir.join(format!("{}-{}-{}", now_unix_sec(), label, file_name));
+    fs::copy(source, &target).map_err(|e| {
+        format!(
+            "failed to back up {} to {}: {}",
+            source.display(),
+            target.display(),
+            e
+        )
+    })?;
+    Ok(target)
+}
+
+fn normalize_job_md_headings(raw: &str) -> String {
+    raw.lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            if trimmed.eq_ignore_ascii_case("# requriements")
+                || trimmed.eq_ignore_ascii_case("# requirements")
+            {
+                "# requirement".to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn normalize_job_doc_for_drafts(root: &Path) -> Result<JobDoc, String> {
+    let path = job_md_path_from(root);
+    if !path.exists() {
+        return Ok(JobDoc::default());
+    }
+    let raw = fs::read_to_string(&path).map_err(|e| format!("failed to read job.md: {}", e))?;
+    let heading_normalized = normalize_job_md_headings(&raw);
+    let normalized = normalize_job_md_content(&heading_normalized)?;
+    let doc = parse_job_md(&normalized)?;
+    let canonical = render_job_md(&doc);
+    if canonical != raw {
+        fs::write(&path, canonical).map_err(|e| format!("failed to normalize job.md: {}", e))?;
+    }
+    Ok(doc)
+}
+
+fn backup_stale_drafts_if_needed(root: &Path, job: &JobDoc) -> Result<CodeDraftsDoc, String> {
+    let path = drafts_yaml_path_from(root);
+    if !path.exists() {
+        return Ok(CodeDraftsDoc::default());
+    }
+    let raw =
+        fs::read_to_string(&path).map_err(|e| format!("failed to read drafts.yaml: {}", e))?;
+    let current_keys: Vec<String> = job
+        .requirement
+        .iter()
+        .map(|req| normalize_feature_key(&req.name))
+        .filter(|key| !key.is_empty())
+        .collect();
+    match serde_yaml::from_str::<CodeDraftsDoc>(&raw) {
+        Ok(doc) => {
+            let has_explicit_draft_key = raw
+                .lines()
+                .any(|line| line.trim_start().starts_with("draft:"));
+            if !raw.trim().is_empty() && doc.draft.is_empty() && !has_explicit_draft_key {
+                let backup = backup_file_with_label(root, &path, "legacy-drafts")?;
+                fs::write(&path, "draft: []\n")
+                    .map_err(|e| format!("failed to reset legacy drafts.yaml: {}", e))?;
+                append_job_problem(
+                    root,
+                    &format!(
+                        "legacy drafts artifact backed up before add_orc_drafts: {}",
+                        backup.display()
+                    ),
+                )?;
+                return Ok(CodeDraftsDoc::default());
+            }
+            if current_keys.is_empty() || doc.draft.is_empty() {
+                return Ok(doc);
+            }
+            let has_overlap = doc
+                .draft
+                .iter()
+                .any(|draft| current_keys.iter().any(|key| key == &draft.name));
+            if has_overlap {
+                return Ok(doc);
+            }
+            let backup = backup_file_with_label(root, &path, "stale-drafts")?;
+            fs::write(&path, "draft: []\n")
+                .map_err(|e| format!("failed to reset stale drafts.yaml: {}", e))?;
+            append_job_problem(
+                root,
+                &format!(
+                    "stale drafts artifact backed up before add_orc_drafts: {}",
+                    backup.display()
+                ),
+            )?;
+            Ok(CodeDraftsDoc::default())
+        }
+        Err(_) => {
+            let backup = backup_file_with_label(root, &path, "legacy-drafts")?;
+            fs::write(&path, "draft: []\n")
+                .map_err(|e| format!("failed to reset legacy drafts.yaml: {}", e))?;
+            append_job_problem(
+                root,
+                &format!(
+                    "legacy drafts artifact backed up before add_orc_drafts: {}",
+                    backup.display()
+                ),
+            )?;
+            Ok(CodeDraftsDoc::default())
+        }
+    }
+}
+
 pub(crate) fn save_drafts_doc(doc: &CodeDraftsDoc) -> Result<(), String> {
     save_drafts_doc_from(Path::new("."), doc)
 }
@@ -326,26 +460,24 @@ pub(crate) fn build_orc_domains() -> Result<String, String> {
 
 /// Step 3: Initialize Job
 pub(crate) fn init_orc_job() -> Result<String, String> {
-    let path = job_md_path();
-    if path.exists() {
-        return Ok("job.md already exists".to_string());
+    init_orc_job_from(Path::new("."))
+}
+
+fn init_orc_job_from(root: &Path) -> Result<String, String> {
+    let path = job_md_path_from(root);
+    let mut doc = load_job_doc_from(root)?;
+    let had_existing_job = path.exists();
+    if has_non_empty_requirements(&doc) {
+        return Ok("job.md already has requirement".to_string());
     }
 
-    let template = read_template("job.md")?;
-    let project_md = fs::read_to_string(Path::new(".project").join("project.md"))
-        .map_err(|e| format!("failed to read project.md: {}", e))?;
-
-    let features = extract_plain_list_under_header(&project_md, "# features");
-    let mut doc = JobDoc::default();
-    for f in features {
-        doc.requirement.push(JobRequirement {
-            name: f,
-            ..Default::default()
-        });
+    doc.requirement = collect_project_md_requirements(root)?;
+    save_job_doc_from(root, &doc)?;
+    if had_existing_job {
+        Ok("init_orc_job repaired requirement".to_string())
+    } else {
+        Ok("init_orc_job completed".to_string())
     }
-
-    save_job_doc(&doc)?;
-    Ok("init_orc_job completed".to_string())
 }
 
 pub(crate) fn create_job_md() -> Result<String, String> {
@@ -683,8 +815,8 @@ pub(crate) fn add_orc_drafts() -> Result<String, String> {
 }
 
 fn add_orc_drafts_from(root: &Path) -> Result<String, String> {
-    let mut job = load_job_doc_from(root)?;
-    let mut drafts = load_drafts_doc_from(root)?;
+    let mut job = normalize_job_doc_for_drafts(root)?;
+    let mut drafts = backup_stale_drafts_if_needed(root, &job)?;
     let architecture_contract = match load_architecture_contract_from_root(root) {
         Ok(value) => value,
         Err(error) => {
@@ -853,7 +985,7 @@ pub(crate) async fn impl_orc_code() -> Result<String, String> {
 
 /// Step 6: Check Code
 pub(crate) fn check_orc_code() -> Result<String, String> {
-    let _prompt_template = read_prompt("check_code.md")?;
+    let check_skill = load_check_code_skill_spec()?;
     let mut job = load_job_doc()?;
     let drafts = load_drafts_doc()?;
     let architecture_contract = match load_architecture_contract_from_root(Path::new(".")) {
@@ -863,11 +995,30 @@ pub(crate) fn check_orc_code() -> Result<String, String> {
             return Err(error);
         }
     };
-    job.checklist = build_job_checklist(&job, &drafts, architecture_contract.as_ref());
+    let (check_sections, checklist) =
+        build_job_checklist(&job, &drafts, architecture_contract.as_ref(), &check_skill);
+    job.check_sections = check_sections;
+    job.checklist = checklist;
     let check_evidence = if job.task.check.is_empty() {
         None
     } else {
         Some(parse_check_evidence_lines(&job.check_evidence)?)
+    };
+    let gate_evaluation = if job.task.check.is_empty() {
+        None
+    } else {
+        Some(crate::check_gate::evaluate_hard_gates(
+            &crate::check_gate::HardGateInput {
+                verify_targets: job.task.check.clone(),
+                problems: job.problems.clone(),
+                check_section_names: job
+                    .check_sections
+                    .iter()
+                    .map(|section| section.name.clone())
+                    .collect(),
+                check_evidence_lines: job.check_evidence.clone(),
+            },
+        )?)
     };
 
     if let Some(evidence) = check_evidence.as_ref() {
@@ -876,6 +1027,11 @@ pub(crate) fn check_orc_code() -> Result<String, String> {
                 &mut job.problems,
                 format!("- job.md check evidence unresolved: {}", item),
             );
+        }
+    }
+    if let Some(gate) = gate_evaluation.as_ref() {
+        for item in &gate.failures {
+            push_unique(&mut job.problems, format!("- hard gate: {}", item));
         }
     }
 
@@ -891,19 +1047,33 @@ pub(crate) fn check_orc_code() -> Result<String, String> {
     let removed = cleanup_drafts_yaml_after_success(Path::new("."))?;
     if removed {
         Ok(format!(
-            "check_orc_code completed: verify={} checklist={} execution={} unresolved={} drafts.yaml removed",
+            "check_orc_code completed: verify={} checklist={} execution={} unresolved={} hard_gate_failed={} mode={} skill={} drafts.yaml removed",
             job.task.completed.len(),
             job.checklist.len(),
             check_evidence.as_ref().map_or(0, |value| value.checked.len()),
-            job.problems.len() + job.task.fail.len()
+            job.problems.len() + job.task.fail.len(),
+            gate_evaluation.as_ref().map_or(0, |value| value.failures.len()),
+            gate_evaluation
+                .as_ref()
+                .and_then(|value| value.mode)
+                .map(|value| value.as_str())
+                .unwrap_or("none"),
+            check_skill.skill_path.display()
         ))
     } else {
         Ok(format!(
-            "check_orc_code completed: verify={} checklist={} execution={} unresolved={}",
+            "check_orc_code completed: verify={} checklist={} execution={} unresolved={} hard_gate_failed={} mode={} skill={}",
             job.task.completed.len(),
             job.checklist.len(),
             check_evidence.as_ref().map_or(0, |value| value.checked.len()),
-            job.problems.len() + job.task.fail.len()
+            job.problems.len() + job.task.fail.len(),
+            gate_evaluation.as_ref().map_or(0, |value| value.failures.len()),
+            gate_evaluation
+                .as_ref()
+                .and_then(|value| value.mode)
+                .map(|value| value.as_str())
+                .unwrap_or("none"),
+            check_skill.skill_path.display()
         ))
     }
 }
@@ -1341,6 +1511,44 @@ fn format_checklist_entry(input: &str, output: &str, description: &str) -> Strin
     )
 }
 
+fn classify_checklist_entry(entry: &str) -> &'static str {
+    let lowered = entry.to_ascii_lowercase();
+    if lowered.contains("reload")
+        || lowered.contains("restart")
+        || lowered.contains("reopen")
+        || lowered.contains("re-entry")
+        || lowered.contains("reentry")
+    {
+        return "reentry_checklist";
+    }
+    if lowered.contains("persist")
+        || lowered.contains("save")
+        || lowered.contains("storage")
+        || lowered.contains("stored")
+    {
+        return "persistence_checklist";
+    }
+    if lowered.contains("forbid")
+        || lowered.contains("negative")
+        || lowered.contains("reject")
+        || lowered.contains("prevent")
+        || lowered.contains("duplicate")
+        || lowered.contains("missing")
+    {
+        return "negative_checklist";
+    }
+    if lowered.contains("render")
+        || lowered.contains("visible")
+        || lowered.contains("layout")
+        || lowered.contains("current.png")
+        || lowered.contains("browser")
+        || lowered.contains("ui")
+    {
+        return "ui_checklist";
+    }
+    "logic_checklist"
+}
+
 fn normalize_problem_check_entry(problem: &str) -> String {
     let trimmed = problem.trim().trim_start_matches("- ").trim();
     if trimmed.contains("->") && trimmed.contains(':') {
@@ -1358,7 +1566,8 @@ fn build_job_checklist(
     job: &JobDoc,
     drafts: &CodeDraftsDoc,
     architecture_contract: Option<&ArchitectureContract>,
-) -> Vec<String> {
+    check_skill: &CheckCodeSkillSpec,
+) -> (Vec<JobChecklistSection>, Vec<String>) {
     let mut checklist = Vec::new();
 
     for problem in &job.problems {
@@ -1426,7 +1635,35 @@ fn build_job_checklist(
         }
     }
 
-    checklist
+    let mut sections = Vec::new();
+    let mut section_names = vec!["logic_checklist".to_string()];
+    if check_skill.uses_ui {
+        section_names.push("ui_checklist".to_string());
+    }
+    if check_skill.uses_persistence {
+        section_names.push("persistence_checklist".to_string());
+    }
+    if check_skill.uses_reentry {
+        section_names.push("reentry_checklist".to_string());
+    }
+    if check_skill.uses_negative {
+        section_names.push("negative_checklist".to_string());
+    }
+    for section_name in section_names {
+        let items = checklist
+            .iter()
+            .filter(|entry| classify_checklist_entry(entry) == section_name)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !items.is_empty() || section_name == "logic_checklist" {
+            sections.push(JobChecklistSection {
+                name: section_name,
+                items,
+            });
+        }
+    }
+
+    (sections, checklist)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -1436,17 +1673,14 @@ struct CheckEvidence {
 }
 
 fn parse_check_evidence_lines(lines: &[String]) -> Result<CheckEvidence, String> {
+    let records = crate::check_gate::parse_evidence_records(lines)?;
     let mut evidence = CheckEvidence::default();
-    for line in lines {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("- [x]") {
-            evidence.checked.push(rest.trim().to_string());
-        } else if let Some(rest) = trimmed.strip_prefix("- [ ]") {
-            evidence.unresolved.push(rest.trim().to_string());
+    for record in records {
+        if record.checked {
+            evidence.checked.push(record.detail);
+        } else {
+            evidence.unresolved.push(record.detail);
         }
-    }
-    if evidence.checked.is_empty() && evidence.unresolved.is_empty() {
-        return Err("missing job.md check evidence entries".to_string());
     }
     Ok(evidence)
 }
@@ -1485,6 +1719,34 @@ fn replace_markdown_section(raw: &str, header: &str, body: &str) -> String {
         out.push(body.to_string());
     }
     out.join("\n")
+}
+
+fn has_non_empty_requirements(doc: &JobDoc) -> bool {
+    doc.requirement
+        .iter()
+        .any(|req| !req.name.trim().is_empty())
+}
+
+fn collect_project_md_requirements(root: &Path) -> Result<Vec<JobRequirement>, String> {
+    let project_md_path = project_md_path_from(root);
+    let project_md = fs::read_to_string(&project_md_path)
+        .map_err(|e| format!("failed to read {}: {}", project_md_path.display(), e))?;
+    let features = extract_plain_list_under_header(&project_md, "# features");
+    let requirements = features
+        .into_iter()
+        .map(|name| JobRequirement {
+            name,
+            ..Default::default()
+        })
+        .filter(|req| !req.name.trim().is_empty())
+        .collect::<Vec<_>>();
+    if requirements.is_empty() {
+        return Err(format!(
+            "init_orc_job could not derive requirement from {} # features",
+            project_md_path.display()
+        ));
+    }
+    Ok(requirements)
 }
 
 fn extract_plain_list_under_header(markdown: &str, header: &str) -> Vec<String> {
@@ -1830,6 +2092,27 @@ fn infer_initial_features(message: Option<&str>) -> Vec<String> {
         features.push("zustand_store_setup".to_string());
     }
     features
+}
+
+fn load_check_code_skill_spec() -> Result<CheckCodeSkillSpec, String> {
+    let skill_path = Path::new("/home/tree/ai/skills/check-code/SKILL.md");
+    let prompt_path = crate::source_root().join("assets").join("prompts").join("check_code.md");
+    let path = if skill_path.exists() {
+        skill_path.to_path_buf()
+    } else {
+        prompt_path
+    };
+    let raw = fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read check-code skill {}: {}", path.display(), e))?;
+    let lowered = raw.to_ascii_lowercase();
+    Ok(CheckCodeSkillSpec {
+        skill_path: path,
+        uses_logic: lowered.contains("logic_checklist"),
+        uses_ui: lowered.contains("ui_checklist"),
+        uses_persistence: lowered.contains("persistence_checklist"),
+        uses_reentry: lowered.contains("reentry_checklist"),
+        uses_negative: lowered.contains("negative_checklist"),
+    })
 }
 
 // --- Parallel Implementation Logic (Simplified/Modernized) ---
@@ -2179,7 +2462,7 @@ mod tests {
             .expect("write drafts");
             fs::write(
                 "job.md",
-                "# requirement\n## todo_app\n- add task\n1. create task\n\n# task\n## planned\n## work\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n\n# check evidence\n- [x] todo_app -> verified : unit test passed\n- [x] todo_app -> persisted : reload keeps todo item\n",
+                "# requirement\n## todo_app\n- add task\n1. create task\n\n# task\n## planned\n## work\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n\n# check evidence\n- [x] todo_app -> verified : unit test passed | data_source=real | execution=unit | artifact=none\n- [x] todo_app -> visible_result : browser verified | data_source=real | execution=browser | artifact=.project/screenshot/todo_app.png\n- [x] todo_app -> persisted : reload keeps todo item | data_source=real-equivalent | execution=browser | artifact=.project/screenshot/todo_app.png\n",
             )
             .expect("rewrite job with check evidence");
 
@@ -2187,16 +2470,38 @@ mod tests {
             let job = super::load_job_doc().expect("load job");
 
             assert!(result.contains("checklist=4"));
-            assert!(result.contains("execution=2"));
+            assert!(result.contains("execution=3"));
+            assert!(result.contains("hard_gate_failed=0"));
+            assert!(result.contains("skill=/home/tree/ai/skills/check-code/SKILL.md"));
             assert!(job.task.check.is_empty());
             assert_eq!(job.task.completed, vec!["todo_app".to_string()]);
             assert_eq!(
                 job.checklist,
                 vec![
-                    "todo_app -> persisted : reload keeps todo item".to_string(),
-                    "todo_app -> visible_result : add task renders in UI".to_string(),
                     "todo_app -> verified : create task".to_string(),
-                    "todo_app -> verified : add task".to_string()
+                    "todo_app -> verified : add task".to_string(),
+                    "todo_app -> visible_result : add task renders in UI".to_string(),
+                    "todo_app -> persisted : reload keeps todo item".to_string(),
+                ]
+            );
+            assert_eq!(
+                job.check_sections,
+                vec![
+                    JobChecklistSection {
+                        name: "logic_checklist".to_string(),
+                        items: vec![
+                            "todo_app -> verified : create task".to_string(),
+                            "todo_app -> verified : add task".to_string(),
+                        ],
+                    },
+                    JobChecklistSection {
+                        name: "ui_checklist".to_string(),
+                        items: vec!["todo_app -> visible_result : add task renders in UI".to_string()],
+                    },
+                    JobChecklistSection {
+                        name: "reentry_checklist".to_string(),
+                        items: vec!["todo_app -> persisted : reload keeps todo item".to_string()],
+                    },
                 ]
             );
         });
@@ -2294,7 +2599,7 @@ mod tests {
             .expect("write drafts");
             fs::write(
                 "job.md",
-                "# requirement\n## todo_app\n- add task\n\n# task\n## planned\n## work\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n- todo_app : save fails on reload\n\n# check evidence\n- [x] todo_app -> verified : unit test passed\n",
+                "# requirement\n## todo_app\n- add task\n\n# task\n## planned\n## work\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n- todo_app : save fails on reload\n\n# check evidence\n- [x] todo_app -> verified : unit test passed | data_source=real | execution=unit | artifact=none\n",
             )
             .expect("rewrite job with check evidence");
 
@@ -2325,7 +2630,7 @@ mod tests {
             .expect("write drafts");
             fs::write(
                 "job.md",
-                "# requirement\n## todo_app\n- add task\n\n# task\n## planned\n## work\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n\n# check evidence\n- [ ] todo_app -> persisted : reload keeps todo item\n",
+                "# requirement\n## todo_app\n- add task\n\n# task\n## planned\n## work\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n\n# check evidence\n- [ ] todo_app -> persisted : reload keeps todo item | data_source=real-equivalent | execution=browser | artifact=.project/screenshot/todo.png\n",
             )
             .expect("rewrite job with check evidence");
 
@@ -2339,6 +2644,35 @@ mod tests {
                 .problems
                 .iter()
                 .any(|item| item.contains("job.md check evidence unresolved")));
+        });
+    }
+
+    #[test]
+    fn check_orc_code_blocks_ui_complete_without_real_browser_artifact() {
+        with_locked_workspace("check_code_blocks_fixture_ui_completion", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(
+                "job.md",
+                "# requirement\n## todo_app\n- add task\n\n# task\n## planned\n## work\n## verify\n- todo_app\n## complete\n## fail\n\n# problems\n\n# check\n## ui_checklist\n- todo_app -> visible_result : add task renders in UI\n\n# check evidence\n- [x] todo_app -> visible_result : browser verified | data_source=fixture | execution=browser | artifact=.project/screenshot/ui.png\n",
+            )
+            .expect("write job");
+            fs::write(
+                ".project/drafts.yaml",
+                "draft:\n  - name: todo_app\n    state: complete\n    constraints:\n      - \"todo_app -> visible_result : add task renders in UI\"\n",
+            )
+            .expect("write drafts");
+
+            let result = check_orc_code().expect("run check");
+            let job = super::load_job_doc().expect("load job");
+
+            assert!(result.contains("hard_gate_failed=1"));
+            assert!(result.contains("mode=fixture_only"));
+            assert_eq!(job.task.check, vec!["todo_app".to_string()]);
+            assert!(job.task.completed.is_empty());
+            assert!(job
+                .problems
+                .iter()
+                .any(|item| item.contains("ui_checklist requires browser evidence")));
         });
     }
 
@@ -2597,6 +2931,59 @@ mod tests {
     }
 
     #[test]
+    fn add_orc_drafts_normalizes_job_md_requirement_heading_before_build() {
+        with_locked_workspace("normalize_job_requirement_heading", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(
+                "job.md",
+                "# plan\n\n# requirements\n## todo_app\n- add task\n\n# task\n## planned\n## work\n## verify\n## complete\n## fail\n\n# problems\n",
+            )
+            .expect("write job");
+            fs::write(".project/drafts.yaml", "draft: []\n").expect("write drafts");
+
+            add_orc_drafts().expect("run add_orc_drafts");
+
+            let normalized = fs::read_to_string("job.md").expect("read normalized job");
+            assert!(normalized.contains("# requirement"));
+            assert!(!normalized.contains("# requirements"));
+            let drafts = load_drafts_doc().expect("load drafts");
+            assert!(drafts.draft.iter().any(|item| item.name == "todo_app"));
+        });
+    }
+
+    #[test]
+    fn add_orc_drafts_backs_up_stale_legacy_drafts_before_rebuild() {
+        with_locked_workspace("backup_stale_legacy_drafts", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(
+                "job.md",
+                "# requirement\n## current_png_complaint\n- align layout\n\n# task\n## planned\n## work\n## verify\n## complete\n## fail\n\n# problems\n",
+            )
+            .expect("write job");
+            fs::write(
+                ".project/drafts.yaml",
+                "planned:\n  - legacy_task\nfailed:\n  - old_item\n",
+            )
+            .expect("write legacy drafts");
+
+            add_orc_drafts().expect("run add_orc_drafts");
+
+            let drafts = load_drafts_doc().expect("load drafts");
+            assert!(drafts
+                .draft
+                .iter()
+                .any(|item| item.name == "current_png_complaint"));
+            let backup_dir = Path::new(".project").join("runtime").join("backups");
+            let backups = fs::read_dir(&backup_dir)
+                .expect("backup dir")
+                .filter_map(Result::ok)
+                .map(|entry| entry.file_name().to_string_lossy().to_string())
+                .collect::<Vec<_>>();
+            assert!(backups.iter().any(|name| name.contains("legacy-drafts-drafts.yaml")));
+        });
+    }
+
+    #[test]
     fn update_impl_draft_progress_from_watch_writes_runtime_snapshot_for_korean_name() {
         with_locked_workspace("impl_progress_korean", || {
             fs::create_dir_all(".project").expect("create .project");
@@ -2788,6 +3175,82 @@ mod tests {
                         .to_string()
                 ]
             );
+        });
+    }
+
+    #[test]
+    fn init_orc_job_creates_requirement_from_project_features() {
+        with_locked_workspace("init_orc_job_creates_requirement", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(
+                ".project/project.md",
+                "# features\n- todo_app\n- filter_panel\n",
+            )
+            .expect("write project");
+
+            let result = super::init_orc_job().expect("init job");
+            let job = super::load_job_doc().expect("load job");
+
+            assert_eq!(result, "init_orc_job completed");
+            assert_eq!(job.requirement.len(), 2);
+            assert_eq!(job.requirement[0].name, "todo_app");
+            assert_eq!(job.requirement[1].name, "filter_panel");
+        });
+    }
+
+    #[test]
+    fn init_orc_job_preserves_existing_requirement_when_job_exists() {
+        with_locked_workspace("init_orc_job_preserves_existing_requirement", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(".project/project.md", "# features\n- overwritten_feature\n")
+                .expect("write project");
+            fs::write(
+                "job.md",
+                "# requirement\n## keep_existing_requirement\n- preserve this\n\n# task\n## planned\n## work\n## verify\n## complete\n## fail\n\n# problems\n",
+            )
+            .expect("write job");
+
+            let result = super::init_orc_job().expect("init job");
+            let job = super::load_job_doc().expect("load job");
+
+            assert_eq!(result, "job.md already has requirement");
+            assert_eq!(job.requirement.len(), 1);
+            assert_eq!(job.requirement[0].name, "keep_existing_requirement");
+            assert_eq!(job.requirement[0].rules, vec!["preserve this".to_string()]);
+        });
+    }
+
+    #[test]
+    fn init_orc_job_repairs_empty_requirement_from_project_features() {
+        with_locked_workspace("init_orc_job_repairs_empty_requirement", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(".project/project.md", "# features\n- repaired_feature\n")
+                .expect("write project");
+            fs::write(
+                "job.md",
+                "# requirement\n\n# task\n## planned\n## work\n## verify\n## complete\n## fail\n\n# problems\n",
+            )
+            .expect("write job");
+
+            let result = super::init_orc_job().expect("init job");
+            let job = super::load_job_doc().expect("load job");
+
+            assert_eq!(result, "init_orc_job repaired requirement");
+            assert_eq!(job.requirement.len(), 1);
+            assert_eq!(job.requirement[0].name, "repaired_feature");
+        });
+    }
+
+    #[test]
+    fn init_orc_job_rejects_empty_project_features_instead_of_writing_empty_requirement() {
+        with_locked_workspace("init_orc_job_rejects_empty_features", || {
+            fs::create_dir_all(".project").expect("create .project");
+            fs::write(".project/project.md", "# info\nname: demo\n").expect("write project");
+
+            let err = super::init_orc_job().expect_err("empty features must fail");
+
+            assert!(err.contains("could not derive requirement"));
+            assert!(!Path::new("job.md").exists());
         });
     }
 
