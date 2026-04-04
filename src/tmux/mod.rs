@@ -1,3 +1,7 @@
+use serde::{Deserialize, Serialize};
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -11,7 +15,7 @@ pub enum SendOption {
     Display,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkerPaneRef {
     pub worker_id: String,
     pub session_name: Option<String>,
@@ -68,6 +72,96 @@ impl WorkerPaneRef {
             },
         })
     }
+}
+
+fn worker_registry_path_for(base_dir: &Path) -> PathBuf {
+    base_dir.join(".project").join("runtime").join("worker-registry.jsonl")
+}
+
+fn worker_registry_path() -> Option<PathBuf> {
+    let cwd = env::current_dir().ok()?;
+    Some(worker_registry_path_for(&cwd))
+}
+
+fn persist_worker_ref_at(base_dir: &Path, worker: &WorkerPaneRef) {
+    let path = worker_registry_path_for(base_dir);
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    if fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let Ok(line) = serde_json::to_string(worker) else {
+        return;
+    };
+    let existing = fs::read_to_string(&path).unwrap_or_default();
+    let mut kept = Vec::new();
+    for raw in existing.lines() {
+        let Ok(saved) = serde_json::from_str::<WorkerPaneRef>(raw) else {
+            continue;
+        };
+        if saved.worker_id != worker.worker_id {
+            kept.push(raw.to_string());
+        }
+    }
+    kept.push(line);
+    let payload = format!("{}\n", kept.join("\n"));
+    let _ = fs::write(path, payload);
+}
+
+fn persist_worker_ref(worker: &WorkerPaneRef) {
+    let Some(base_dir) = env::current_dir().ok() else {
+        return;
+    };
+    persist_worker_ref_at(&base_dir, worker);
+}
+
+fn lookup_worker_ref_at(base_dir: &Path, worker_id: &str) -> Option<WorkerPaneRef> {
+    let path = worker_registry_path_for(base_dir);
+    let content = fs::read_to_string(path).ok()?;
+    content
+        .lines()
+        .filter_map(|line| serde_json::from_str::<WorkerPaneRef>(line).ok())
+        .rev()
+        .find(|worker| worker.worker_id == worker_id)
+}
+
+fn lookup_worker_ref(worker_id: &str) -> Option<WorkerPaneRef> {
+    let base_dir = env::current_dir().ok()?;
+    lookup_worker_ref_at(&base_dir, worker_id)
+}
+
+fn resolve_worker_ref_in(base_dir: Option<&Path>, raw: &str) -> Result<WorkerPaneRef, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("worker ref must not be empty".to_string());
+    }
+    if trimmed.contains("::") {
+        return WorkerPaneRef::decode(trimmed);
+    }
+    if !trimmed.starts_with('%') {
+        if let Some(base_dir) = base_dir {
+            if let Some(worker) = lookup_worker_ref_at(base_dir, trimmed) {
+                return Ok(worker);
+            }
+        } else if let Some(worker) = lookup_worker_ref(trimmed) {
+            return Ok(worker);
+        }
+    }
+    Ok(register_worker_pane(None, trimmed))
+}
+
+pub fn legacy_worker_ref_pane_id(raw: &str) -> Option<&str> {
+    let trimmed = raw.trim();
+    let parts: Vec<&str> = trimmed.split("::").collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let pane_id = parts[1].trim();
+    if pane_id.is_empty() {
+        return None;
+    }
+    Some(pane_id)
 }
 
 fn run_tmux(args: &[&str]) -> Result<String, String> {
@@ -394,23 +488,18 @@ pub fn kill_pane_if_pid_matches(pane_id: &str, expected_pid: Option<&str>) -> Re
 pub fn register_worker_pane(session_name: Option<String>, pane_id: &str) -> WorkerPaneRef {
     let pid = pane_pid(pane_id).ok().filter(|v| !v.trim().is_empty());
     let session_name = session_name.or_else(|| pane_session_name(pane_id).ok());
-    WorkerPaneRef {
+    let worker = WorkerPaneRef {
         worker_id: Uuid::new_v4().to_string(),
         session_name,
         pane_id: pane_id.to_string(),
         pane_pid: pid,
-    }
+    };
+    persist_worker_ref(&worker);
+    worker
 }
 
 pub fn resolve_worker_ref(raw: &str) -> Result<WorkerPaneRef, String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err("worker ref must not be empty".to_string());
-    }
-    if trimmed.contains("::") {
-        return WorkerPaneRef::decode(trimmed);
-    }
-    Ok(register_worker_pane(None, trimmed))
+    resolve_worker_ref_in(None, raw)
 }
 
 fn ensure_worker_target(worker: &WorkerPaneRef) -> Result<(), String> {
@@ -557,12 +646,15 @@ pub fn tsend(pane_id: &str, msg: &str, option: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_dev_url_from_tail, http_healthcheck, is_worker_result_line, resolve_worker_ref,
-        tail_has_worker_pattern, WorkerPaneRef,
+        extract_dev_url_from_tail, http_healthcheck, is_worker_result_line,
+        legacy_worker_ref_pane_id, lookup_worker_ref_at, persist_worker_ref_at,
+        resolve_worker_ref, resolve_worker_ref_in, tail_has_worker_pattern,
+        worker_registry_path_for, WorkerPaneRef,
     };
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
+    use tempfile::tempdir;
 
     #[test]
     fn http_healthcheck_accepts_200_response() {
@@ -634,6 +726,47 @@ mod tests {
     fn worker_ref_decode_rejects_legacy_three_part_format() {
         let err = WorkerPaneRef::decode("worker-123::%42::1000").expect_err("legacy format rejected");
         assert!(err.contains("expected worker_id::session_name::pane_id::pane_pid"));
+    }
+
+    #[test]
+    fn legacy_worker_ref_pane_id_extracts_retry_target() {
+        assert_eq!(
+            legacy_worker_ref_pane_id("worker-123::%42::1000"),
+            Some("%42")
+        );
+        assert_eq!(legacy_worker_ref_pane_id("worker-123::::1000"), None);
+        assert_eq!(legacy_worker_ref_pane_id("worker-123::impl::%42::1000"), None);
+    }
+
+    #[test]
+    fn resolve_worker_ref_accepts_worker_id_from_registry() {
+        let temp = tempdir().expect("tempdir");
+        let worker = WorkerPaneRef {
+            worker_id: "worker-123".to_string(),
+            session_name: Some("impl-task".to_string()),
+            pane_id: "%42".to_string(),
+            pane_pid: Some("1000".to_string()),
+        };
+        persist_worker_ref_at(temp.path(), &worker);
+        let registry = worker_registry_path_for(temp.path());
+        assert!(registry.is_file());
+        let loaded = lookup_worker_ref_at(temp.path(), "worker-123").expect("registry hit");
+        assert_eq!(loaded, worker);
+    }
+
+    #[test]
+    fn resolve_worker_ref_accepts_worker_id_from_current_registry() {
+        let temp = tempdir().expect("tempdir");
+        let worker = WorkerPaneRef {
+            worker_id: "worker-123".to_string(),
+            session_name: Some("impl-task".to_string()),
+            pane_id: "%42".to_string(),
+            pane_pid: Some("1000".to_string()),
+        };
+        persist_worker_ref_at(temp.path(), &worker);
+        let resolved =
+            resolve_worker_ref_in(Some(temp.path()), "worker-123").expect("worker id resolve");
+        assert_eq!(resolved, worker);
     }
 
     #[test]

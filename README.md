@@ -26,8 +26,10 @@
 - `orc worker-wait <worker_ref|pane_id> <pattern> [timeout_ms] [lines]`
 - `orc worker-close <worker_ref|pane_id>`
 - `orc worker-dev-url <worker_ref|pane_id> [lines]`
+- `worker-create`가 반환한 전체 `worker_ref`를 그대로 재사용하는 것이 기준이다. ref가 잘려 `worker_id`만 남아도 최근 registry에서 같은 impl worker pane을 다시 찾는다.
 - `orc manager-trace <stage> [detail...]`
 - `orc check-manager-trace [preflight|impl|check|final]`
+- `orc check-manager-completion [job.md]`
 - `orc capture-pane <pane_id> [lines]`
 - `orc wait-ready <pane_id> <pattern> [timeout_ms] [lines]`
 - `orc http-healthcheck <url> [timeout_ms]`
@@ -76,6 +78,8 @@
   - `orc manager-trace <stage> [detail...]`
 - Verify `orc_manager` trace order:
   - `orc check-manager-trace [preflight|impl|check|final]`
+- Verify `orc_manager` completion gate from `job.md` without shell wrappers:
+  - `orc check-manager-completion [job.md]`
 
 ## tmux Worker Helpers
 - Capture recent pane output:

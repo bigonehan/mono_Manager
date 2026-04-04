@@ -3,6 +3,7 @@
 #![allow(unused_mut)]
 
 mod chat;
+mod check_gate;
 mod cli;
 mod code;
 mod config;
