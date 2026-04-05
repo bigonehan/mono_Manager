@@ -1,0 +1,116 @@
+draft:
+- name: playwright_qa_ad_hangover_recovery
+  state: work
+  type: action
+  domain:
+  - core
+  depends_on: []
+  scope: []
+  rule:
+  - stabilize the generated Playwright QA path so selector waits and preview extraction do not fail on the reported ad-hangover flow
+  - keep manager orchestration aligned with the orc_manager skill and worker API first rule
+  - reverify through worker-separated impl, qa, check, and improve stages
+  step:
+  - trigger -> process -> result
+  tasks:
+  - implement playwright_qa_ad_hangover_recovery
+  constraints:
+  - 'playwright_qa_ad_hangover_recovery -> playwright_qa_ad_hangover_recovery : requirement 기반 draft item 생성'
+  check:
+  - verify playwright_qa_ad_hangover_recovery
+- name: rc_internalize_scripts_usage
+  state: planned
+  type: action
+  domain:
+  - core
+  depends_on: []
+  scope: []
+  rule:
+  - move rc-capable logic out of `scripts/` files into `src/bin/rc.rs` and related rc modules where practical
+  - keep only minimal wrappers or remove direct script calls when rc command paths can replace them safely
+  - update call sites, docs, prompts, and tests so rc-capable flows invoke rc instead of raw script bodies
+  - keep changes minimal and limited to script-backed rc-compatible behavior
+  step:
+  - trigger -> process -> result
+  tasks:
+  - implement rc_internalize_scripts_usage
+  constraints:
+  - 'rc_internalize_scripts_usage -> rc_internalize_scripts_usage : requirement 기반 draft item 생성'
+  check:
+  - verify rc_internalize_scripts_usage
+- name: project_page_bulk_delete_toolbar
+  state: planned
+  type: action
+  domain:
+  - core
+  depends_on: []
+  scope: []
+  rule:
+  - project page top controls expose a filter/list control and a trash control side by side
+  - clicking trash enters delete selection mode and exposes checkbox selection on project items
+  - delete action remains a fixed bottom control and removes every selected project in one run
+  step:
+  - trigger -> process -> result
+  tasks:
+  - implement project_page_bulk_delete_toolbar
+  constraints:
+  - 'project_page_bulk_delete_toolbar -> project_page_bulk_delete_toolbar : requirement 기반 draft item 생성'
+  check:
+  - verify project_page_bulk_delete_toolbar
+- name: project_page_bulk_delete_e2e
+  state: planned
+  type: action
+  domain:
+  - core
+  depends_on: []
+  scope: []
+  rule:
+  - playwright e2e creates two temporary projects
+  - the two projects are selected through the delete flow
+  - one delete action removes both projects and the UI no longer shows them
+  step:
+  - trigger -> process -> result
+  tasks:
+  - implement project_page_bulk_delete_e2e
+  constraints:
+  - 'project_page_bulk_delete_e2e -> project_page_bulk_delete_e2e : requirement 기반 draft item 생성'
+  check:
+  - verify project_page_bulk_delete_e2e
+- name: orc_check_requires_execution_evidence
+  state: complete
+  type: action
+  domain:
+  - core
+  depends_on: []
+  scope: []
+  rule:
+  - '`check_orc_code`는 `job.md#check evidence` 실행 근거가 없으면 성공 완료를 만들지 않는다.'
+  - '`job.md#check evidence`에 `[ ]` 항목이 있으면 `job.md#problems`에 남기고 verify 상태를 유지한다.'
+  step:
+  - verify 단계는 `job.md#check evidence`를 먼저 읽고 unresolved를 문제로 승격한다.
+  - unresolved가 없을 때만 verify를 complete로 이동한다.
+  tasks:
+  - implement orc_check_requires_execution_evidence
+  constraints:
+  - 'orc_check_requires_execution_evidence -> orc_check_requires_execution_evidence : requirement 기반 draft item 생성'
+  check:
+  - verify orc_check_requires_execution_evidence
+- name: orc_prompt_rejects_unit_test_only_completion
+  state: complete
+  type: action
+  domain:
+  - core
+  depends_on: []
+  scope: []
+  rule:
+  - 구현 프롬프트와 검증 프롬프트는 유닛테스트 통과만으로 완료라고 쓰지 않는다.
+  - README에도 실행 증거 기반 완료 규칙을 반영한다.
+  step:
+  - build/check 안내 문구를 실행 근거 중심으로 교체한다.
+  - 문서와 프롬프트를 같은 기준으로 맞춘다.
+  tasks:
+  - implement orc_prompt_rejects_unit_test_only_completion
+  constraints:
+  - 'orc_prompt_rejects_unit_test_only_completion -> orc_prompt_rejects_unit_test_only_completion : requirement 기반 draft item 생성'
+  check:
+  - verify orc_prompt_rejects_unit_test_only_completion

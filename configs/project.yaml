@@ -1,4 +1,4 @@
-recentActivepane: CbgR
+recentActivepane: 7gPP
 projects:
   - id: CbgR
     name: web/next
@@ -6,7 +6,7 @@ projects:
     description: monorepo template package
     created_at: "1772888984"
     updated_at: "1774849379"
-    selected: true
+    selected: false
     project_type: mono
   - id: Crqr
     name: blender-bots
@@ -601,3 +601,12 @@ projects:
     updated_at: "1775171730"
     selected: false
     project_type: mono
+  - id: 7gPP
+    name: reset-task-feedback
+    path: /home/tree/project/mono_Manager
+    description: orc 작업 시작 시 check-process/feedback/screenshot 초기화, 피드백 경로 단일화, web
+      check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
+    created_at: "1775369665"
+    updated_at: "1775370107"
+    selected: true
+    project_type: code

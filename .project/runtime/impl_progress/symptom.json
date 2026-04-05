@@ -1,0 +1,10 @@
+{
+  "draft_name": "symptom",
+  "status": "running",
+  "elapsed_sec": 0,
+  "detail": "impl draft started",
+  "updated_at": 1775368891,
+  "soft_timeout_sec": 180,
+  "stall_timeout_sec": 180,
+  "hard_timeout_sec": 900
+}
