@@ -3246,3 +3246,7 @@
 - `.../src/cli.rs`에 `orc check-manager-completion [job.md]` 내장 명령을 추가해 ORC manager completion guard를 shell script 없이 ORC 함수로 직접 실행하도록 변경함.
 - `.../README.md`와 `/home/tree/ai/skills/orc_manager/SKILL.md`를 함께 갱신해 completion gate의 canonical 경로를 `orc check-manager-trace final`과 `orc check-manager-completion [job.md]` 조합으로 고정함.
 - 검증은 `cargo test`와 `cargo install --path /home/tree/project/mono_Manager --bin orc --force`로 수행함.
+## 2026-04-05 - 작업한일
+- `.../assets/web/src/lib/job-process-parser.ts`와 `.../assets/web/src/components/WebApp.tsx`를 갱신해 detail 화면에 `process alignment` pane을 추가하고, `job.md`의 `input/output/keep/add/forbid`, `verify`, `check evidence`, `problems`를 실제 UI에 바로 노출하도록 맞춤.
+- `.../assets/web/tests/unit/job-process-parser.test.ts`를 추가해 새 parser가 잠금 섹션과 체크리스트 상태를 정확히 읽는지 회귀 검증을 붙였고, `.../assets/web/package.json`은 `@astrojs/check`를 dev dependency 기준으로 정리함.
+- ORC manager 흐름으로 impl/qa/check/improve worker를 분리 실행했고, impl은 `http://127.0.0.1:4321`, QA는 실제 접속 + reload + negative-check + artifact `.../tmp/process-alignment-qa.png`, check는 `check-code` 기준, improve는 `non_blocking` 분류까지 회수한 뒤 `job.md`, trace, completion guard를 재검증함.

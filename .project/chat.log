@@ -29424,3 +29424,384 @@ attempt 2/2 failed:
 [1775197749] LLM_ERROR
 
 
+[1775368891] LLM_PROMPT
+
+# 컨텍스트
+- `task 단일 객체` : 현재 구현해야 할 task
+다른 컨텍스트를 가정하지 않는다.
+
+---
+# 기본 규칙 
+## 네이밍 규칙
+- 코드명/명령명 네이밍은 공통 규칙 `/home/tree/ai/skills/rule-naming/SKILL.md`를 따른다.
+## scope 규칙
+여기서`scope` 는 `.project/drafts.ymal` 내부의 `item`중 현재 작업중인 item 항목을 의미한다.
+- `scope`에 명시된 파일 경로만 수정/생성한다
+- `scope`에 없는 파일/폴더는 생성/수정/삭제를 절대 하지 않는다
+- `scope` 제약을 만족할 수 없으면 파일을 변경하지 말고 실패 사유만 보고한다
+- `scope`가 비어있으면 `rule`, `step`, `name`을 바탕으로 파일 경로를 추론해 채운다
+
+## 함수형 구조 규칙
+- 전역 가변 상태를 직접 읽거나 쓰지 말고 인자/리턴으로 전달한다
+- 배열/객체 갱신은 Copy-on-Write(복사 → 수정 → 반환)만 사용한다
+- 인자 mutation을 금지한다
+- 외부 I/O, 로깅, 시간/랜덤은 액션 레이어로 격리한다
+- 액션 함수는 조립과 오케스트레이션만 수행하고 계산은 별도 함수로 분리한다
+
+# 구현 규칙
+## 코드 참조 
+1. `.project/projet.md`에서`# rules`, `# constrints`와 현재 `task.domains`에 있는  `# domains` 정보를 확인한다 
+2. 전달받은 `task 단일 객체`의 `scope`, `step`, `rule`을 기준으로 구현한다
+
+## step 처리
+- 작업 시작시 `jj workspace`를 생성
+- 작업 상태 전이(`drafts.yaml`, `job.md`)는 Rust 오케스트레이터 함수가 수행한다.
+- LLM 응답에서 `drafts.yaml`/`job.md`를 직접 수정하거나 상태 전이 지시를 출력하지 않는다.
+- 유닛 테스트는 보조 검증일 뿐 완료 판정이 아니다.
+- draft의 `check`를 충족하는 실제 실행 근거를 만들 수 있는 방향으로 구현한다.
+- 상태 변화 기능이면 reload/reopen 뒤 selector/assert 또는 동등한 재진입 검증이 가능해야 한다.
+- `step`의 순서대로 구현한다.
+- 검증 조건, 필터링은 함수의 맨 처음에 배치한다
+- `파일 → 입력 → 동작 → 출력` 형태로 한 줄씩 처리한다
+- 한 번에 작업할 수 있는 최소한의 단위로 수행한다
+- 모든 작업이 성공적으로 완료가 되었다면 merge 
+
+# 금지 규칙 
+- 불필요한 파일 생성 금지
+- 과도한 리팩토링 금지
+- scope 외 파일 수정 금지
+- rule 위반 가능성이 있으면 즉시 수정해서 규칙을 만족할 것
+# 완료 규칙 
+- 구현 성공/실패에 따른 상태 반영은 Rust 오케스트레이터가 처리한다(성공: `complete/check`, 실패: `error/fail`).
+- `유닛테스트 pass`, `로컬 빌드 성공`만으로 완료라고 쓰지 않는다.
+- 실제 완료 판정은 `check_orc_code`와 `job.md#check evidence` 실행 증거가 같이 있을 때만 가능하다.
+- 유넷테스트를 pass한 코드가 하드코드로 되어있는지를 확인하고 하드 코드 형식으면 함수 내부의 계산식으로 처리되게 변경한다. 
+- 실행 실패 또는 대기시간 초과 시 실패 사유를 출력한다.
+
+
+# 입력 task 단일 객체
+```yaml
+name: keep
+state: planned
+type: action
+domain:
+- core
+depends_on: []
+scope: []
+rule:
+- 현재 세션은 manager 역할만 수행하고 직접 구현/QA/check/브라우저 실행을 하지 않는다.
+- impl, qa, check, improve 역할은 서로 다른 worker session으로 유지한다.
+- worker 결과 검증 전에 `job.md`를 source of truth로 유지한다.
+step:
+- trigger -> process -> result
+tasks:
+- implement keep
+constraints:
+- 'keep -> keep : requirement 기반 draft item 생성'
+check:
+- verify keep
+
+```
+
+# 추가 지시
+- `drafts.yaml`, `job.md`는 절대 직접 수정하지 말고 코드 생성/수정 내용만 출력한다.
+- 상태 전이(work/complete/error, planned/work/check/fail 이동)는 Rust 오케스트레이터가 수행하므로 출력하지 않는다.
+
+[1775368891] LLM_PROMPT
+[
+# 컨텍스트
+- `task 단일 객체` : 현재 구현해야 할 task
+다른 컨텍스트를 가정하지 않는다.
+
+---
+# 기본 규칙 
+## 네이밍 규칙
+- 코드명/명령명 네이밍은 공통 규칙 `/home/tree/ai/skills/rule-naming/SKILL.md`를 따른다.
+## scope 규칙
+여기서`scope` 는 `.project/drafts.ymal` 내부의 `item`중 현재 작업중인 item 항목을 의미한다.
+- `scope`에 명시된 파일 경로만 수정/생성한다
+- `scope`에 없는 파일/폴더는 생성/수정/삭제를 절대 하지 않는다
+- `scope` 제약을 만족할 수 없으면 파일을 변경하지 말고 실패 사유만 보고한다
+- `scope`가 비어있으면 `rule`, `step`, `name`을 바탕으로 파일 경로를 추론해 채운다
+
+## 함수형 구조 규칙
+- 전역 가변 상태를 직접 읽거나 쓰지 말고 인자/리턴으로 전달한다
+- 배열/객체 갱신은 Copy-on-Write(복사 → 수정 → 반환)만 사용한다
+- 인자 mutation을 금지한다
+- 외부 I/O, 로깅, 시간/랜덤은 액션 레이어로 격리한다
+- 액션 함수는 조립과 오케스트레이션만 수행하고 계산은 별도 함수로 분리한다
+
+# 구현 규칙
+## 코드 참조 
+1. `.project/projet.md`에서`# rules`, `# constrints`와 현재 `task.domains`에 있는  `# domains` 정보를 확인한다 
+2. 전달받은 `task 단일 객체`의 `scope`, `step`, `rule`을 기준으로 구현한다
+
+## step 처리
+- 작업 시작시 `jj workspace`를 생성
+- 작업 상태 전이(`drafts.yaml`, `job.md`)는 Rust 오케스트레이터 함수가 수행한다.
+- LLM 응답에서 `drafts.yaml`/`job.md`를 직접 수정하거나 상태 전이 지시를 출력하지 않는다.
+- 유닛 테스트는 보조 검증일 뿐 완료 판정이 아니다.
+- draft의 `check`를 충족하는 실제 실행 근거를 만들 수 있는 방향으로 구현한다.
+- 상태 변화 기능이면 reload/reopen 뒤 selector/assert 또는 동등한 재진입 검증이 가능해야 한다.
+- `step`의 순서대로 구현한다.
+- 검증 조건, 필터링은 함수의 맨 처음에 배치한다
+- `파일 → 입력 → 동작 → 출력` 형태로 한 줄씩 처리한다
+- 한 번에 작업할 수 있는 최소한의 단위로 수행한다
+- 모든 작업이 성공적으로 완료가 되었다면 merge 
+
+# 금지 규칙 
+- 불필요한 파일 생성 금지
+- 과도한 리팩토링 금지
+- scope 외 파일 수정 금지
+- rule 위반 가능성이 있으면 즉시 수정해서 규칙을 만족할 것
+# 완료 규칙 
+- 구현 성공/실패에 따른 상태 반영은 Rust 오케스트레이터가 처리한다(성공: `complete/check`, 실패: `error/fail`).
+- `유닛테스트 pass`, `로컬 빌드 성공`만으로 완료라고 쓰지 않는다.
+- 실제 완료 판정은 `check_orc_code`와 `job.md#check evidence` 실행 증거가 같이 있을 때만 가능하다.
+- 유넷테스트를 pass한 코드가 하드코드로 되어있는지를 확인하고 하드 코드 형식으면 함수 내부의 계산식으로 처리되게 변경한다. 
+- 실행 실패 또는 대기시간 초과 시 실패 사유를 출력한다.
+
+
+# 입력 task 단일 객체
+```yaml
+name: output
+state: planned
+type: action
+domain:
+- core
+depends_on: []
+scope: []
+rule:
+- 현재 web UI가 내부 process 변화와 실제 데이터/상태 흐름을 반영하도록 코드가 수정된다.
+- 실제 dev server URL이 impl worker에서 회수되고 QA worker가 그 URL로 실제 접속 검증을 완료한다.
+- check worker가 `check-code` 기준으로 검증하고 manager가 `job.md`와 trace를 재확인한다.
+- blocking 문제가 남지 않은 상태로 completion guard를 통과한다.
+step:
+- trigger -> process -> result
+tasks:
+- implement output
+constraints:
+- 'output -> output : requirement 기반 draft item 생성'
+check:
+- verify output
+
+```
+
+# 추가 지시
+- `drafts.yaml`, `job.md`는 절대 직접 수정하지 말고 코드 생성/수정 내용만 출력한다.
+- 상태 전이(work/complete/error, planned/work/check/fail 이동)는 Rust 오케스트레이터가 수행하므로 출력하지 않는다.
+
+1775368891] LLM_PROMPT
+
+# 컨텍스트
+- `task 단일 객체` : 현재 구현해야 할 task
+다른 컨텍스트를 가정하지 않는다.
+
+---
+# 기본 규칙 
+## 네이밍 규칙
+- 코드명/명령명 네이밍은 공통 규칙 `/home/tree/ai/skills/rule-naming/SKILL.md`를 따른다.
+## scope 규칙
+여기서`scope` 는 `.project/drafts.ymal` 내부의 `item`중 현재 작업중인 item 항목을 의미한다.
+- `scope`에 명시된 파일 경로만 수정/생성한다
+- `scope`에 없는 파일/폴더는 생성/수정/삭제를 절대 하지 않는다
+- `scope` 제약을 만족할 수 없으면 파일을 변경하지 말고 실패 사유만 보고한다
+- `scope`가 비어있으면 `rule`, `step`, `name`을 바탕으로 파일 경로를 추론해 채운다
+
+## 함수형 구조 규칙
+- 전역 가변 상태를 직접 읽거나 쓰지 말고 인자/리턴으로 전달한다
+- 배열/객체 갱신은 Copy-on-Write(복사 → 수정 → 반환)만 사용한다
+- 인자 mutation을 금지한다
+- 외부 I/O, 로깅, 시간/랜덤은 액션 레이어로 격리한다
+- 액션 함수는 조립과 오케스트레이션만 수행하고 계산은 별도 함수로 분리한다
+
+# 구현 규칙
+## 코드 참조 
+1. `.project/projet.md`에서`# rules`, `# constrints`와 현재 `task.domains`에 있는  `# domains` 정보를 확인한다 
+2. 전달받은 `task 단일 객체`의 `scope`, `step`, `rule`을 기준으로 구현한다
+
+## step 처리
+- 작업 시작시 `jj workspace`를 생성
+- 작업 상태 전이(`drafts.yaml`, `job.md`)는 Rust 오케스트레이터 함수가 수행한다.
+- LLM 응답에서 `drafts.yaml`/`job.md`를 직접 수정하거나 상태 전이 지시를 출력하지 않는다.
+- 유닛 테스트는 보조 검증일 뿐 완료 판정이 아니다.
+- draft의 `check`를 충족하는 실제 실행 근거를 만들 수 있는 방향으로 구현한다.
+- 상태 변화 기능이면 reload/reopen 뒤 selector/assert 또는 동등한 재진입 검증이 가능해야 한다.
+- `step`의 순서대로 구현한다.
+- 검증 조건, 필터링은 함수의 맨 처음에 배치한다
+- `파일 → 입력 → 동작 → 출력` 형태로 한 줄씩 처리한다
+- 한 번에 작업할 수 있는 최소한의 단위로 수행한다
+- 모든 작업이 성공적으로 완료가 되었다면 merge 
+
+# 금지 규칙 
+- 불필요한 파일 생성 금지
+- 과도한 리팩토링 금지
+- scope 외 파일 수정 금지
+- rule 위반 가능성이 있으면 즉시 수정해서 규칙을 만족할 것
+# 완료 규칙 
+- 구현 성공/실패에 따른 상태 반영은 Rust 오케스트레이터가 처리한다(성공: `complete/check`, 실패: `error/fail`).
+- `유닛테스트 pass`, `로컬 빌드 성공`만으로 완료라고 쓰지 않는다.
+- 실제 완료 판정은 `check_orc_code`와 `job.md#check evidence` 실행 증거가 같이 있을 때만 가능하다.
+- 유넷테스트를 pass한 코드가 하드코드로 되어있는지를 확인하고 하드 코드 형식으면 함수 내부의 계산식으로 처리되게 변경한다. 
+- 실행 실패 또는 대기시간 초과 시 실패 사유를 출력한다.
+
+
+# 입력 task 단일 객체
+```yaml
+name: input
+state: planned
+type: action
+domain:
+- core
+depends_on: []
+scope: []
+rule:
+- 내부적으로 Process를 많이 바꿨고 front web UI 부분은 아직 충분히 개선하지 않았다.
+- 프로그래밍 전문가 관점에서 web UI가 내부 과정을 제대로 반영하는지 살펴봐야 한다.
+- 개선할 부분과 반영할 부분은 실제로 반영될 때까지 작업을 계속해야 한다.
+- 먼저 plan mode로 계획을 확정해야 한다.
+- plan 확정 직후 현재 세션을 manager session으로 고정해야 한다.
+- manager session은 직접 구현/점검/브라우저 실행을 하지 않아야 한다.
+- impl, qa, check, improve 역할은 반드시 tmux 새 session 또는 pane으로 분리해야 한다.
+- worker 위임은 기존 tmux worker wrapper인 `orc worker-*` 경로만 사용해야 한다.
+- impl worker는 dev server를 유지한 채 완료 메시지로 URL을 회수해야 한다.
+- qa/check worker를 별도로 열어 실제 접속 검증과 점검을 수행해야 한다.
+- manager는 worker 결과만 믿지 말고 `job.md`를 재확인한 뒤 `stage_manager_reverified`까지 기록해야 한다.
+- 절차를 어기면 수정 후 같은 절차를 다시 반복해야 한다.
+- 중간 승인 없이 끝까지 진행해야 한다.
+step:
+- trigger -> process -> result
+tasks:
+- implement input
+constraints:
+- 'input -> input : requirement 기반 draft item 생성'
+check:
+- verify input
+
+```
+
+# 추가 지시
+- `drafts.yaml`, `job.md`는 절대 직접 수정하지 말고 코드 생성/수정 내용만 출력한다.
+- 상태 전이(work/complete/error, planned/work/check/fail 이동)는 Rust 오케스트레이터가 수행하므로 출력하지 않는다.
+
+[1775368891] LLM_PROMPT
+
+# 컨텍스트
+- `task 단일 객체` : 현재 구현해야 할 task
+다른 컨텍스트를 가정하지 않는다.
+
+---
+# 기본 규칙 
+## 네이밍 규칙
+- 코드명/명령명 네이밍은 공통 규칙 `/home/tree/ai/skills/rule-naming/SKILL.md`를 따른다.
+## scope 규칙
+여기서`scope` 는 `.project/drafts.ymal` 내부의 `item`중 현재 작업중인 item 항목을 의미한다.
+- `scope`에 명시된 파일 경로만 수정/생성한다
+- `scope`에 없는 파일/폴더는 생성/수정/삭제를 절대 하지 않는다
+- `scope` 제약을 만족할 수 없으면 파일을 변경하지 말고 실패 사유만 보고한다
+- `scope`가 비어있으면 `rule`, `step`, `name`을 바탕으로 파일 경로를 추론해 채운다
+
+## 함수형 구조 규칙
+- 전역 가변 상태를 직접 읽거나 쓰지 말고 인자/리턴으로 전달한다
+- 배열/객체 갱신은 Copy-on-Write(복사 → 수정 → 반환)만 사용한다
+- 인자 mutation을 금지한다
+- 외부 I/O, 로깅, 시간/랜덤은 액션 레이어로 격리한다
+- 액션 함수는 조립과 오케스트레이션만 수행하고 계산은 별도 함수로 분리한다
+
+# 구현 규칙
+## 코드 참조 
+1. `.project/projet.md`에서`# rules`, `# constrints`와 현재 `task.domains`에 있는  `# domains` 정보를 확인한다 
+2. 전달받은 `task 단일 객체`의 `scope`, `step`, `rule`을 기준으로 구현한다
+
+## step 처리
+- 작업 시작시 `jj workspace`를 생성
+- 작업 상태 전이(`drafts.yaml`, `job.md`)는 Rust 오케스트레이터 함수가 수행한다.
+- LLM 응답에서 `drafts.yaml`/`job.md`를 직접 수정하거나 상태 전이 지시를 출력하지 않는다.
+- 유닛 테스트는 보조 검증일 뿐 완료 판정이 아니다.
+- draft의 `check`를 충족하는 실제 실행 근거를 만들 수 있는 방향으로 구현한다.
+- 상태 변화 기능이면 reload/reopen 뒤 selector/assert 또는 동등한 재진입 검증이 가능해야 한다.
+- `step`의 순서대로 구현한다.
+- 검증 조건, 필터링은 함수의 맨 처음에 배치한다
+- `파일 → 입력 → 동작 → 출력` 형태로 한 줄씩 처리한다
+- 한 번에 작업할 수 있는 최소한의 단위로 수행한다
+- 모든 작업이 성공적으로 완료가 되었다면 merge 
+
+# 금지 규칙 
+- 불필요한 파일 생성 금지
+- 과도한 리팩토링 금지
+- scope 외 파일 수정 금지
+- rule 위반 가능성이 있으면 즉시 수정해서 규칙을 만족할 것
+# 완료 규칙 
+- 구현 성공/실패에 따른 상태 반영은 Rust 오케스트레이터가 처리한다(성공: `complete/check`, 실패: `error/fail`).
+- `유닛테스트 pass`, `로컬 빌드 성공`만으로 완료라고 쓰지 않는다.
+- 실제 완료 판정은 `check_orc_code`와 `job.md#check evidence` 실행 증거가 같이 있을 때만 가능하다.
+- 유넷테스트를 pass한 코드가 하드코드로 되어있는지를 확인하고 하드 코드 형식으면 함수 내부의 계산식으로 처리되게 변경한다. 
+- 실행 실패 또는 대기시간 초과 시 실패 사유를 출력한다.
+
+
+# 입력 task 단일 객체
+```yaml
+name: plan
+state: planned
+type: action
+domain:
+- core
+depends_on: []
+scope: []
+rule:
+- 내부 Process 변경 이후 front web UI가 현재 런타임/파일/상태 흐름을 제대로 반영하는지 실제 코드 기준으로 다시 대조한다.
+- 불일치가 있으면 UI, API, store, 연결 경로를 수정해 실제 내부 과정을 반영하게 만든다.
+- manager session은 직접 구현/점검/브라우저 실행을 하지 않고 impl, qa, check, improve worker로만 진행한다.
+- impl worker는 dev server를 유지한 채 실제 healthcheck를 통과한 URL을 보고한다.
+- qa/check/improve worker 결과와 `job.md` 재확인을 모두 통과할 때까지 반복한다.
+step:
+- trigger -> process -> result
+tasks:
+- implement plan
+constraints:
+- 'plan -> plan : requirement 기반 draft item 생성'
+check:
+- verify plan
+
+```
+
+# 추가 지시
+- `drafts.yaml`, `job.md`는 절대 직접 수정하지 말고 코드 생성/수정 내용만 출력한다.
+- 상태 전이(work/complete/error, planned/work/check/fail 이동)는 Rust 오케스트레이터가 수행하므로 출력하지 않는다.
+
+[[17753688911775368891] ] LLM_STARTLLM_START
+
+impl_orc_code [input] | cwd=/home/tree/project/mono_Manager | timeout=900simpl_orc_code [keep] | cwd=/home/tree/project/mono_Manager | timeout=900s
+
+
+
+[1775368891] LLM_START
+[impl_orc_code [plan] | cwd=/home/tree/project/mono_Manager | timeout=900s1775368891
+] 
+LLM_START
+impl_orc_code [output] | cwd=/home/tree/project/mono_Manager | timeout=900s
+
+[[[[1775368891177536889117753688911775368891] ] ] ] LLM_RETRYLLM_RETRYLLM_RETRYLLM_RETRY
+
+
+
+attempt 1/1 failed: attempt 1/1 failed: attempt 1/1 failed: attempt 1/1 failed: 
+
+
+
+
+
+
+
+[[1775368891[1775368891] [1775368891] LLM_ERROR1775368891] LLM_ERROR
+] LLM_ERROR
+
+LLM_ERROR
+
+
+
+
+
+
+
+

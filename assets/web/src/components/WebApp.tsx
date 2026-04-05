@@ -35,6 +35,7 @@ import { useOrcStore, type Detail, type Project } from "@/store/orc-store";
 import { DetailLayoutProvider } from "@/layouts/detail";
 import { resolveDraftItemStatus } from "@/lib/draft-item-state";
 import { parseRequirementBlocks } from "@/lib/requirement-parser";
+import { parseJobProcessSnapshot } from "@/lib/job-process-parser";
 import YAML from "yaml";
 
 const sectionLabelClass = "mt-4 mb-2 px-2 text-base font-bold uppercase tracking-wide text-foreground/80 lg:mt-8 lg:mb-3";
@@ -399,6 +400,17 @@ export default function WebApp() {
     () => parseRequirementBlocks(String(detail?.jobEditableRaw ?? "")),
     [detail?.jobEditableRaw]
   );
+  const jobProcessSnapshot = useMemo(
+    () => parseJobProcessSnapshot(String(detail?.jobEditableRaw ?? "")),
+    [detail?.jobEditableRaw]
+  );
+  const processLocks = jobProcessSnapshot.locks;
+  const processProblems = jobProcessSnapshot.problems;
+  const processVerify = jobProcessSnapshot.verify;
+  const processEvidence = jobProcessSnapshot.evidence;
+  const pendingProblemCount = processProblems.filter((item) => !item.checked).length;
+  const resolvedVerifyCount = processVerify.filter((item) => item.checked).length;
+  const pendingEvidenceCount = processEvidence.filter((item) => !item.checked).length;
   const selectedDraftItemName = selectedDraftYamlItem?.name ?? "";
   const selectedDraftCard = draftsYamlCards.find((item) => item.name === selectedDraftItemName) ?? null;
   const selectedDraftYamlText = selectedDraftYamlItem ? YAML.stringify(selectedDraftYamlItem.draft ?? {}) : "";
@@ -2654,6 +2666,104 @@ export default function WebApp() {
                 </CardContent>
               </Card>
             </div>
+            <div>
+              <div className={sectionLabelClass}>process alignment</div>
+              <Card data-testid="process-alignment-pane" className="rounded-2xl border border-border bg-white">
+                <CardContent className="space-y-4 pt-6">
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
+                    <div className="space-y-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">locked job.md sections</div>
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {processLocks.map((section) => (
+                          <div
+                            key={`process-lock-${section.key}`}
+                            data-testid={`process-lock-${section.key}`}
+                            className="rounded-2xl border border-border bg-muted/20 p-3"
+                          >
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              {section.title}
+                            </div>
+                            <div className="mt-2 space-y-1.5 text-sm text-foreground">
+                              {section.items.length === 0 && <div className="text-muted-foreground">no items</div>}
+                              {section.items.map((item, index) => (
+                                <div key={`${section.key}-${index}`} className="rounded-lg bg-white px-2 py-1.5">
+                                  {item}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">execution status</div>
+                      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800">verify</div>
+                          <div className="mt-1 text-2xl font-black text-emerald-900">
+                            {resolvedVerifyCount}/{processVerify.length || 0}
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-800">pending evidence</div>
+                          <div className="mt-1 text-2xl font-black text-amber-900">{pendingEvidenceCount}</div>
+                        </div>
+                        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-rose-800">open blockers</div>
+                          <div className="mt-1 text-2xl font-black text-rose-900">{pendingProblemCount}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                    <div className="space-y-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">verify checklist</div>
+                      <div data-testid="process-verify-list" className="space-y-2 rounded-2xl border border-border bg-white p-3">
+                        {processVerify.length === 0 && <div className="text-sm text-muted-foreground">no verify checklist</div>}
+                        {processVerify.map((item, index) => (
+                          <div key={`verify-${index}`} className="flex items-start gap-2 rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm">
+                            <span className={`mt-0.5 inline-flex h-2.5 w-2.5 rounded-full ${item.checked ? "bg-emerald-500" : "bg-amber-500"}`} />
+                            <span>{item.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">check evidence</div>
+                        <div data-testid="process-evidence-list" className="space-y-2 rounded-2xl border border-border bg-white p-3">
+                          {processEvidence.length === 0 && <div className="text-sm text-muted-foreground">no check evidence</div>}
+                          {processEvidence.map((item, index) => (
+                            <div key={`evidence-${index}`} className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm">
+                              <span className={item.checked ? "text-emerald-700" : "text-amber-700"}>
+                                {item.checked ? "[x]" : "[ ]"}
+                              </span>{" "}
+                              <span>{item.text}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">problems</div>
+                        <div data-testid="process-problems-list" className="space-y-2 rounded-2xl border border-border bg-white p-3">
+                          {processProblems.length === 0 && <div className="text-sm text-muted-foreground">no problems</div>}
+                          {processProblems.map((item, index) => (
+                            <div key={`problem-${index}`} className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm">
+                              <span className={item.checked ? "text-emerald-700" : "text-rose-700"}>
+                                {item.checked ? "[x]" : "[ ]"}
+                              </span>{" "}
+                              <span>{item.text}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
             <div>
               <div className={sectionLabelClass}>work pane</div>
               <Card data-testid="draft-work-pane" className="relative rounded-2xl border border-border bg-white">

@@ -25,3 +25,22 @@
 [1775199122] stage_input_locked | probe
 [1775199122] stage_restart_path_verified | probe
 [1775199126] stage_input_locked | probe-src
+[1775368837] stage_global_override_read | read .../codex/AGENTS.override.md and .../skills/orc_manager/SKILL.md
+[1775368837] stage_job_md_locked | locked job.md for web ui process alignment manager run
+[1775368837] stage_plan_done | proposed_plan fixed for web ui process alignment
+[1775368837] stage_input_locked | job.md#input locked from user requirements
+[1775368837] stage_output_locked | job.md#output locked for ui/process alignment
+[1775368837] stage_keep_locked | job.md#keep locked for manager-only coordination
+[1775368837] stage_add_locked | job.md#add locked for worker outputs and reports
+[1775368837] stage_forbid_locked | job.md#forbid locked against manager direct impl/qa/check
+[1775368837] stage_symptom_locked | job.md#symptom locked for ui-process mismatch
+[1775368838] stage_success_locked | job.md#success locked for manager reverified completion
+[1775368869] stage_impl_session_started | worker=impl-web-ui-process-alignment ref=867a05de-3bae-47da-a223-e3f68a388b69::impl-web-ui-process-alignment::%11::5023
+[1775369466] stage_impl_session_started | worker=impl-web-ui-process-alignment-v2 ref=f3c78396-3510-4f09-ab9a-54b5c0616d12::impl-web-ui-process-alignment-v2::%12::15924
+[1775369497] stage_impl_done | worker=impl-web-ui-process-alignment-v2 dev=http://127.0.0.1:4321 report=process-alignment-pane-added
+[1775369588] stage_check_session_started | worker=check-web-ui-process-alignment ref=38cd74df-65c8-40af-8134-534af94d4c01::check-web-ui-process-alignment::%14::16626
+[1775370188] stage_check_done | check=input=job-md-sections-mapped,output=process-pane-rendered,keep=worker-separated-flow-preserved,add=parser-and-tests-added,forbid=fixture-free-check
+[1775370188] stage_restart_path_verified | qa=reentry=reload-ok artifact=/tmp/process-alignment-qa.png
+[1775370188] stage_negative_check_passed | qa=negative=non-empty process verify list
+[1775370188] stage_manager_reverified | job.md rechecked with impl=http://127.0.0.1:4321 qa=real-equivalent check=check-code improve=non_blocking
+[1775370205] stage_manager_reverified | job.md rechecked after clearing problems; impl=http://127.0.0.1:4321 qa=real-equivalent check=check-code improve=non_blocking
