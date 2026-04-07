@@ -30,6 +30,8 @@
 - `orc manager-trace <stage> [detail...]`
 - `orc check-manager-trace [preflight|impl|check|final]`
 - `orc check-manager-completion [job.md]`
+- manager canonical state is appended to `.project/log.md` as JSONL `manager_trace` events.
+- `job.md` is the human-readable status summary; manager trace validation no longer trusts `.project/orc_manager_trace.log` as canonical state.
 - `orc capture-pane <pane_id> [lines]`
 - `orc wait-ready <pane_id> <pattern> [timeout_ms] [lines]`
 - `orc http-healthcheck <url> [timeout_ms]`
@@ -80,6 +82,7 @@
   - `orc check-manager-trace [preflight|impl|check|final]`
 - Verify `orc_manager` completion gate from `job.md` without shell wrappers:
   - `orc check-manager-completion [job.md]`
+- `check-manager-completion` now requires both a clean `job.md` and a passing structured trace run in `.project/log.md`.
 
 ## tmux Worker Helpers
 - Capture recent pane output:
