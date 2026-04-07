@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+use std::env;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
@@ -117,8 +119,25 @@ fn canonical_command_for_match(command: &str) -> &str {
     }
 }
 
-const ORC_MANAGER_TRACE_FILE: &str = ".project/orc_manager_trace.log";
+const ORC_CANONICAL_STATE_FILE: &str = ".project/log.md";
 const CHECK_PROCESS_FILE: &str = ".project/check-process.md";
+const TASK_SESSION_KEY_ENV: &str = "ORC_TASK_SESSION_KEY";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct ManagerTraceEvent {
+    ts: u64,
+    kind: String,
+    stage: String,
+    status: String,
+    detail: String,
+    job_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    worker_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    artifact: Option<String>,
+}
 
 fn supported_manager_trace_stage(stage: &str) -> bool {
     matches!(
@@ -143,33 +162,127 @@ fn supported_manager_trace_stage(stage: &str) -> bool {
     )
 }
 
-fn read_orc_manager_trace_lines() -> Result<Vec<String>, String> {
-    fs::read_to_string(ORC_MANAGER_TRACE_FILE)
-        .map(|content| content.lines().map(|line| line.to_string()).collect())
-        .map_err(|_| format!("ERROR: orc_manager trace file missing: {ORC_MANAGER_TRACE_FILE}"))
+fn read_orc_manager_trace_events() -> Result<Vec<ManagerTraceEvent>, String> {
+    let raw = fs::read_to_string(ORC_CANONICAL_STATE_FILE)
+        .map_err(|_| format!("ERROR: canonical state file missing: {ORC_CANONICAL_STATE_FILE}"))?;
+    let mut events = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if !(trimmed.starts_with('{') && trimmed.ends_with('}')) {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<ManagerTraceEvent>(trimmed) else {
+            continue;
+        };
+        if event.kind == "manager_trace" {
+            events.push(event);
+        }
+    }
+    if events.is_empty() {
+        return Err(format!(
+            "ERROR: no manager trace events in canonical state: {ORC_CANONICAL_STATE_FILE}"
+        ));
+    }
+    Ok(events)
 }
 
-fn latest_trace_run<'a>(lines: &'a [String]) -> &'a [String] {
-    let start = lines
+fn active_task_key() -> Option<String> {
+    env::var(TASK_SESSION_KEY_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn latest_trace_run(events: &[ManagerTraceEvent]) -> Vec<ManagerTraceEvent> {
+    if let Some(task_key) = active_task_key() {
+        let keyed: Vec<ManagerTraceEvent> = events
+            .iter()
+            .filter(|event| event.task_key.as_deref() == Some(task_key.as_str()))
+            .cloned()
+            .collect();
+        if !keyed.is_empty() {
+            return keyed;
+        }
+    }
+
+    let start = events
         .iter()
-        .rposition(|line| line.contains("stage_global_override_read"))
+        .rposition(|event| event.stage == "stage_global_override_read")
         .unwrap_or(0);
-    &lines[start..]
+    events[start..].to_vec()
 }
 
-fn find_stage_line(lines: &[String], stage: &str) -> Result<usize, String> {
-    lines.iter()
-        .position(|line| line.contains(stage))
+fn find_stage_line(events: &[ManagerTraceEvent], stage: &str) -> Result<usize, String> {
+    events
+        .iter()
+        .position(|event| event.stage == stage)
         .map(|idx| idx + 1)
         .ok_or_else(|| format!("ERROR: missing required orc_manager trace: {stage}"))
 }
 
-fn assert_trace_lt(lines: &[String], left: &str, right: &str) -> Result<(), String> {
-    let left_line = find_stage_line(lines, left)?;
-    let right_line = find_stage_line(lines, right)?;
+fn find_stage_event<'a>(
+    events: &'a [ManagerTraceEvent],
+    stage: &str,
+) -> Result<(usize, &'a ManagerTraceEvent), String> {
+    events
+        .iter()
+        .enumerate()
+        .find(|(_, event)| event.stage == stage)
+        .map(|(idx, event)| (idx + 1, event))
+        .ok_or_else(|| format!("ERROR: missing required orc_manager trace: {stage}"))
+}
+
+fn assert_trace_lt(events: &[ManagerTraceEvent], left: &str, right: &str) -> Result<(), String> {
+    let left_line = find_stage_line(events, left)?;
+    let right_line = find_stage_line(events, right)?;
     if left_line >= right_line {
         return Err(format!(
             "ERROR: invalid orc_manager trace order: {left} should precede {right}"
+        ));
+    }
+    Ok(())
+}
+
+fn infer_trace_status(detail_text: &str) -> &'static str {
+    let lower = detail_text.to_ascii_lowercase();
+    if lower.contains("status=0") || lower.contains("code=0") {
+        return "ok";
+    }
+    if lower.contains("status=") || lower.contains("code=") || lower.contains(":error") {
+        return "error";
+    }
+    "ok"
+}
+
+fn extract_tag_value(detail_text: &str, key: &str) -> Option<String> {
+    for token in detail_text.split(|ch: char| ch.is_whitespace() || ch == '|' || ch == ';') {
+        let normalized = token.trim_matches(|ch| matches!(ch, ',' | ')' | '('));
+        if let Some(rest) = normalized.strip_prefix(&format!("{key}=")) {
+            let value = rest.trim_matches(|ch| matches!(ch, '"' | '\'' | ',' | ';'));
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn extract_artifact(detail_text: &str) -> Option<String> {
+    if let Some(url) = detail_text
+        .split(|ch: char| ch.is_whitespace() || ch == '|' || ch == ';')
+        .find(|token| token.starts_with("http://") || token.starts_with("https://"))
+    {
+        return Some(url.trim_matches(|ch| matches!(ch, ',' | ';')).to_string());
+    }
+    extract_tag_value(detail_text, "artifact").or_else(|| extract_tag_value(detail_text, "impl"))
+}
+
+fn ensure_stage_ok(events: &[ManagerTraceEvent], stage: &str) -> Result<(), String> {
+    let (_, event) = find_stage_event(events, stage)?;
+    if event.status != "ok" {
+        return Err(format!(
+            "ERROR: manager trace stage is not ok: {stage} status={} detail={}",
+            event.status, event.detail
         ));
     }
     Ok(())
@@ -185,16 +298,25 @@ fn append_orc_manager_trace(stage: &str, detail: &[String]) -> Result<String, St
         .map_err(|e| e.to_string())?
         .as_secs();
     let detail_text = detail.join(" ");
-    let mut line = format!("[{ts}] {stage}");
-    if !detail_text.is_empty() {
-        line.push_str(" | ");
-        line.push_str(&detail_text);
-    }
+    let event = ManagerTraceEvent {
+        ts,
+        kind: "manager_trace".to_string(),
+        stage: stage.to_string(),
+        status: infer_trace_status(&detail_text).to_string(),
+        detail: detail_text.clone(),
+        job_path: "job.md".to_string(),
+        task_key: active_task_key(),
+        worker_ref: extract_tag_value(&detail_text, "worker")
+            .or_else(|| extract_tag_value(&detail_text, "worker_ref")),
+        artifact: extract_artifact(&detail_text),
+    };
+    let line = serde_json::to_string(&event)
+        .map_err(|e| format!("failed to encode manager trace event: {e}"))?;
 
     let mut trace = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(ORC_MANAGER_TRACE_FILE)
+        .open(ORC_CANONICAL_STATE_FILE)
         .map_err(|e| e.to_string())?;
     writeln!(trace, "{line}").map_err(|e| e.to_string())?;
 
@@ -213,59 +335,71 @@ fn append_orc_manager_trace(stage: &str, detail: &[String]) -> Result<String, St
 }
 
 fn check_orc_manager_trace(mode: &str) -> Result<String, String> {
-    let lines = read_orc_manager_trace_lines()?;
-    let run_lines = latest_trace_run(&lines);
+    let events = read_orc_manager_trace_events()?;
+    let run_lines = latest_trace_run(&events);
     match mode {
         "preflight" | "impl" => {
-            find_stage_line(run_lines, "stage_global_override_read")?;
-            find_stage_line(run_lines, "stage_job_md_locked")?;
-            find_stage_line(run_lines, "stage_plan_done")?;
-            find_stage_line(run_lines, "stage_input_locked")?;
-            find_stage_line(run_lines, "stage_output_locked")?;
-            find_stage_line(run_lines, "stage_keep_locked")?;
-            find_stage_line(run_lines, "stage_add_locked")?;
-            find_stage_line(run_lines, "stage_forbid_locked")?;
-            find_stage_line(run_lines, "stage_symptom_locked")?;
-            find_stage_line(run_lines, "stage_success_locked")?;
-            assert_trace_lt(run_lines, "stage_global_override_read", "stage_job_md_locked")?;
-            assert_trace_lt(run_lines, "stage_job_md_locked", "stage_plan_done")?;
-            assert_trace_lt(run_lines, "stage_plan_done", "stage_input_locked")?;
-            assert_trace_lt(run_lines, "stage_input_locked", "stage_output_locked")?;
-            assert_trace_lt(run_lines, "stage_output_locked", "stage_keep_locked")?;
-            assert_trace_lt(run_lines, "stage_keep_locked", "stage_add_locked")?;
-            assert_trace_lt(run_lines, "stage_add_locked", "stage_forbid_locked")?;
-            assert_trace_lt(run_lines, "stage_forbid_locked", "stage_symptom_locked")?;
-            assert_trace_lt(run_lines, "stage_symptom_locked", "stage_success_locked")?;
+            find_stage_line(&run_lines, "stage_global_override_read")?;
+            find_stage_line(&run_lines, "stage_job_md_locked")?;
+            find_stage_line(&run_lines, "stage_plan_done")?;
+            find_stage_line(&run_lines, "stage_input_locked")?;
+            find_stage_line(&run_lines, "stage_output_locked")?;
+            find_stage_line(&run_lines, "stage_keep_locked")?;
+            find_stage_line(&run_lines, "stage_add_locked")?;
+            find_stage_line(&run_lines, "stage_forbid_locked")?;
+            find_stage_line(&run_lines, "stage_symptom_locked")?;
+            find_stage_line(&run_lines, "stage_success_locked")?;
+            assert_trace_lt(&run_lines, "stage_global_override_read", "stage_job_md_locked")?;
+            assert_trace_lt(&run_lines, "stage_job_md_locked", "stage_plan_done")?;
+            assert_trace_lt(&run_lines, "stage_plan_done", "stage_input_locked")?;
+            assert_trace_lt(&run_lines, "stage_input_locked", "stage_output_locked")?;
+            assert_trace_lt(&run_lines, "stage_output_locked", "stage_keep_locked")?;
+            assert_trace_lt(&run_lines, "stage_keep_locked", "stage_add_locked")?;
+            assert_trace_lt(&run_lines, "stage_add_locked", "stage_forbid_locked")?;
+            assert_trace_lt(&run_lines, "stage_forbid_locked", "stage_symptom_locked")?;
+            assert_trace_lt(&run_lines, "stage_symptom_locked", "stage_success_locked")?;
+            ensure_stage_ok(&run_lines, "stage_global_override_read")?;
+            ensure_stage_ok(&run_lines, "stage_job_md_locked")?;
+            ensure_stage_ok(&run_lines, "stage_plan_done")?;
         }
         "check" => {
-            find_stage_line(run_lines, "stage_impl_session_started")?;
-            find_stage_line(run_lines, "stage_impl_done")?;
-            assert_trace_lt(run_lines, "stage_global_override_read", "stage_job_md_locked")?;
-            assert_trace_lt(run_lines, "stage_job_md_locked", "stage_plan_done")?;
-            assert_trace_lt(run_lines, "stage_plan_done", "stage_impl_session_started")?;
-            assert_trace_lt(run_lines, "stage_impl_session_started", "stage_impl_done")?;
+            find_stage_line(&run_lines, "stage_impl_session_started")?;
+            find_stage_line(&run_lines, "stage_impl_done")?;
+            assert_trace_lt(&run_lines, "stage_global_override_read", "stage_job_md_locked")?;
+            assert_trace_lt(&run_lines, "stage_job_md_locked", "stage_plan_done")?;
+            assert_trace_lt(&run_lines, "stage_plan_done", "stage_impl_session_started")?;
+            assert_trace_lt(&run_lines, "stage_impl_session_started", "stage_impl_done")?;
+            ensure_stage_ok(&run_lines, "stage_impl_session_started")?;
+            ensure_stage_ok(&run_lines, "stage_impl_done")?;
         }
         "final" => {
-            find_stage_line(run_lines, "stage_impl_session_started")?;
-            find_stage_line(run_lines, "stage_impl_done")?;
-            find_stage_line(run_lines, "stage_check_session_started")?;
-            find_stage_line(run_lines, "stage_check_done")?;
-            find_stage_line(run_lines, "stage_restart_path_verified")?;
-            find_stage_line(run_lines, "stage_negative_check_passed")?;
-            find_stage_line(run_lines, "stage_manager_reverified")?;
-            assert_trace_lt(run_lines, "stage_global_override_read", "stage_job_md_locked")?;
-            assert_trace_lt(run_lines, "stage_job_md_locked", "stage_plan_done")?;
-            assert_trace_lt(run_lines, "stage_plan_done", "stage_impl_session_started")?;
-            assert_trace_lt(run_lines, "stage_impl_session_started", "stage_impl_done")?;
-            assert_trace_lt(run_lines, "stage_impl_done", "stage_check_session_started")?;
-            assert_trace_lt(run_lines, "stage_check_session_started", "stage_check_done")?;
-            assert_trace_lt(run_lines, "stage_check_done", "stage_manager_reverified")?;
+            find_stage_line(&run_lines, "stage_impl_session_started")?;
+            find_stage_line(&run_lines, "stage_impl_done")?;
+            find_stage_line(&run_lines, "stage_check_session_started")?;
+            find_stage_line(&run_lines, "stage_check_done")?;
+            find_stage_line(&run_lines, "stage_restart_path_verified")?;
+            find_stage_line(&run_lines, "stage_negative_check_passed")?;
+            find_stage_line(&run_lines, "stage_manager_reverified")?;
+            assert_trace_lt(&run_lines, "stage_global_override_read", "stage_job_md_locked")?;
+            assert_trace_lt(&run_lines, "stage_job_md_locked", "stage_plan_done")?;
+            assert_trace_lt(&run_lines, "stage_plan_done", "stage_impl_session_started")?;
+            assert_trace_lt(&run_lines, "stage_impl_session_started", "stage_impl_done")?;
+            assert_trace_lt(&run_lines, "stage_impl_done", "stage_check_session_started")?;
+            assert_trace_lt(&run_lines, "stage_check_session_started", "stage_check_done")?;
+            assert_trace_lt(&run_lines, "stage_check_done", "stage_manager_reverified")?;
             assert_trace_lt(
-                run_lines,
+                &run_lines,
                 "stage_restart_path_verified",
                 "stage_negative_check_passed",
             )?;
-            assert_trace_lt(run_lines, "stage_negative_check_passed", "stage_manager_reverified")?;
+            assert_trace_lt(&run_lines, "stage_negative_check_passed", "stage_manager_reverified")?;
+            ensure_stage_ok(&run_lines, "stage_impl_session_started")?;
+            ensure_stage_ok(&run_lines, "stage_impl_done")?;
+            ensure_stage_ok(&run_lines, "stage_check_session_started")?;
+            ensure_stage_ok(&run_lines, "stage_check_done")?;
+            ensure_stage_ok(&run_lines, "stage_restart_path_verified")?;
+            ensure_stage_ok(&run_lines, "stage_negative_check_passed")?;
+            ensure_stage_ok(&run_lines, "stage_manager_reverified")?;
         }
         _ => return Err(format!("ERROR: unsupported mode: {mode}")),
     }
@@ -341,7 +475,9 @@ fn check_manager_completion_from_raw(raw: &str) -> Result<String, String> {
 fn check_manager_completion(job_file: &str) -> Result<String, String> {
     let raw = fs::read_to_string(job_file)
         .map_err(|_| format!("ERROR: job file not found: {}", job_file))?;
-    check_manager_completion_from_raw(&raw)
+    check_manager_completion_from_raw(&raw)?;
+    check_orc_manager_trace("final")?;
+    Ok("PASS: orc manager completion guard verified".to_string())
 }
 
 fn resolve_default_profile_name() -> String {
@@ -664,7 +800,24 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{assert_trace_lt, canonical_command_for_match, is_help_command, latest_trace_run};
+    use super::{
+        assert_trace_lt, canonical_command_for_match, is_help_command, latest_trace_run,
+        ManagerTraceEvent,
+    };
+
+    fn trace_event(ts: u64, stage: &str, detail: &str) -> ManagerTraceEvent {
+        ManagerTraceEvent {
+            ts,
+            kind: "manager_trace".to_string(),
+            stage: stage.to_string(),
+            status: "ok".to_string(),
+            detail: detail.to_string(),
+            job_path: "job.md".to_string(),
+            task_key: None,
+            worker_ref: None,
+            artifact: None,
+        }
+    }
 
     #[test]
     fn canonical_command_keeps_other_commands() {
@@ -766,41 +919,42 @@ mod tests {
     #[test]
     fn latest_trace_run_ignores_older_trace_blocks() {
         let lines = vec![
-            "[1] stage_global_override_read | old".to_string(),
-            "[1] stage_job_md_locked | old".to_string(),
-            "[1] stage_plan_done | old".to_string(),
-            "[1] stage_impl_session_started | old".to_string(),
-            "[1] stage_impl_done | old".to_string(),
-            "[2] stage_global_override_read | new".to_string(),
-            "[2] stage_job_md_locked | new".to_string(),
-            "[2] stage_plan_done | new".to_string(),
+            trace_event(1, "stage_global_override_read", "old"),
+            trace_event(1, "stage_job_md_locked", "old"),
+            trace_event(1, "stage_plan_done", "old"),
+            trace_event(1, "stage_impl_session_started", "old"),
+            trace_event(1, "stage_impl_done", "old"),
+            trace_event(2, "stage_global_override_read", "new"),
+            trace_event(2, "stage_job_md_locked", "new"),
+            trace_event(2, "stage_plan_done", "new"),
         ];
 
         let run = latest_trace_run(&lines);
 
         assert_eq!(run.len(), 3);
-        assert!(run[0].contains("stage_global_override_read | new"));
+        assert_eq!(run[0].stage, "stage_global_override_read");
+        assert_eq!(run[0].detail, "new");
     }
 
     #[test]
     fn final_trace_allows_restart_checks_before_check_done() {
         let lines = vec![
-            "[1] stage_global_override_read".to_string(),
-            "[1] stage_job_md_locked".to_string(),
-            "[1] stage_plan_done".to_string(),
-            "[1] stage_impl_session_started".to_string(),
-            "[1] stage_impl_done".to_string(),
-            "[1] stage_check_session_started".to_string(),
-            "[1] stage_restart_path_verified".to_string(),
-            "[1] stage_negative_check_passed".to_string(),
-            "[1] stage_check_done".to_string(),
-            "[1] stage_manager_reverified".to_string(),
+            trace_event(1, "stage_global_override_read", ""),
+            trace_event(1, "stage_job_md_locked", ""),
+            trace_event(1, "stage_plan_done", ""),
+            trace_event(1, "stage_impl_session_started", ""),
+            trace_event(1, "stage_impl_done", ""),
+            trace_event(1, "stage_check_session_started", ""),
+            trace_event(1, "stage_restart_path_verified", ""),
+            trace_event(1, "stage_negative_check_passed", ""),
+            trace_event(1, "stage_check_done", ""),
+            trace_event(1, "stage_manager_reverified", ""),
         ];
 
         let run = latest_trace_run(&lines);
 
-        assert!(assert_trace_lt(run, "stage_check_done", "stage_manager_reverified").is_ok());
-        assert!(assert_trace_lt(run, "stage_restart_path_verified", "stage_negative_check_passed").is_ok());
-        assert!(assert_trace_lt(run, "stage_negative_check_passed", "stage_manager_reverified").is_ok());
+        assert!(assert_trace_lt(&run, "stage_check_done", "stage_manager_reverified").is_ok());
+        assert!(assert_trace_lt(&run, "stage_restart_path_verified", "stage_negative_check_passed").is_ok());
+        assert!(assert_trace_lt(&run, "stage_negative_check_passed", "stage_manager_reverified").is_ok());
     }
 }

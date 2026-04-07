@@ -1,3 +1,8 @@
+## 2026-04-06 - 작업한일
+- `.../src/cli.rs`의 manager trace를 `.project/log.md` JSONL `manager_trace` event로 전환해, `check-manager-trace`와 `check-manager-completion`이 구조화된 canonical state를 기준으로 검증하도록 변경함.
+- `.../README.md`를 갱신해 `job.md`는 사람용 상태 요약, `.project/log.md`는 manager canonical state라는 역할 분리를 명시함.
+- 검증은 `cargo test manager -- --nocapture`, `cargo test check_orc_code -- --nocapture`, `rg -n "orc_manager_trace\\.log" .`로 수행함.
+
 ## 2026-04-03 - 작업한일
 - `.../orc_manager/SKILL.md`, `.../orc-cli-workflow/SKILL.md`, `.../AGENTS.md`의 improve 규칙을 무한 탐색 루프에서 `단일 improve 패스 + blocking 재진입 1회` 구조로 바꿈.
 - improve 결과를 `blocking`과 `non_blocking`으로만 분류하도록 고정하고, `non_blocking`은 backlog 기록만 허용하며 같은 턴 재구현 루프 재개를 금지함.
