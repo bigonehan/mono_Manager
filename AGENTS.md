@@ -76,6 +76,12 @@
 
 ## ORC Manager User-Intent Lock Gate
 - `orc_manager`를 쓰는 턴은 사용자 원문을 먼저 `입력`, `출력`, `유지`, `추가`, `금지` 5줄로 분해하고 `job.md#input/#output/#keep/#add/#forbid`에 잠근 뒤에만 다음 단계로 갈 수 있다.
+- plan 승인 전 `job.md# hard gate` 아래 `## requirement_lock`, `## forbidden_substitutions`, `## verification_examples`를 채워야 한다.
+- `## verification_examples`에는 아래 검증 예시 항목이 반드시 그대로 있어야 한다.
+  - `md 저장 != 메모리 유지`
+  - `재시작 != reload`
+  - `실제 e2e != fixture, mock, real-equivalent`
+- 위 표가 없으면 plan 승인, preflight 통과, worker 생성, completion 검증을 진행하면 안 된다.
 - 위 5줄은 구현 친화 요약으로 축소하지 말고, 사용자 요구 문장을 잃지 않는 수준으로 직접 적어야 한다.
 - `job.md#check`에는 최소 `input_output_checklist`, `keep_checklist`, `add_checklist`, `forbid_checklist` 네 묶음이 있어야 한다.
 - 각 checklist 줄은 사용자 원문 항목과 1:1로 대응되어야 하며, 함수명/내부구현/추상화된 개발자 용어만 있고 사용자 요구가 빠져 있으면 실패다.

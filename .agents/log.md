@@ -3255,3 +3255,7 @@
 - `.../assets/web/src/lib/job-process-parser.ts`와 `.../assets/web/src/components/WebApp.tsx`를 갱신해 detail 화면에 `process alignment` pane을 추가하고, `job.md`의 `input/output/keep/add/forbid`, `verify`, `check evidence`, `problems`를 실제 UI에 바로 노출하도록 맞춤.
 - `.../assets/web/tests/unit/job-process-parser.test.ts`를 추가해 새 parser가 잠금 섹션과 체크리스트 상태를 정확히 읽는지 회귀 검증을 붙였고, `.../assets/web/package.json`은 `@astrojs/check`를 dev dependency 기준으로 정리함.
 - ORC manager 흐름으로 impl/qa/check/improve worker를 분리 실행했고, impl은 `http://127.0.0.1:4321`, QA는 실제 접속 + reload + negative-check + artifact `.../tmp/process-alignment-qa.png`, check는 `check-code` 기준, improve는 `non_blocking` 분류까지 회수한 뒤 `job.md`, trace, completion guard를 재검증함.
+## 2026-04-07 - 작업한일
+- `/home/tree/ai/skills/orc_manager/SKILL.md`와 `.../AGENTS.md`에 `job.md# hard gate` 및 `## verification_examples` 필수 규칙을 추가하고, plan 승인 전 아래 치환 금지 표가 반드시 존재해야 하도록 고정함: `md 저장 != 메모리 유지`, `재시작 != reload`, `실제 e2e != fixture, mock, real-equivalent`.
+- `.../src/cli.rs`에 manager hard gate validator를 추가해 새 시작의 `orc check-manager-trace preflight|impl`와 종료의 `orc check-manager-completion`이 같은 표를 직접 검사하도록 묶었고, 누락 시 즉시 실패하도록 회귀 테스트를 확장함.
+- 검증은 `cargo test --manifest-path /home/tree/project/mono_Manager/Cargo.toml`, `/tmp/orc-hard-gate-missing`에서 `cargo run --manifest-path /home/tree/project/mono_Manager/Cargo.toml --bin orc -- check-manager-trace preflight` 실패, `/tmp/orc-hard-gate-pass`에서 같은 preflight 및 `check-manager-completion job.md` 통과로 수행함.

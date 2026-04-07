@@ -122,6 +122,17 @@ fn canonical_command_for_match(command: &str) -> &str {
 const ORC_CANONICAL_STATE_FILE: &str = ".project/log.md";
 const CHECK_PROCESS_FILE: &str = ".project/check-process.md";
 const TASK_SESSION_KEY_ENV: &str = "ORC_TASK_SESSION_KEY";
+const REQUIRED_MANAGER_HARD_GATE_HEADERS: &[&str] = &[
+    "# hard gate",
+    "## requirement_lock",
+    "## forbidden_substitutions",
+    "## verification_examples",
+];
+const REQUIRED_MANAGER_VERIFICATION_EXAMPLES: &[&str] = &[
+    "- md 저장 != 메모리 유지",
+    "- 재시작 != reload",
+    "- 실제 e2e != fixture, mock, real-equivalent",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct ManagerTraceEvent {
@@ -339,6 +350,9 @@ fn check_orc_manager_trace(mode: &str) -> Result<String, String> {
     let run_lines = latest_trace_run(&events);
     match mode {
         "preflight" | "impl" => {
+            let job_raw = fs::read_to_string("job.md")
+                .map_err(|_| "ERROR: job file not found: job.md".to_string())?;
+            validate_manager_hard_gate_from_raw(&job_raw)?;
             find_stage_line(&run_lines, "stage_global_override_read")?;
             find_stage_line(&run_lines, "stage_job_md_locked")?;
             find_stage_line(&run_lines, "stage_plan_done")?;
@@ -447,7 +461,67 @@ fn collect_unchecked_verify_lines(raw: &str) -> Vec<String> {
     items
 }
 
+fn has_markdown_header(raw: &str, header: &str) -> bool {
+    raw.lines()
+        .any(|line| line.trim().eq_ignore_ascii_case(header))
+}
+
+fn collect_bullet_lines_under_subsection(raw: &str, header: &str) -> Vec<String> {
+    let mut in_section = false;
+    let mut items = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case(header) {
+            in_section = true;
+            continue;
+        }
+        if in_section && trimmed.starts_with("## ") && !trimmed.eq_ignore_ascii_case(header) {
+            break;
+        }
+        if in_section && trimmed.starts_with('#') && !trimmed.starts_with("## ") {
+            break;
+        }
+        if in_section && trimmed.starts_with("- ") {
+            items.push(trimmed.to_string());
+        }
+    }
+    items
+}
+
+fn validate_manager_hard_gate_from_raw(raw: &str) -> Result<(), String> {
+    for header in REQUIRED_MANAGER_HARD_GATE_HEADERS {
+        if !has_markdown_header(raw, header) {
+            return Err(format!(
+                "ERROR: missing manager hard gate section: {header}"
+            ));
+        }
+    }
+
+    let verification_examples =
+        collect_bullet_lines_under_subsection(raw, "## verification_examples");
+    if verification_examples.is_empty() {
+        return Err(
+            "ERROR: missing verification examples bullets under ## verification_examples"
+                .to_string(),
+        );
+    }
+
+    for example in REQUIRED_MANAGER_VERIFICATION_EXAMPLES {
+        if !verification_examples
+            .iter()
+            .any(|line| line.eq_ignore_ascii_case(example))
+        {
+            return Err(format!(
+                "ERROR: verification_examples missing required substitution: {example}"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn check_manager_completion_from_raw(raw: &str) -> Result<String, String> {
+    validate_manager_hard_gate_from_raw(raw)?;
     let top_level_problems = collect_bullet_lines_in_section(raw, "# problems");
     if !top_level_problems.is_empty() {
         return Err(format!(
@@ -802,7 +876,7 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
 mod tests {
     use super::{
         assert_trace_lt, canonical_command_for_match, is_help_command, latest_trace_run,
-        ManagerTraceEvent,
+        validate_manager_hard_gate_from_raw, ManagerTraceEvent,
     };
 
     fn trace_event(ts: u64, stage: &str, detail: &str) -> ManagerTraceEvent {
@@ -904,16 +978,112 @@ mod tests {
 
     #[test]
     fn check_manager_completion_rejects_problem_and_verify_remnants() {
-        let raw = "# problems\n- blocker\n\n## verify\n- [ ] unresolved\n";
+        let raw = "# hard gate
+## requirement_lock
+- Prefix group 정보가 md에 저장되어야 한다
+## forbidden_substitutions
+- md 저장 != 메모리 유지
+- 재시작 != reload
+- 실제 e2e != fixture, mock, real-equivalent
+## verification_examples
+- md 저장 != 메모리 유지
+- 재시작 != reload
+- 실제 e2e != fixture, mock, real-equivalent
+
+# problems
+- blocker
+
+## verify
+- [ ] unresolved
+";
         let err = super::check_manager_completion_from_raw(raw).expect_err("must fail");
         assert!(err.contains("# problems"));
     }
 
     #[test]
     fn check_manager_completion_accepts_clean_job_md() {
-        let raw = "# problems\n\n## verify\n- [x] done\n";
+        let raw = "# hard gate
+## requirement_lock
+- Prefix group 정보가 md에 저장되어야 한다
+## forbidden_substitutions
+- md 저장 != 메모리 유지
+- 재시작 != reload
+- 실제 e2e != fixture, mock, real-equivalent
+## verification_examples
+- md 저장 != 메모리 유지
+- 재시작 != reload
+- 실제 e2e != fixture, mock, real-equivalent
+
+# problems
+
+## verify
+- [x] done
+";
         let result = super::check_manager_completion_from_raw(raw).expect("must pass");
         assert!(result.contains("PASS"));
+    }
+
+    #[test]
+    fn manager_hard_gate_requires_hard_gate_header() {
+        let raw = "## requirement_lock
+- Prefix group 정보가 md에 저장되어야 한다
+## forbidden_substitutions
+- md 저장 != 메모리 유지
+## verification_examples
+- md 저장 != 메모리 유지
+- 재시작 != reload
+- 실제 e2e != fixture, mock, real-equivalent
+";
+        let err = validate_manager_hard_gate_from_raw(raw).expect_err("must fail");
+        assert!(err.contains("# hard gate"));
+    }
+
+    #[test]
+    fn manager_hard_gate_requires_verification_examples_section() {
+        let raw = "# hard gate
+## requirement_lock
+- Prefix group 정보가 md에 저장되어야 한다
+## forbidden_substitutions
+- md 저장 != 메모리 유지
+- 재시작 != reload
+- 실제 e2e != fixture, mock, real-equivalent
+";
+        let err = validate_manager_hard_gate_from_raw(raw).expect_err("must fail");
+        assert!(err.contains("## verification_examples"));
+    }
+
+    #[test]
+    fn manager_hard_gate_requires_exact_substitution_examples() {
+        let raw = "# hard gate
+## requirement_lock
+- Prefix group 정보가 md에 저장되어야 한다
+## forbidden_substitutions
+- md 저장 != 메모리 유지
+- 재시작 != reload
+- 실제 e2e != fixture, mock, real-equivalent
+## verification_examples
+- md 저장 != 메모리 유지
+- 재시작 != reload
+";
+        let err = validate_manager_hard_gate_from_raw(raw).expect_err("must fail");
+        assert!(err.contains("실제 e2e != fixture, mock, real-equivalent"));
+    }
+
+    #[test]
+    fn manager_hard_gate_accepts_required_examples() {
+        let raw = "# hard gate
+## requirement_lock
+- Prefix group 정보가 md에 저장되어야 한다
+## forbidden_substitutions
+- md 저장 != 메모리 유지
+- 재시작 != reload
+- 실제 e2e != fixture, mock, real-equivalent
+## verification_examples
+- md 저장 != 메모리 유지
+- 재시작 != reload
+- 실제 e2e != fixture, mock, real-equivalent
+";
+        validate_manager_hard_gate_from_raw(raw).expect("must pass");
     }
 
     #[test]
