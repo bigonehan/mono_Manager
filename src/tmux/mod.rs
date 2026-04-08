@@ -75,7 +75,10 @@ impl WorkerPaneRef {
 }
 
 fn worker_registry_path_for(base_dir: &Path) -> PathBuf {
-    base_dir.join(".project").join("runtime").join("worker-registry.jsonl")
+    base_dir
+        .join(".project")
+        .join("runtime")
+        .join("worker-registry.jsonl")
 }
 
 fn worker_registry_path() -> Option<PathBuf> {
@@ -151,19 +154,6 @@ fn resolve_worker_ref_in(base_dir: Option<&Path>, raw: &str) -> Result<WorkerPan
     Ok(register_worker_pane(None, trimmed))
 }
 
-pub fn legacy_worker_ref_pane_id(raw: &str) -> Option<&str> {
-    let trimmed = raw.trim();
-    let parts: Vec<&str> = trimmed.split("::").collect();
-    if parts.len() != 3 {
-        return None;
-    }
-    let pane_id = parts[1].trim();
-    if pane_id.is_empty() {
-        return None;
-    }
-    Some(pane_id)
-}
-
 fn run_tmux(args: &[&str]) -> Result<String, String> {
     let output = Command::new("tmux")
         .args(args)
@@ -225,7 +215,13 @@ fn pane_session_name(pane_id: &str) -> Result<String, String> {
 }
 
 fn session_exists(session_name: &str) -> Result<bool, String> {
-    match run_tmux_optional(&["display-message", "-p", "-t", session_name, "#{session_name}"])? {
+    match run_tmux_optional(&[
+        "display-message",
+        "-p",
+        "-t",
+        session_name,
+        "#{session_name}",
+    ])? {
         Some(_) => Ok(true),
         None => Ok(false),
     }
@@ -586,7 +582,9 @@ fn extract_dev_url_from_tail(tail: &str) -> Option<String> {
         if !is_worker_result_line(line) {
             return None;
         }
-        let start = line.find("dev=http://").or_else(|| line.find("dev=https://"))?;
+        let start = line
+            .find("dev=http://")
+            .or_else(|| line.find("dev=https://"))?;
         let rest = &line[(start + 4)..];
         let end = rest.find(';').unwrap_or(rest.len());
         let candidate = rest[..end].trim();
@@ -646,9 +644,8 @@ pub fn tsend(pane_id: &str, msg: &str, option: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_dev_url_from_tail, http_healthcheck, is_worker_result_line,
-        legacy_worker_ref_pane_id, lookup_worker_ref_at, persist_worker_ref_at,
-        resolve_worker_ref, resolve_worker_ref_in, tail_has_worker_pattern,
+        extract_dev_url_from_tail, http_healthcheck, is_worker_result_line, lookup_worker_ref_at,
+        persist_worker_ref_at, resolve_worker_ref, resolve_worker_ref_in, tail_has_worker_pattern,
         worker_registry_path_for, WorkerPaneRef,
     };
     use std::io::{Read, Write};
@@ -723,19 +720,10 @@ mod tests {
     }
 
     #[test]
-    fn worker_ref_decode_rejects_legacy_three_part_format() {
-        let err = WorkerPaneRef::decode("worker-123::%42::1000").expect_err("legacy format rejected");
+    fn worker_ref_decode_rejects_three_part_format() {
+        let err =
+            WorkerPaneRef::decode("worker-123::%42::1000").expect_err("three-part format rejected");
         assert!(err.contains("expected worker_id::session_name::pane_id::pane_pid"));
-    }
-
-    #[test]
-    fn legacy_worker_ref_pane_id_extracts_retry_target() {
-        assert_eq!(
-            legacy_worker_ref_pane_id("worker-123::%42::1000"),
-            Some("%42")
-        );
-        assert_eq!(legacy_worker_ref_pane_id("worker-123::::1000"), None);
-        assert_eq!(legacy_worker_ref_pane_id("worker-123::impl::%42::1000"), None);
     }
 
     #[test]

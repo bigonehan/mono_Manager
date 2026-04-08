@@ -172,7 +172,7 @@
 - If temporary fallback is unavoidable, keep it minimal and generic (non-domain-specific), and treat it as a last resort.
 
 ## Legacy Compatibility Removal Rule
-- Remove legacy compatibility paths/modes instead of keeping dual-path support.
+- Remove compatibility paths/modes instead of keeping dual-path support.
 - When standard path/name changes, keep only the current canonical path and update callers in the same change.
 
 

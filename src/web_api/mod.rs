@@ -1443,7 +1443,7 @@ fn collect_generated(project_path: &Path) -> Vec<String> {
             if !dir.is_dir() {
                 continue;
             }
-            let has_draft = dir.join("drafts.yaml").exists() || dir.join("tasks.yaml").exists();
+            let has_draft = dir.join("drafts.yaml").exists();
             if has_draft {
                 out.push(entry.file_name().to_string_lossy().to_string());
             }

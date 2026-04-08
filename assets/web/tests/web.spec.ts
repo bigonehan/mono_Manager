@@ -453,6 +453,7 @@ test("web ui: drafts pane uses add/build actions and stage lock overlays", async
   await expect(page.getByTestId("generate-job-and-drafts")).toHaveCount(0);
   await expect(page.getByTestId("open-draft-pane-settings")).toBeVisible();
   await expect(page.getByTestId("draft-action-build")).toBeVisible();
+  await expect(page.getByTestId("draft-action-build")).toHaveAttribute("title", "run impl_orc_code");
   await expect(
     page
       .getByTestId("drafts-raw-pane")
@@ -632,6 +633,8 @@ test("web ui: check pane renders draft subject and appends screenshot feedback",
 
   await expect(page.getByTestId("check-pane")).toBeVisible();
   await expect(page.getByTestId("check-pane-subject")).toContainText("manual_review");
+  await expect(page.getByText("impl_orc_code 이후 수동 check는 이 pane에서 check_orc_code로 실행합니다.")).toBeVisible();
+  await expect(page.getByTestId("check-pane-run")).toHaveAttribute("title", "run check_orc_code");
   await expect(page.getByTestId("check-step-pane")).toContainText("메인 흐름이 정상 동작해야 한다");
   await expect(page.getByTestId("check-report-button")).toBeEnabled();
 
