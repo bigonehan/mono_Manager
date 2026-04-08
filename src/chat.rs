@@ -1026,6 +1026,9 @@ mod tests {
     #[test]
     fn resolve_llm_bin_path_prefers_codexo_absolute_path() {
         assert_eq!(super::resolve_llm_bin_path("codex"), super::CODEXO_BIN_PATH);
-        assert_eq!(super::resolve_llm_bin_path("codexo"), super::CODEXO_BIN_PATH);
+        assert_eq!(
+            super::resolve_llm_bin_path("codexo"),
+            super::CODEXO_BIN_PATH
+        );
     }
 }

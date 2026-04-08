@@ -148,15 +148,6 @@ function resolveWorkspaceCommandArgs(binary: "orc" | "rc", args: string[]): Reso
       return { bin: siblingRc, args };
     }
   }
-  const root = repoRoot();
-  const legacyAssets = path.join(root, "assets", "code");
-  const presetsAssets = path.join(root, "assets", "presets", "code");
-  if (!fs.existsSync(legacyAssets) && fs.existsSync(presetsAssets)) {
-    return {
-      bin: "cargo",
-      args: ["run", "--quiet", "--manifest-path", path.join(root, "Cargo.toml"), "--bin", binary, "--", ...args]
-    };
-  }
   return { bin: binary, args };
 }
 
@@ -2090,7 +2081,7 @@ function collectGenerated(projectPath: string): string[] {
       continue;
     }
     const dir = path.join(featureRoot, dirent.name);
-    const hasDraft = fs.existsSync(path.join(dir, "drafts.yaml")) || fs.existsSync(path.join(dir, "tasks.yaml"));
+    const hasDraft = fs.existsSync(path.join(dir, "drafts.yaml"));
     if (hasDraft) {
       out.push(dirent.name);
     }
@@ -2792,7 +2783,7 @@ export function startParallelBuild(id: string): { output: string } {
     return { output: `auto already running: ${detail.name}` };
   }
   if (buildProcessesByProject.has(id)) {
-    return { output: `build already running: ${detail.name}` };
+    return { output: `impl_orc_code already running: ${detail.name}` };
   }
   const command = resolveOrcCommandArgs(["impl_orc_code"]);
   const taskKey = createTaskSessionKey("build");
@@ -2809,13 +2800,13 @@ export function startParallelBuild(id: string): { output: string } {
   });
   buildProcessesByProject.set(id, proc);
   buildCurrentJobByProject.set(id, "starting");
-  appendRuntimeLog(id, `[build] started: ${detail.name}`);
+  appendRuntimeLog(id, `[impl_orc_code] started: ${detail.name}`);
 
   const updateJob = (line: string) => {
     const trimmed = line.trim();
     if (!trimmed) return;
     buildCurrentJobByProject.set(id, trimmed.slice(0, 200));
-    appendRuntimeLog(id, `[build] ${trimmed}`);
+    appendRuntimeLog(id, `[impl_orc_code] ${trimmed}`);
   };
   proc.stdout.on("data", (chunk) => {
     const lines = String(chunk).split(/\r?\n/);
@@ -2834,13 +2825,13 @@ export function startParallelBuild(id: string): { output: string } {
         `build:${detail.name}:code=${code === null ? "null" : String(code)}:signal=${signal ?? "none"}`
       );
     } catch (error) {
-      appendRuntimeLog(id, `[build] trace failed: ${String(error)}`);
+      appendRuntimeLog(id, `[impl_orc_code] trace failed: ${String(error)}`);
     }
     reconcileDraftCompletionFromProjectFeatures(detail.path);
     const message =
       code === 0
-        ? "[build] finished: manual orc check pending"
-        : `[build] finished: code=${code === null ? "null" : String(code)} signal=${signal ?? "none"}`;
+        ? "[impl_orc_code] finished: manual check_orc_code pending"
+        : `[impl_orc_code] finished: code=${code === null ? "null" : String(code)} signal=${signal ?? "none"}`;
     appendRuntimeLog(id, message);
     buildCompletionByProject.set(id, message);
     buildProcessesByProject.delete(id);
@@ -2850,25 +2841,25 @@ export function startParallelBuild(id: string): { output: string } {
     try {
       runOrcManagerTraceStage(detail.path, taskKey, "stage_impl_done", `build:${detail.name}:error`);
     } catch (traceError) {
-      appendRuntimeLog(id, `[build] trace failed: ${String(traceError)}`);
+      appendRuntimeLog(id, `[impl_orc_code] trace failed: ${String(traceError)}`);
     }
     reconcileDraftCompletionFromProjectFeatures(detail.path);
-    const message = `[build] error: ${String(error)}`;
+    const message = `[impl_orc_code] error: ${String(error)}`;
     appendRuntimeLog(id, message);
     buildCompletionByProject.set(id, message);
     buildProcessesByProject.delete(id);
     buildCurrentJobByProject.delete(id);
   });
-  return { output: `build started: ${detail.name}` };
+  return { output: `impl_orc_code started: ${detail.name}` };
 }
 
 export function stopParallelBuild(id: string): { output: string } {
   const detail = loadProjectDetail(id);
   const running = buildProcessesByProject.get(id);
   if (!running) {
-    return { output: `build not running: ${detail.name}` };
+    return { output: `impl_orc_code not running: ${detail.name}` };
   }
-  appendRuntimeLog(id, `[build] stop requested: ${detail.name}`);
+  appendRuntimeLog(id, `[impl_orc_code] stop requested: ${detail.name}`);
   if (typeof running.pid === "number") {
     try {
       process.kill(-running.pid, "SIGTERM");
@@ -2879,8 +2870,8 @@ export function stopParallelBuild(id: string): { output: string } {
   running.kill("SIGTERM");
   buildProcessesByProject.delete(id);
   buildCurrentJobByProject.delete(id);
-  buildCompletionByProject.set(id, `[build] stopped by user`);
-  return { output: `build stopped: ${detail.name}` };
+  buildCompletionByProject.set(id, `[impl_orc_code] stopped by user`);
+  return { output: `impl_orc_code stopped: ${detail.name}` };
 }
 
 export function getBuildStatus(id: string): {
@@ -2911,14 +2902,14 @@ export function getBuildStatus(id: string): {
   };
 }
 
-export function runManualRcCheck(id: string): { detail: ProjectDetail; output: string } {
+export function runManualOrcCheck(id: string): { detail: ProjectDetail; output: string } {
   const detail = loadProjectDetail(id);
   const subject = detail.checkSubject.trim() || detail.name;
-  const mission = `manual orc check | ${subject}`;
+  const mission = `manual check_orc_code | ${subject}`;
   const taskKey = createTaskSessionKey("manual-check");
   ensureManagerPreflightTrace(detail.path, taskKey, `check:${detail.name}`);
   runOrcManagerTraceStage(detail.path, taskKey, "stage_check_session_started", `check:${detail.name}`);
-  appendRuntimeLog(id, `[check] orc start: ${mission}`);
+  appendRuntimeLog(id, `[check_orc_code] start: ${mission}`);
   const command = resolveOrcCommandArgs(["check_orc_code"]);
   const result = spawnSync(command.bin, command.args, {
     cwd: detail.path,
@@ -2929,7 +2920,7 @@ export function runManualRcCheck(id: string): { detail: ProjectDetail; output: s
   const stderr = (result.stderr || "").trim();
   const movedScreenshots = moveRcScreenshotArtifacts(detail.path);
   for (const screenshotPath of movedScreenshots) {
-    appendRuntimeLog(id, `[check] screenshot saved: ${screenshotPath}`);
+    appendRuntimeLog(id, `[check_orc_code] screenshot saved: ${screenshotPath}`);
   }
   if (result.status !== 0) {
     runOrcManagerTraceStage(
@@ -2939,14 +2930,14 @@ export function runManualRcCheck(id: string): { detail: ProjectDetail; output: s
       `check:${detail.name}:status=${String(result.status ?? 1)}`
     );
     const reason = stderr || stdout || `orc check failed: status=${String(result.status)}`;
-    appendRuntimeLog(id, `[check] failed: ${reason}`);
+    appendRuntimeLog(id, `[check_orc_code] failed: ${reason}`);
     throw new Error(reason);
   }
   runOrcManagerTraceStage(detail.path, taskKey, "stage_check_done", `check:${detail.name}:status=0`);
-  appendRuntimeLog(id, `[check] completed: ${stdout || mission}`);
+  appendRuntimeLog(id, `[check_orc_code] completed: ${stdout || mission}`);
   return {
     detail: loadProjectDetail(id),
-    output: stdout || `rc check completed: ${mission}`
+    output: stdout || `check_orc_code completed: ${mission}`
   };
 }
 

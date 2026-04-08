@@ -3259,3 +3259,15 @@
 - `/home/tree/ai/skills/orc_manager/SKILL.md`와 `.../AGENTS.md`에 `job.md# hard gate` 및 `## verification_examples` 필수 규칙을 추가하고, plan 승인 전 아래 치환 금지 표가 반드시 존재해야 하도록 고정함: `md 저장 != 메모리 유지`, `재시작 != reload`, `실제 e2e != fixture, mock, real-equivalent`.
 - `.../src/cli.rs`에 manager hard gate validator를 추가해 새 시작의 `orc check-manager-trace preflight|impl`와 종료의 `orc check-manager-completion`이 같은 표를 직접 검사하도록 묶었고, 누락 시 즉시 실패하도록 회귀 테스트를 확장함.
 - 검증은 `cargo test --manifest-path /home/tree/project/mono_Manager/Cargo.toml`, `/tmp/orc-hard-gate-missing`에서 `cargo run --manifest-path /home/tree/project/mono_Manager/Cargo.toml --bin orc -- check-manager-trace preflight` 실패, `/tmp/orc-hard-gate-pass`에서 같은 preflight 및 `check-manager-completion job.md` 통과로 수행함.
+## 2026-04-08 - 작업한일
+- `.../assets/web/src/server/orc.ts`, `.../assets/web/src/pages/api/check-run.ts`, `.../assets/web/src/components/WebApp.tsx`를 수정해 web UI의 실행/점검 문구와 runtime log를 실제 ORC 명령명인 `impl_orc_code`, `check_orc_code` 기준으로 맞추고, build/check 버튼에 실제 명령 tooltip을 추가함.
+- `.../assets/web/tests/web.spec.ts`를 갱신해 detail 화면에서 `impl_orc_code`/`check_orc_code` 매핑 문구와 tooltip이 실제로 보이는지 회귀 검증을 추가함.
+- ORC manager 흐름으로 impl/qa/check/improve worker를 분리 실행했고, impl은 `http://127.0.0.1:4176`, QA는 실제 브라우저에서 requirement 저장 후 `job.md` persistence와 reload를 검증하며 artifact `.../tmp/qa-orc-map-1775627613342-mapping.png`를 남겼고, check는 `npm run test:unit`과 `npm run check`, legacy-string guard를 통과시킨 뒤 canonical trace replay와 `orc check-manager-trace final`, `orc check-manager-completion job.md`까지 통과시킴.
+## 2026-04-08 - 작업한일
+- `.../src/cli.rs`, `.../src/tmux/mod.rs`, `.../src/web_api/mod.rs`, `.../src/ui/mod.rs`, `.../assets/web/src/server/orc.ts`에서 구형 worker ref 재시도, `tasks.yaml` 동시 허용, `assets/code` 탐색 같은 호환 경로를 제거하고 현재 표준 경로만 남김.
+- `.../src/bin/rc.rs`에서 plan/checklist 런타임 우회 경로와 구형 산출물 정리 함수를 제거해 실패가 즉시 현재 오류로 surface되게 바꿨고, 테스트는 런타임 fallback 대신 결정적 evidence 생성기로 회귀만 유지하게 정리함.
+- `.../README.md`, `.../AGENTS.md`, `.../src/code.rs`를 함께 갱신해 legacy/구형 용어와 backup label을 현재 기준으로 맞췄고, 검증은 `cargo test`, `npm --prefix assets/web run check`, `npm --prefix assets/web run test:unit`, `rg -n "legacy|tasks\\.yaml|react_vite_fallback|cleanup_legacy|fallback_(plan|checklist)|legacy_worker_ref_pane_id|assets/code" src assets/web README.md AGENTS.md --glob '!assets/web/package-lock.json'` 0건으로 수행함.
+## 2026-04-08 - 작업한일
+- `/home/tree/ai/skills/orc_manager/SKILL.md`의 check session 규칙을 바꿔, manager가 check worker에 보내는 `worker-send` 명령 본문 안에 `/home/tree/ai/skills/check-code/SKILL.md`를 직접 읽고 그 기준으로 점검하라는 지시를 명시적으로 넣도록 고정함.
+- 같은 skill에서 기존의 `check-code` 사용 지시/사용 여부 확인/skill 기준 준수 확인 문구는 제거해, 문서 확인 루프가 아니라 worker 명령 본문 자체가 source of truth가 되도록 정리함.
+- 검증은 `sed -n '184,214p' /home/tree/ai/skills/orc_manager/SKILL.md`와 관련 문자열 검색으로 수행함.

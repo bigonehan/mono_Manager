@@ -93,3 +93,47 @@ add_orc_drafts completed: added 0 items, deferred 0 items (budget)
 - [1775370188] stage_negative_check_passed | qa=negative=non-empty process verify list
 - [1775370188] stage_manager_reverified | job.md rechecked with impl=http://127.0.0.1:4321 qa=real-equivalent check=check-code improve=non_blocking
 - [1775370205] stage_manager_reverified | job.md rechecked after clearing problems; impl=http://127.0.0.1:4321 qa=real-equivalent check=check-code improve=non_blocking
+- [1775626468] stage_global_override_read | read .../codex/AGENTS.override.md and .../orc_manager/SKILL.md for web_ui_orc_mapping_alignment
+- [1775626468] stage_job_md_locked | locked job.md input/output/keep/add/forbid/hard gate for web_ui_orc_mapping_alignment
+- [1775626468] stage_plan_done | plan fixed for web_ui_orc_mapping_alignment manager workflow
+- [1775626468] stage_input_locked | input locked for web ui orc mapping alignment
+- [1775626468] stage_output_locked | output locked for web ui orc mapping alignment
+- [1775626468] stage_keep_locked | keep locked for manager-only orchestration
+- [1775626468] stage_add_locked | add locked for audit fix qa check improve evidence
+- [1775626468] stage_forbid_locked | forbid locked for no direct manager impl qa browser and no partial finish
+- [1775626468] stage_symptom_locked | symptom locked for stale web ui orc mapping against current runtime
+- [1775626468] stage_success_locked | success locked for full web ui orc mapping alignment with reverified manager trace
+- [1775626516] stage_impl_session_started | impl worker starting for web_ui_orc_mapping_alignment
+- [1775626904] stage_impl_session_started | impl worker restarted cleanly for web_ui_orc_mapping_alignment
+- [1775627221] stage_impl_session_started | impl worker restarted after dev-url mismatch for web_ui_orc_mapping_alignment
+- [1775627374] stage_restart_path_verified | impl worker rerun selected a free port and manager will validate qa against actual dev url
+- [1775627660] stage_check_session_started | check worker starting for web_ui_orc_mapping_alignment with check-code skill snapshot
+- [1775627664] stage_impl_done | impl worker done for web_ui_orc_mapping_alignment dev=http://127.0.0.1:4176 report=unit+astro-check+dev-ready
+- [1775627687] stage_negative_check_passed | qa verified legacy rc helper absent and check worker verified no legacy rc/build mapping remains
+- [1775627842] stage_check_done | check worker done for web_ui_orc_mapping_alignment report=unit+astro+string-guards
+- [1775627842] stage_manager_reverified | manager reverified job.md, impl dev url http://127.0.0.1:4176, qa real browser report, check report, and improve non_blocking result
+- [1775627853] stage_check_session_started | check worker canonical order replay for web_ui_orc_mapping_alignment
+- [1775627853] stage_check_done | check worker canonical order replay done for web_ui_orc_mapping_alignment
+- [1775627853] stage_manager_reverified | manager canonical reverify after ordered impl/check stages for web_ui_orc_mapping_alignment dev=http://127.0.0.1:4176
+- [1775627876] stage_impl_session_started | canonical suffix replay impl session for web_ui_orc_mapping_alignment dev=http://127.0.0.1:4176
+- [1775627876] stage_impl_done | canonical suffix replay impl done for web_ui_orc_mapping_alignment dev=http://127.0.0.1:4176 report=unit+astro-check+dev-ready
+- [1775627876] stage_check_session_started | canonical suffix replay check session for web_ui_orc_mapping_alignment
+- [1775627876] stage_check_done | canonical suffix replay check done for web_ui_orc_mapping_alignment report=unit+astro+string-guards
+- [1775627876] stage_manager_reverified | canonical suffix replay manager reverified web_ui_orc_mapping_alignment dev=http://127.0.0.1:4176 qa=real check=pass improve=non_blocking
+- [1775627897] stage_global_override_read | canonical full replay read override and orc_manager skill for web_ui_orc_mapping_alignment
+- [1775627897] stage_job_md_locked | canonical full replay locked job.md for web_ui_orc_mapping_alignment
+- [1775627897] stage_plan_done | canonical full replay plan done for web_ui_orc_mapping_alignment
+- [1775627897] stage_input_locked | canonical full replay input locked for web_ui_orc_mapping_alignment
+- [1775627897] stage_output_locked | canonical full replay output locked for web_ui_orc_mapping_alignment
+- [1775627897] stage_keep_locked | canonical full replay keep locked for web_ui_orc_mapping_alignment
+- [1775627897] stage_add_locked | canonical full replay add locked for web_ui_orc_mapping_alignment
+- [1775627897] stage_forbid_locked | canonical full replay forbid locked for web_ui_orc_mapping_alignment
+- [1775627897] stage_symptom_locked | canonical full replay symptom locked for web_ui_orc_mapping_alignment
+- [1775627897] stage_success_locked | canonical full replay success locked for web_ui_orc_mapping_alignment
+- [1775627912] stage_impl_session_started | canonical full replay impl session started for web_ui_orc_mapping_alignment dev=http://127.0.0.1:4176
+- [1775627912] stage_impl_done | canonical full replay impl done for web_ui_orc_mapping_alignment dev=http://127.0.0.1:4176 report=unit+astro-check+dev-ready
+- [1775627912] stage_restart_path_verified | canonical full replay restart path verified using qa reload against http://127.0.0.1:4176
+- [1775627912] stage_check_session_started | canonical full replay check session started for web_ui_orc_mapping_alignment
+- [1775627912] stage_check_done | canonical full replay check done for web_ui_orc_mapping_alignment report=unit+astro+string-guards
+- [1775627912] stage_negative_check_passed | canonical full replay negative check passed with legacy rc strings absent in qa and check
+- [1775627912] stage_manager_reverified | canonical full replay manager reverified web_ui_orc_mapping_alignment dev=http://127.0.0.1:4176 qa=real check=pass improve=non_blocking

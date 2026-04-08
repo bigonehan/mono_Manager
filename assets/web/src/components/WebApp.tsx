@@ -1109,7 +1109,7 @@ export default function WebApp() {
       pushLog(`build start failed: ${String(data.error ?? "unknown error")}`);
       return;
     }
-    pushLog(String(data.output ?? "build started"));
+    pushLog(String(data.output ?? "impl_orc_code started"));
     setDetail((prev) => (prev ? { ...prev, state: "work", current_job: "starting", is_build_running: true } : prev));
     await loadProjects();
   }
@@ -1126,7 +1126,7 @@ export default function WebApp() {
       pushLog(`build stop failed: ${String(data.error ?? "unknown error")}`);
       return;
     }
-    pushLog(String(data.output ?? "build stopped"));
+    pushLog(String(data.output ?? "impl_orc_code stopped"));
     await loadProjects();
     await loadDetail(detail.id);
   }
@@ -1181,10 +1181,10 @@ export default function WebApp() {
       });
       const data = await res.json();
       if (!res.ok) {
-        pushLog(`manual check failed: ${String(data.error ?? "unknown error")}`);
+        pushLog(`check_orc_code failed: ${String(data.error ?? "unknown error")}`);
         return;
       }
-      pushLog(String(data.output ?? "manual check completed"));
+      pushLog(String(data.output ?? "check_orc_code completed"));
       setDetail(data.detail);
       await loadProjects();
     } finally {
@@ -2607,6 +2607,7 @@ export default function WebApp() {
                           disabled={addInputApplying || isAiBusy}
                           aria-label="build_parallel"
                           data-testid="draft-action-build"
+                          title={isBuildRunning ? "stop impl_orc_code" : "run impl_orc_code"}
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -2895,7 +2896,7 @@ export default function WebApp() {
                       <div className="rounded-2xl border border-border bg-white px-4 py-3 text-sm text-muted-foreground">
                         {isAutoRunningDetail
                           ? "auto mode에서는 현재 workflow가 check까지 관리합니다."
-                          : "run parallel 이후 수동 check는 이 pane에서 rc로 실행합니다."}
+                          : "impl_orc_code 이후 수동 check는 이 pane에서 check_orc_code로 실행합니다."}
                       </div>
                     </div>
                   </div>
@@ -3010,6 +3011,7 @@ export default function WebApp() {
                       onClick={() => void runManualCheck()}
                       disabled={!canRunManualCheck}
                       data-testid="check-pane-run"
+                      title="run check_orc_code"
                     >
                       <FlaskConical className="h-4 w-4" />
                       <span>{checkRunning ? "checking..." : "check"}</span>

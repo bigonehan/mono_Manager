@@ -341,13 +341,13 @@ fn backup_stale_drafts_if_needed(root: &Path, job: &JobDoc) -> Result<CodeDrafts
                 .lines()
                 .any(|line| line.trim_start().starts_with("draft:"));
             if !raw.trim().is_empty() && doc.draft.is_empty() && !has_explicit_draft_key {
-                let backup = backup_file_with_label(root, &path, "legacy-drafts")?;
+                let backup = backup_file_with_label(root, &path, "invalid-drafts")?;
                 fs::write(&path, "draft: []\n")
-                    .map_err(|e| format!("failed to reset legacy drafts.yaml: {}", e))?;
+                    .map_err(|e| format!("failed to reset invalid drafts.yaml: {}", e))?;
                 append_job_problem(
                     root,
                     &format!(
-                        "legacy drafts artifact backed up before add_orc_drafts: {}",
+                        "invalid drafts artifact backed up before add_orc_drafts: {}",
                         backup.display()
                     ),
                 )?;
@@ -376,13 +376,13 @@ fn backup_stale_drafts_if_needed(root: &Path, job: &JobDoc) -> Result<CodeDrafts
             Ok(CodeDraftsDoc::default())
         }
         Err(_) => {
-            let backup = backup_file_with_label(root, &path, "legacy-drafts")?;
+            let backup = backup_file_with_label(root, &path, "invalid-drafts")?;
             fs::write(&path, "draft: []\n")
-                .map_err(|e| format!("failed to reset legacy drafts.yaml: {}", e))?;
+                .map_err(|e| format!("failed to reset invalid drafts.yaml: {}", e))?;
             append_job_problem(
                 root,
                 &format!(
-                    "legacy drafts artifact backed up before add_orc_drafts: {}",
+                    "invalid drafts artifact backed up before add_orc_drafts: {}",
                     backup.display()
                 ),
             )?;
@@ -1108,9 +1108,11 @@ fn should_cleanup_drafts_yaml(job: &JobDoc, drafts: &CodeDraftsDoc) -> bool {
     drafts.draft.iter().all(|item| {
         normalize_draft_state(item.state.as_str()).map_or(false, |state| {
             state == "complete"
-                && job.task.completed.iter().any(|name| {
-                    normalize_feature_key(name) == normalize_feature_key(&item.name)
-                })
+                && job
+                    .task
+                    .completed
+                    .iter()
+                    .any(|name| normalize_feature_key(name) == normalize_feature_key(&item.name))
         })
     })
 }
@@ -2096,7 +2098,10 @@ fn infer_initial_features(message: Option<&str>) -> Vec<String> {
 
 fn load_check_code_skill_spec() -> Result<CheckCodeSkillSpec, String> {
     let skill_path = Path::new("/home/tree/ai/skills/check-code/SKILL.md");
-    let prompt_path = crate::source_root().join("assets").join("prompts").join("check_code.md");
+    let prompt_path = crate::source_root()
+        .join("assets")
+        .join("prompts")
+        .join("check_code.md");
     let path = if skill_path.exists() {
         skill_path.to_path_buf()
     } else {
@@ -2289,15 +2294,14 @@ mod tests {
     use super::{
         add_orc_drafts, auto_feature_names_from_message, build_create_job_md_prompt,
         build_draft_item_from_requirement, build_initial_project_md, check_orc_code,
-        cleanup_drafts_yaml_after_success, create_input_md,
-        ensure_add_orc_drafts_produced_targets, flow_rust_orchestra, get_workspace_state,
-        infer_spec_from_message, job_task_state_change, llm_impl_output_indicates_failure,
-        load_architecture_contract_from_root, load_drafts_doc, load_impl_progress_snapshots,
-        merge_requirement_rule, move_job_task_item, normalize_job_md_content, parse_common_opts,
-        parse_outline_requirements_to_job_doc, parse_project_md_meta, read_bootstrap_seed,
-        set_draft_item_state, transition_impl_result, transition_impl_start,
-        update_impl_draft_progress_from_watch, BootstrapSeed, CodeDraftsDoc, CommonOpts,
-        DraftItemDoc, JobChecklistSection, JobDoc, JobRequirement,
+        cleanup_drafts_yaml_after_success, create_input_md, ensure_add_orc_drafts_produced_targets,
+        flow_rust_orchestra, get_workspace_state, infer_spec_from_message, job_task_state_change,
+        llm_impl_output_indicates_failure, load_architecture_contract_from_root, load_drafts_doc,
+        load_impl_progress_snapshots, merge_requirement_rule, move_job_task_item,
+        normalize_job_md_content, parse_common_opts, parse_outline_requirements_to_job_doc,
+        parse_project_md_meta, read_bootstrap_seed, set_draft_item_state, transition_impl_result,
+        transition_impl_start, update_impl_draft_progress_from_watch, BootstrapSeed, CodeDraftsDoc,
+        CommonOpts, DraftItemDoc, JobChecklistSection, JobDoc, JobRequirement,
     };
     use std::env;
     use std::fs;
@@ -2496,7 +2500,9 @@ mod tests {
                     },
                     JobChecklistSection {
                         name: "ui_checklist".to_string(),
-                        items: vec!["todo_app -> visible_result : add task renders in UI".to_string()],
+                        items: vec![
+                            "todo_app -> visible_result : add task renders in UI".to_string()
+                        ],
                     },
                     JobChecklistSection {
                         name: "reentry_checklist".to_string(),
@@ -2869,8 +2875,9 @@ mod tests {
 
     #[test]
     fn ensure_add_orc_drafts_produced_targets_rejects_empty_requirement_state() {
-        let err = ensure_add_orc_drafts_produced_targets(&JobDoc::default(), &CodeDraftsDoc::default())
-            .expect_err("empty requirements must fail");
+        let err =
+            ensure_add_orc_drafts_produced_targets(&JobDoc::default(), &CodeDraftsDoc::default())
+                .expect_err("empty requirements must fail");
 
         assert!(err.contains("requirement section is empty"));
     }
@@ -2952,8 +2959,8 @@ mod tests {
     }
 
     #[test]
-    fn add_orc_drafts_backs_up_stale_legacy_drafts_before_rebuild() {
-        with_locked_workspace("backup_stale_legacy_drafts", || {
+    fn add_orc_drafts_backs_up_invalid_drafts_before_rebuild() {
+        with_locked_workspace("backup_invalid_drafts", || {
             fs::create_dir_all(".project").expect("create .project");
             fs::write(
                 "job.md",
@@ -2962,9 +2969,9 @@ mod tests {
             .expect("write job");
             fs::write(
                 ".project/drafts.yaml",
-                "planned:\n  - legacy_task\nfailed:\n  - old_item\n",
+                "planned:\n  - old_task\nfailed:\n  - old_item\n",
             )
-            .expect("write legacy drafts");
+            .expect("write invalid drafts");
 
             add_orc_drafts().expect("run add_orc_drafts");
 
@@ -2979,7 +2986,9 @@ mod tests {
                 .filter_map(Result::ok)
                 .map(|entry| entry.file_name().to_string_lossy().to_string())
                 .collect::<Vec<_>>();
-            assert!(backups.iter().any(|name| name.contains("legacy-drafts-drafts.yaml")));
+            assert!(backups
+                .iter()
+                .any(|name| name.contains("invalid-drafts-drafts.yaml")));
         });
     }
 

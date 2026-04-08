@@ -1,12 +1,12 @@
 import type { APIRoute } from "astro";
-import { runManualRcCheck } from "@/server/orc";
+import { runManualOrcCheck } from "@/server/orc";
 
 export const prerender = false;
 
 export const POST: APIRoute = async ({ request }) => {
   try {
     const body = await request.json();
-    const result = runManualRcCheck(String(body.id ?? ""));
+    const result = runManualOrcCheck(String(body.id ?? ""));
     return new Response(JSON.stringify(result), {
       headers: { "content-type": "application/json" }
     });

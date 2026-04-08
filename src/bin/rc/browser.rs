@@ -296,8 +296,7 @@ mod tests {
             screenshot_and_close_command("agent-browser", Path::new("/tmp/rc-web.png"))
                 .contains("/tmp/rc-web.png")
         );
-        assert!(wait_for_url_command("http://127.0.0.1:3000")
-            .contains("python3 -c "));
+        assert!(wait_for_url_command("http://127.0.0.1:3000").contains("python3 -c "));
     }
 
     #[test]

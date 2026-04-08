@@ -99,15 +99,7 @@ fn read_send_message_from_stdin(command_name: &str) -> Result<String, String> {
 }
 
 fn resolve_worker_for_send(target: &str) -> Result<super::tmux::WorkerPaneRef, String> {
-    match super::tmux::resolve_worker_ref(target) {
-        Ok(worker) => Ok(worker),
-        Err(err) => {
-            let Some(pane_id) = super::tmux::legacy_worker_ref_pane_id(target) else {
-                return Err(err);
-            };
-            Ok(super::tmux::register_worker_pane(None, pane_id))
-        }
-    }
+    super::tmux::resolve_worker_ref(target)
 }
 
 fn canonical_command_for_match(command: &str) -> &str {
@@ -363,7 +355,11 @@ fn check_orc_manager_trace(mode: &str) -> Result<String, String> {
             find_stage_line(&run_lines, "stage_forbid_locked")?;
             find_stage_line(&run_lines, "stage_symptom_locked")?;
             find_stage_line(&run_lines, "stage_success_locked")?;
-            assert_trace_lt(&run_lines, "stage_global_override_read", "stage_job_md_locked")?;
+            assert_trace_lt(
+                &run_lines,
+                "stage_global_override_read",
+                "stage_job_md_locked",
+            )?;
             assert_trace_lt(&run_lines, "stage_job_md_locked", "stage_plan_done")?;
             assert_trace_lt(&run_lines, "stage_plan_done", "stage_input_locked")?;
             assert_trace_lt(&run_lines, "stage_input_locked", "stage_output_locked")?;
@@ -379,7 +375,11 @@ fn check_orc_manager_trace(mode: &str) -> Result<String, String> {
         "check" => {
             find_stage_line(&run_lines, "stage_impl_session_started")?;
             find_stage_line(&run_lines, "stage_impl_done")?;
-            assert_trace_lt(&run_lines, "stage_global_override_read", "stage_job_md_locked")?;
+            assert_trace_lt(
+                &run_lines,
+                "stage_global_override_read",
+                "stage_job_md_locked",
+            )?;
             assert_trace_lt(&run_lines, "stage_job_md_locked", "stage_plan_done")?;
             assert_trace_lt(&run_lines, "stage_plan_done", "stage_impl_session_started")?;
             assert_trace_lt(&run_lines, "stage_impl_session_started", "stage_impl_done")?;
@@ -394,19 +394,31 @@ fn check_orc_manager_trace(mode: &str) -> Result<String, String> {
             find_stage_line(&run_lines, "stage_restart_path_verified")?;
             find_stage_line(&run_lines, "stage_negative_check_passed")?;
             find_stage_line(&run_lines, "stage_manager_reverified")?;
-            assert_trace_lt(&run_lines, "stage_global_override_read", "stage_job_md_locked")?;
+            assert_trace_lt(
+                &run_lines,
+                "stage_global_override_read",
+                "stage_job_md_locked",
+            )?;
             assert_trace_lt(&run_lines, "stage_job_md_locked", "stage_plan_done")?;
             assert_trace_lt(&run_lines, "stage_plan_done", "stage_impl_session_started")?;
             assert_trace_lt(&run_lines, "stage_impl_session_started", "stage_impl_done")?;
             assert_trace_lt(&run_lines, "stage_impl_done", "stage_check_session_started")?;
-            assert_trace_lt(&run_lines, "stage_check_session_started", "stage_check_done")?;
+            assert_trace_lt(
+                &run_lines,
+                "stage_check_session_started",
+                "stage_check_done",
+            )?;
             assert_trace_lt(&run_lines, "stage_check_done", "stage_manager_reverified")?;
             assert_trace_lt(
                 &run_lines,
                 "stage_restart_path_verified",
                 "stage_negative_check_passed",
             )?;
-            assert_trace_lt(&run_lines, "stage_negative_check_passed", "stage_manager_reverified")?;
+            assert_trace_lt(
+                &run_lines,
+                "stage_negative_check_passed",
+                "stage_manager_reverified",
+            )?;
             ensure_stage_ok(&run_lines, "stage_impl_session_started")?;
             ensure_stage_ok(&run_lines, "stage_impl_done")?;
             ensure_stage_ok(&run_lines, "stage_check_session_started")?;
@@ -647,7 +659,8 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
             if tail.len() > 1 {
                 return Err(format!("{raw_command} accepts at most one optional [name]"));
             }
-            super::tmux::worker_create(tail.first().map(String::as_str)).map(|worker| worker.encode())
+            super::tmux::worker_create(tail.first().map(String::as_str))
+                .map(|worker| worker.encode())
         }
         "worker-send" => {
             if tail.len() < 2 {
@@ -761,7 +774,10 @@ pub async fn execute_cli(args: &[String]) -> Result<String, String> {
         }
         "check-manager-completion" => {
             if tail.len() > 1 {
-                return Err("check-manager-completion accepts zero args or one optional [job.md]".to_string());
+                return Err(
+                    "check-manager-completion accepts zero args or one optional [job.md]"
+                        .to_string(),
+                );
             }
             let job_file = tail.first().map(String::as_str).unwrap_or("job.md");
             check_manager_completion(job_file)
@@ -930,12 +946,18 @@ mod tests {
 
     #[test]
     fn canonical_command_keeps_worker_create() {
-        assert_eq!(canonical_command_for_match("worker-create"), "worker-create");
+        assert_eq!(
+            canonical_command_for_match("worker-create"),
+            "worker-create"
+        );
     }
 
     #[test]
     fn canonical_command_keeps_worker_dev_url() {
-        assert_eq!(canonical_command_for_match("worker-dev-url"), "worker-dev-url");
+        assert_eq!(
+            canonical_command_for_match("worker-dev-url"),
+            "worker-dev-url"
+        );
     }
 
     #[test]
@@ -966,14 +988,6 @@ mod tests {
     #[test]
     fn normalize_stdin_send_message_rejects_empty_body() {
         assert!(super::normalize_stdin_send_message("worker-send", "\n".to_string()).is_err());
-    }
-
-    #[test]
-    fn worker_send_legacy_ref_extracts_same_pane_for_retry() {
-        let pane_id = "%17";
-        let legacy_ref = format!("worker-123::{}::1000", pane_id);
-        let worker = super::resolve_worker_for_send(&legacy_ref).expect("legacy worker retry");
-        assert_eq!(worker.pane_id, pane_id);
     }
 
     #[test]
@@ -1124,7 +1138,17 @@ mod tests {
         let run = latest_trace_run(&lines);
 
         assert!(assert_trace_lt(&run, "stage_check_done", "stage_manager_reverified").is_ok());
-        assert!(assert_trace_lt(&run, "stage_restart_path_verified", "stage_negative_check_passed").is_ok());
-        assert!(assert_trace_lt(&run, "stage_negative_check_passed", "stage_manager_reverified").is_ok());
+        assert!(assert_trace_lt(
+            &run,
+            "stage_restart_path_verified",
+            "stage_negative_check_passed"
+        )
+        .is_ok());
+        assert!(assert_trace_lt(
+            &run,
+            "stage_negative_check_passed",
+            "stage_manager_reverified"
+        )
+        .is_ok());
     }
 }

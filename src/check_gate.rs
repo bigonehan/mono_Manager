@@ -114,8 +114,14 @@ pub(crate) fn evaluate_hard_gates(input: &HardGateInput) -> Result<GateEvaluatio
         .any(|name| name.eq_ignore_ascii_case("persistence_checklist"));
     let requires_reentry = has_reentry
         || has_persistence
-        || input.verify_targets.iter().any(|item| contains_reentry_signal(item))
-        || input.problems.iter().any(|item| contains_reentry_signal(item));
+        || input
+            .verify_targets
+            .iter()
+            .any(|item| contains_reentry_signal(item))
+        || input
+            .problems
+            .iter()
+            .any(|item| contains_reentry_signal(item));
 
     if has_ui {
         let has_real_ui_evidence = records.iter().any(|record| {
@@ -249,7 +255,10 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].data_source.as_deref(), Some("real"));
         assert_eq!(records[0].execution.as_deref(), Some("browser"));
-        assert_eq!(records[0].artifact.as_deref(), Some(".project/screenshot/ui.png"));
+        assert_eq!(
+            records[0].artifact.as_deref(),
+            Some(".project/screenshot/ui.png")
+        );
     }
 
     #[test]

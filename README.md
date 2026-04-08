@@ -51,7 +51,7 @@
 - browser e2e / screenshot validation
 - `check_orc_code`는 `job.md`의 `# check evidence` 실행 증거가 없으면 성공으로 끝나면 안 된다.
 - 유닛 테스트 통과는 보조 신호다. 상태 변화 기능은 재진입/reload 검증, UI 기능은 실제 렌더 근거까지 포함해야 한다.
-- Removed legacy commands are not supported and must not appear in docs or workflow guidance.
+- Removed commands are not supported and must not appear in docs or workflow guidance.
 
 ## UI Mode
 - Enter UI mode:
@@ -103,7 +103,7 @@
 - `cargo run --bin rc -- check-front-ui-rules` is the canonical UI alignment check entrypoint used by the repo wrappers/docs.
 - `orc chat -n <name>` 실행 시 `.temp/<name>.yaml`이 없거나 비어 있으면 기본 chat room YAML이 자동 생성됩니다.
 - `orc chat -n <name> --background`는 watcher를 백그라운드로 실행하고, 출력은 `.temp/<name>.watch.log`에 기록됩니다.
-- 같은 tmux pane(기준: `TMUX_PANE`)에서 `orc chat`을 여러 번 호출하면 동일 `sender_id`를 재사용합니다. 즉 같은 window라도 pane이 다르면 `sender_id`는 독립적으로 관리됩니다. tmux 외 환경은 fallback(`PPID + TTY`), 강제 지정은 `ORC_CHAT_SESSION_KEY`를 사용합니다 (`.temp/<name>.sessions.yaml`).
+- 같은 tmux pane(기준: `TMUX_PANE`)에서 `orc chat`을 여러 번 호출하면 동일 `sender_id`를 재사용합니다. 즉 같은 window라도 pane이 다르면 `sender_id`는 독립적으로 관리됩니다. tmux 외 환경은 `PPID + TTY`를 사용하고, 강제 지정은 `ORC_CHAT_SESSION_KEY`를 사용합니다 (`.temp/<name>.sessions.yaml`).
 - `orc chat-wait -n <name> -a true`는 모든 새 메시지에 반응하고, `-a false`는 자신의 `sender_id`를 receiver로 가진 메시지에만 반응합니다.
 - `orc chat-wait -n <name> -a <true|false> -c <count>`를 사용하면 지정 개수 반응 후 자동 종료됩니다.
 - UI has two tabs: `Projects` and `Selected Project`.

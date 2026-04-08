@@ -531,18 +531,8 @@ fn build_plan(
         .join("rc")
         .join("prompts")
         .join("build_plan.txt");
-    let prompt_template = match fs::read_to_string(&prompt_path) {
-        Ok(body) => body,
-        Err(_) => {
-            return Ok(fallback_plan_body(
-                target_path,
-                mode,
-                runner,
-                headed,
-                config,
-            ))
-        }
-    };
+    let prompt_template = fs::read_to_string(&prompt_path)
+        .with_context(|| format!("failed to read {}", prompt_path.display()))?;
     let inventory = describe_target_path(target_path)?;
     let prompt = format!(
         "{}\n\npath: {}\nrunner: {:?}\nheaded: {:?}\nmode: {}\n\ninventory:\n{}\n\n{}\n{}",
@@ -555,8 +545,7 @@ fn build_plan(
         llm_role_instruction(),
         test_plan_output_instruction()
     );
-    let llm_body = run_codex_plan_prompt(&prompt)
-        .unwrap_or_else(|_| fallback_plan_body(target_path, mode, runner, headed, config));
+    let llm_body = run_codex_plan_prompt(&prompt)?;
     Ok(llm_body)
 }
 
@@ -682,37 +671,8 @@ where
     })
 }
 
-fn fallback_plan_body(
-    target_path: &Path,
-    mode: &str,
-    runner: &RunnerKind,
-    headed: HeadMode,
-    config: &Config,
-) -> String {
-    let execute_line = plan_execute_line(target_path, runner, config);
-    let review_focus = if *runner == RunnerKind::Web {
-        "브라우저 e2e 스크린샷으로 실제 렌더/상호작용 성공 여부를 확인하고, 성공 시 스크린샷을 즉시 정리한다."
-    } else {
-        "실행 로그와 결과 상태를 기준으로 실패 가능성을 먼저 찾고 차단한다."
-    };
-    format!(
-        "# test plan\n\n- role: {}\n- path: {}\n- runner: {:?}\n- headed: {:?}\n- mode: {}\n\n## review focus\n- {}\n\n## execution steps\n- job.md에 테스트 계획을 먼저 기록한다.\n- {} \n- 결과 로그와 산출물을 검토한다.\n\n## expected evidence\n- .project/drafts.yaml 생성\n- session logs 수집\n- web인 경우 e2e 스크린샷 검증 후 성공 시 삭제\n",
-        llm_role_instruction_line(),
-        target_path.display(),
-        runner,
-        headed,
-        mode,
-        review_focus,
-        execute_line
-    )
-}
-
 fn llm_role_instruction() -> &'static str {
     "role: 경험많고 완벽주의적인 시니어 개발자가 코드 리뷰에서 거부할만한 것은 무엇일까요? 전부 수정하세요, 게으름 피우지 마세요"
-}
-
-fn llm_role_instruction_line() -> &'static str {
-    "경험많고 완벽주의적인 시니어 개발자가 코드 리뷰에서 거부할만한 것은 무엇일까요? 전부 수정하세요, 게으름 피우지 마세요"
 }
 
 fn test_plan_output_instruction() -> &'static str {
@@ -1642,55 +1602,19 @@ fn sync_check_evidence_to_job_md(workdir: &Path, body: &str) -> Result<()> {
     fs::write(&job_path, next).with_context(|| format!("failed to write {}", job_path.display()))
 }
 
-fn cleanup_legacy_rc_artifacts(workdir: &Path) -> Result<()> {
-    let screenshot_dir = workdir.join(SCREENSHOT_DIR);
-    for (legacy, target) in [
-        (
-            workdir.join("drafts.yaml"),
-            workdir.join(".project").join("drafts.yaml"),
-        ),
-        (
-            workdir.join("terminal-capture.txt"),
-            screenshot_dir.join("terminal-capture.txt"),
-        ),
-        (
-            workdir.join("rect-capture.png"),
-            screenshot_dir.join("rect-capture.png"),
-        ),
-        (
-            workdir.join("screen-capture.png"),
-            screenshot_dir.join("screen-capture.png"),
-        ),
-        (
-            workdir.join("rc-web.png"),
-            screenshot_dir.join("rc-web.png"),
-        ),
-    ] {
-        if legacy.exists() {
-            if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("failed to create {}", parent.display()))?;
-            }
-            let _ = fs::rename(&legacy, &target);
-        }
-    }
-    Ok(())
-}
-
 fn evaluate_checklist(
     workdir: &Path,
     log: &SessionLog,
     effective_errors: &[String],
 ) -> Result<ChecklistEvaluation> {
     if cfg!(test) {
-        let body = fallback_checklist(log, effective_errors);
+        let body = build_checklist_evidence_from_log(log, effective_errors);
         sync_check_evidence_to_job_md(workdir, &body)?;
         return Ok(parse_checklist(&body));
     }
 
     let prompt = build_checklist_prompt(log, effective_errors);
-    let body = run_codex_checklist_prompt(&prompt)
-        .unwrap_or_else(|_| fallback_checklist(log, effective_errors));
+    let body = run_codex_checklist_prompt(&prompt)?;
     sync_check_evidence_to_job_md(workdir, &body)?;
     Ok(parse_checklist(&body))
 }
@@ -1770,7 +1694,7 @@ fn run_codex_checklist_prompt(prompt: &str) -> Result<String> {
     Ok(stdout)
 }
 
-fn fallback_checklist(log: &SessionLog, effective_errors: &[String]) -> String {
+fn build_checklist_evidence_from_log(log: &SessionLog, effective_errors: &[String]) -> String {
     let actions = if log.runner == RunnerKind::Web {
         parse_web_actions(&log.mission)
     } else {
@@ -1789,7 +1713,11 @@ fn fallback_checklist(log: &SessionLog, effective_errors: &[String]) -> String {
     } else {
         "기본 점검 실패"
     };
-    let base_data_source = if effective_errors.is_empty() { "real" } else { "mock" };
+    let base_data_source = if effective_errors.is_empty() {
+        "real"
+    } else {
+        "mock"
+    };
     let mut body = format!(
         "- [{}] {} -> {} : mode 기반 기본 체크리스트 | data_source={} | execution=integration | artifact=none\n- [x] step 실행 -> output_log 기록 : 실행 로그 수집 | data_source=real | execution=cli | artifact=none\n",
         status, log.mission, output, base_data_source
@@ -1830,7 +1758,11 @@ fn fallback_checklist(log: &SessionLog, effective_errors: &[String]) -> String {
         if requires_state_check {
             body.push_str(&format!(
                 "- [{}] mutation flow -> reload/assert after save/delete/create : 상태 변화 영속성 검증 | data_source=real-equivalent | execution=browser | artifact={}\n",
-                if persistence_checked && screenshot_artifact.is_some() { "x" } else { " " },
+                if persistence_checked && screenshot_artifact.is_some() {
+                    "x"
+                } else {
+                    " "
+                },
                 screenshot_artifact.as_deref().unwrap_or("missing")
             ));
         }
@@ -2350,23 +2282,6 @@ mod tests {
     }
 
     #[test]
-    fn fallback_plan_mentions_test_plan_and_web_cleanup() {
-        let dir = tempdir().expect("tempdir");
-        let config = load_config().expect("config");
-        let body = fallback_plan_body(
-            dir.path(),
-            "web smoke",
-            &RunnerKind::Web,
-            HeadMode::Off,
-            &config,
-        );
-        assert!(body.contains("# test plan"));
-        assert!(body.contains("role: 경험많고 완벽주의적인 시니어 개발자"));
-        assert!(body.contains("e2e 스크린샷"));
-        assert!(body.contains("성공 시 삭제"));
-    }
-
-    #[test]
     fn checklist_prompt_includes_strict_role_and_web_rules() {
         let log = SessionLog {
             mission: "web".to_string(),
@@ -2384,48 +2299,6 @@ mod tests {
         assert!(prompt.contains("경험많고 완벽주의적인 시니어 개발자"));
         assert!(prompt.contains("e2e 스크린샷"));
         assert!(prompt.contains("성공 후 스크린샷 삭제"));
-    }
-
-    #[test]
-    fn fallback_checklist_keeps_web_ui_unresolved_without_artifact_path() {
-        let log = SessionLog {
-            mission: r##"save and reload"##.to_string(),
-            runner: RunnerKind::Web,
-            detected_command: "npm run dev".to_string(),
-            steps: vec![],
-            output_log: vec!["validated web e2e screenshot".to_string()],
-            errors: vec![],
-            captures: vec![],
-        };
-
-        let body = fallback_checklist(&log, &[]);
-
-        assert!(body.contains("- [ ] web e2e screenshot -> 렌더 확인"));
-        assert!(body.contains("artifact=missing"));
-        assert!(body.contains("- [ ] mutation flow -> reload/assert after save/delete/create"));
-    }
-
-    #[test]
-    fn fallback_checklist_marks_web_ui_checked_with_artifact_path() {
-        let log = SessionLog {
-            mission: r##"url \"http://localhost:5173\" click-selector \"#save\" reload assert \".saved-item\""##.to_string(),
-            runner: RunnerKind::Web,
-            detected_command: "npm run dev".to_string(),
-            steps: vec![],
-            output_log: vec![
-                "validated web e2e screenshot before cleanup: .project/screenshot/rc-web.png".to_string(),
-                "cleaned screenshot after successful test: .project/screenshot/rc-web.png".to_string(),
-            ],
-            errors: vec![],
-            captures: vec![],
-        };
-
-        let body = fallback_checklist(&log, &[]);
-
-        assert!(body.contains("- [x] web e2e screenshot -> 렌더 확인"));
-        assert!(body.contains("data_source=real | execution=browser | artifact=.project/screenshot/rc-web.png"));
-        assert!(body.contains("- [x] successful screenshot cleanup -> png removed"));
-        assert!(body.contains("- [x] mutation flow -> reload/assert after save/delete/create"));
     }
 
     #[test]

@@ -1331,14 +1331,7 @@ fn has_planned_task_file(project: &ProjectRecord, feature_name: &str) -> bool {
         .join(".project")
         .join("feature")
         .join(feature_name);
-    [
-        feature_dir.join("drafts.yaml"),
-        feature_dir.join("tasks.yaml"),
-        feature_dir.join("drafts.yaml"),
-        feature_dir.join("drafts.yaml"),
-    ]
-    .iter()
-    .any(|p| p.exists())
+    feature_dir.join("drafts.yaml").exists()
 }
 
 fn all_planned_task_files_exist(project: &ProjectRecord, planned: &[String]) -> bool {
@@ -1781,91 +1774,6 @@ fn bootstrap_trace_label(spec: &str) -> String {
     format!("bootstrap_code_project(spec={})", spec.trim())
 }
 
-fn supports_react_vite_fallback(spec: &str) -> bool {
-    let spec_lc = spec.to_ascii_lowercase();
-    (spec_lc.contains("react") || spec_lc.contains("vite"))
-        && !spec_lc.contains("next")
-        && !spec_lc.contains("typescript")
-}
-
-fn write_react_vite_fallback_scaffold(
-    project_root: &Path,
-    project_name: &str,
-    spec: &str,
-) -> Result<String, String> {
-    fs::create_dir_all(project_root.join("src"))
-        .map_err(|e| format!("failed to create src dir: {}", e))?;
-
-    let package_name = project_name
-        .trim()
-        .to_ascii_lowercase()
-        .replace([' ', '_'], "-");
-    let mut dependencies = serde_json::Map::new();
-    dependencies.insert(
-        "react".to_string(),
-        serde_json::Value::String("^18.3.1".to_string()),
-    );
-    dependencies.insert(
-        "react-dom".to_string(),
-        serde_json::Value::String("^18.3.1".to_string()),
-    );
-    if spec.to_ascii_lowercase().contains("zustand") {
-        dependencies.insert(
-            "zustand".to_string(),
-            serde_json::Value::String("^5.0.0".to_string()),
-        );
-    }
-    let package_json = serde_json::json!({
-        "name": if package_name.is_empty() { "app" } else { package_name.as_str() },
-        "private": true,
-        "version": "0.0.0",
-        "type": "module",
-        "scripts": {
-            "dev": "vite --host 0.0.0.0 --port 5173",
-            "build": "vite build",
-            "preview": "vite preview --host 0.0.0.0 --port 4173"
-        },
-        "dependencies": dependencies,
-        "devDependencies": {
-            "@vitejs/plugin-react": "^4.3.1",
-            "vite": "^5.4.0"
-        }
-    });
-    let package_json_pretty = serde_json::to_string_pretty(&package_json)
-        .map_err(|e| format!("failed to encode package.json: {}", e))?;
-    fs::write(
-        project_root.join("package.json"),
-        format!("{}\n", package_json_pretty),
-    )
-    .map_err(|e| format!("failed to write package.json: {}", e))?;
-
-    fs::write(
-        project_root.join("index.html"),
-        "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>react_todo</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.jsx\"></script>\n  </body>\n</html>\n",
-    )
-    .map_err(|e| format!("failed to write index.html: {}", e))?;
-    fs::write(
-        project_root.join("vite.config.js"),
-        "import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n})\n",
-    )
-    .map_err(|e| format!("failed to write vite.config.js: {}", e))?;
-    fs::write(
-        project_root.join("src").join("main.jsx"),
-        "import React from 'react'\nimport ReactDOM from 'react-dom/client'\nimport App from './App.jsx'\n\nReactDOM.createRoot(document.getElementById('root')).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>,\n)\n",
-    )
-    .map_err(|e| format!("failed to write src/main.jsx: {}", e))?;
-    fs::write(
-        project_root.join("src").join("App.jsx"),
-        "export default function App() {\n  return (\n    <main>\n      <h1>hello world</h1>\n    </main>\n  )\n}\n",
-    )
-    .map_err(|e| format!("failed to write src/App.jsx: {}", e))?;
-
-    Ok(format!(
-        "react-vite fallback scaffold written | {}",
-        summarize_bootstrap_artifacts(project_root)
-    ))
-}
-
 fn summarize_bootstrap_artifacts(project_root: &Path) -> String {
     let candidates = [
         "package.json",
@@ -2007,36 +1915,6 @@ pub(crate) fn apply_bootstrap_by_spec(
                 ));
             }
             Err(artifact_err) => {
-                if supports_react_vite_fallback(&spec) {
-                    match write_react_vite_fallback_scaffold(project_root, project_name, &spec)
-                        .and_then(|fallback_summary| {
-                            verify_bootstrap_artifacts(project_root, &spec)
-                                .map(|verified| format!("{} | {}", fallback_summary, verified))
-                        }) {
-                        Ok(fallback_summary) => {
-                            let _ = crate::append_check_process_status(
-                                "bootstrap_code_project",
-                                &format!(
-                                    "timeout recovered by fallback scaffold | llm_error={} | {}",
-                                    err, fallback_summary
-                                ),
-                            );
-                            return Ok(format!(
-                                "bootstrap completed via fallback: {}",
-                                fallback_summary
-                            ));
-                        }
-                        Err(fallback_err) => {
-                            let _ = crate::append_check_process_status(
-                                "bootstrap_code_project",
-                                &format!(
-                                    "fallback failed | llm_error={} | artifact_error={} | fallback_error={}",
-                                    err, artifact_err, fallback_err
-                                ),
-                            );
-                        }
-                    }
-                }
                 let _ = crate::append_check_process_status(
                     "bootstrap_code_project",
                     &format!(
@@ -4273,20 +4151,6 @@ mod tests {
     }
 
     #[test]
-    fn react_vite_fallback_scaffold_creates_verifiable_artifacts() {
-        let dir = make_temp_dir("orc_ui_bootstrap_react_vite_fallback");
-        let summary = write_react_vite_fallback_scaffold(&dir, "react_todo", "react, vite")
-            .expect("write fallback");
-        assert!(summary.contains("package.json"));
-
-        let verified = verify_bootstrap_artifacts(&dir, "react, vite").expect("verify fallback");
-        assert!(verified.contains("entry=src/main.jsx"));
-        assert!(verified.contains("app=src/App.jsx"));
-
-        let _ = fs::remove_dir_all(dir);
-    }
-
-    #[test]
     fn preset_libraries_allowlist_filters_unknown_values() {
         let filtered = filter_allowed_preset_libraries(&[
             "three".to_string(),
@@ -4470,14 +4334,7 @@ fn collect_generated_draft_items_from_project(project: &ProjectRecord) -> Vec<St
             continue;
         }
         let dir = entry.path();
-        let has_task = [
-            dir.join("drafts.yaml"),
-            dir.join("tasks.yaml"),
-            dir.join("drafts.yaml"),
-            dir.join("drafts.yaml"),
-        ]
-        .iter()
-        .any(|p| p.exists());
+        let has_task = dir.join("drafts.yaml").exists();
         if !has_task {
             continue;
         }
@@ -6210,7 +6067,8 @@ pub fn run_ui(
                                         project_index: app.project_index,
                                     });
                                     app.busy_message = Some(
-                                        "planned 항목 파일 누락 감지: add_orc_drafts 보정 실행 중".to_string(),
+                                        "planned 항목 파일 누락 감지: add_orc_drafts 보정 실행 중"
+                                            .to_string(),
                                     );
                                 } else {
                                     let project_index = app.project_index;
