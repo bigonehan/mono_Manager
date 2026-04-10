@@ -11,3 +11,4 @@ dist/
 /.rc-session-log.json
 /feedback.md
 /plan.yaml
+*.png

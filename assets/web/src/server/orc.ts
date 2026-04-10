@@ -2914,7 +2914,10 @@ export function runManualOrcCheck(id: string): { detail: ProjectDetail; output: 
   const result = spawnSync(command.bin, command.args, {
     cwd: detail.path,
     encoding: "utf8",
-    env: buildTaskCommandEnv(taskKey)
+    env: {
+      ...buildTaskCommandEnv(taskKey),
+      ORC_KEEP_SUCCESS_SCREENSHOT_DIR: screenshotDirPath(detail.path)
+    }
   });
   const stdout = (result.stdout || "").trim();
   const stderr = (result.stderr || "").trim();
