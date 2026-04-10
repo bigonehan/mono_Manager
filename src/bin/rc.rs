@@ -1868,6 +1868,42 @@ fn maybe_spawn_codex_worker(workdir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn retain_successful_screenshot_copy(source: &Path) -> Result<Option<PathBuf>> {
+    let keep_dir = match std::env::var("ORC_KEEP_SUCCESS_SCREENSHOT_DIR") {
+        Ok(value) if !value.trim().is_empty() => PathBuf::from(value),
+        _ => return Ok(None),
+    };
+    fs::create_dir_all(&keep_dir).with_context(|| {
+        format!(
+            "failed to create retained screenshot dir {}",
+            keep_dir.display()
+        )
+    })?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_millis())
+        .unwrap_or(0);
+    let stem = source
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("rc-web");
+    let ext = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("png");
+    let target = keep_dir.join(format!("{stem}-retained-{stamp}.{ext}"));
+    fs::copy(source, &target).with_context(|| {
+        format!(
+            "failed to retain screenshot {} -> {}",
+            source.display(),
+            target.display()
+        )
+    })?;
+    Ok(Some(target))
+}
+
 fn cleanup_successful_screenshots(
     workdir: &Path,
     target_path: &Path,
@@ -1880,8 +1916,12 @@ fn cleanup_successful_screenshots(
         workdir.join(SCREENSHOT_DIR).join("screen-capture.png"),
     ];
     let mut removed = Vec::new();
+    let mut retained = Vec::new();
     for path in screenshot_candidates {
         if path.exists() {
+            if let Some(retained_path) = retain_successful_screenshot_copy(&path)? {
+                retained.push(retained_path);
+            }
             fs::remove_file(&path)
                 .with_context(|| format!("failed to remove screenshot {}", path.display()))?;
             removed.push(path);
@@ -1896,6 +1936,16 @@ fn cleanup_successful_screenshots(
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
+        if !retained.is_empty() {
+            log.output_log.push(format!(
+                "retained screenshot for ui: {}",
+                retained
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
         log.output_log.push(format!(
             "cleaned screenshot after successful test: {}",
             removed
@@ -1991,6 +2041,7 @@ impl ExecutionRecorder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
 
     #[test]
@@ -2341,6 +2392,48 @@ mod tests {
             .output_log
             .iter()
             .any(|line| line.contains("cleaned screenshot")));
+    }
+
+    #[test]
+    fn retains_successful_screenshot_copy_when_requested() {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let _guard = ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock");
+        let dir = tempdir().expect("tempdir");
+        let target = dir.path().join("app");
+        let keep_dir = dir.path().join("retained");
+        fs::create_dir_all(target.join(".project/screenshot"))
+            .expect("create target screenshot dir");
+        let target_capture = target.join(".project/screenshot/rc-web.png");
+        fs::write(&target_capture, b"png").expect("write target capture");
+        std::env::set_var("ORC_KEEP_SUCCESS_SCREENSHOT_DIR", &keep_dir);
+        let mut log = SessionLog {
+            mission: "web".to_string(),
+            runner: RunnerKind::Web,
+            detected_command: "agent-browser open".to_string(),
+            steps: vec![],
+            output_log: vec![],
+            errors: vec![],
+            captures: vec![target_capture.clone()],
+        };
+        cleanup_successful_screenshots(dir.path(), &target, &mut log).expect("cleanup");
+        std::env::remove_var("ORC_KEEP_SUCCESS_SCREENSHOT_DIR");
+        assert!(!target_capture.exists());
+        let retained = fs::read_dir(&keep_dir)
+            .expect("read retained dir")
+            .filter_map(|entry| entry.ok().map(|value| value.path()))
+            .collect::<Vec<_>>();
+        assert_eq!(retained.len(), 1);
+        assert_eq!(
+            fs::read(&retained[0]).expect("read retained screenshot"),
+            b"png"
+        );
+        assert!(log
+            .output_log
+            .iter()
+            .any(|line| line.contains("retained screenshot for ui")));
     }
 
     #[test]

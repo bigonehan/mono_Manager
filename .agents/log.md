@@ -3271,3 +3271,7 @@
 - `/home/tree/ai/skills/orc_manager/SKILL.md`의 check session 규칙을 바꿔, manager가 check worker에 보내는 `worker-send` 명령 본문 안에 `/home/tree/ai/skills/check-code/SKILL.md`를 직접 읽고 그 기준으로 점검하라는 지시를 명시적으로 넣도록 고정함.
 - 같은 skill에서 기존의 `check-code` 사용 지시/사용 여부 확인/skill 기준 준수 확인 문구는 제거해, 문서 확인 루프가 아니라 worker 명령 본문 자체가 source of truth가 되도록 정리함.
 - 검증은 `sed -n '184,214p' /home/tree/ai/skills/orc_manager/SKILL.md`와 관련 문자열 검색으로 수행함.
+## 2026-04-10 - 작업한일
+- `.../src/bin/rc.rs`에 성공한 web check 스크린샷을 `ORC_KEEP_SUCCESS_SCREENSHOT_DIR`로 복제 보존하는 경로를 추가해, 기존 cleanup 이후에도 web UI가 확인용 이미지를 다시 읽을 수 있게 수정함.
+- `.../assets/web/src/server/orc.ts`의 `runManualOrcCheck`가 해당 보존 디렉터리를 project `.project/screenshot`로 넘기도록 연결했고, QA worker는 실제 dev URL `http://127.0.0.1:4275`에서 스크린샷 카드/미리보기/feedback append/reload를 브라우저로 검증함.
+- 검증은 `cargo test retains_successful_screenshot_copy_when_requested --bin rc`, `cargo test cleans_successful_screenshots_and_removes_capture_entries --bin rc`, `npm run check`, `orc check-manager-trace final`, `orc check-manager-completion job.md`로 수행함.
