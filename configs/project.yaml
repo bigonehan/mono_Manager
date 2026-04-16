@@ -1,4 +1,4 @@
-recentActivepane: z4Zt
+recentActivepane: EX45
 projects:
   - id: CbgR
     name: web/next
@@ -309,8 +309,8 @@ projects:
     path: /home/tree/temp/react_todo_e2e_web_probe
     description: probe
     created_at: "1774591866"
-    updated_at: "1774591866"
-    selected: false
+    updated_at: "1776311200"
+    selected: true
     project_type: code
   - id: WvZH
     name: react_todo_e2e_web_probe2
@@ -590,7 +590,7 @@ projects:
     path: /tmp/dbg-domain-1774846184674
     description: dbg
     created_at: "1774846184"
-    updated_at: "1774846187"
+    updated_at: "1776311197"
     selected: false
     project_type: code
   - id: XmGu
@@ -607,7 +607,7 @@ projects:
     description: orc 작업 시작 시 check-process/feedback/screenshot 초기화, 피드백 경로 단일화, web
       check pane의 rc binary resolver 공통화, Playwright 음성 mock helper 공용화
     created_at: "1775369665"
-    updated_at: "1775370107"
+    updated_at: "1776311198"
     selected: false
     project_type: code
   - id: pqJ2
@@ -615,7 +615,7 @@ projects:
     path: /tmp/qa-orc-map-1775627433032
     description: qa mapping verification
     created_at: "1775627433"
-    updated_at: "1775627435"
+    updated_at: "1776311198"
     selected: false
     project_type: code
   - id: z4Zt
@@ -624,5 +624,5 @@ projects:
     description: qa mapping verification
     created_at: "1775627613"
     updated_at: "1775627617"
-    selected: true
+    selected: false
     project_type: code
